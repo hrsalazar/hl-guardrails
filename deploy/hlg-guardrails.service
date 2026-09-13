@@ -1,0 +1,13 @@
+[Unit]
+Description=hl-guardrails guardrails
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/repos/hl-guardrails
+EnvironmentFile=%h/repos/hl-guardrails/.env
+ExecStart=%h/repos/hl-guardrails/.venv/bin/python -m hlg.guardrails
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

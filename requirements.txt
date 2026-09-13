@@ -1,0 +1,5 @@
+hyperliquid-python-sdk>=0.24,<1
+requests
+pandas
+numpy
+pyyaml

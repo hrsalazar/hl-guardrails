@@ -1,0 +1,136 @@
+"""Setup scanner for the 3-7 day swing style that was profitable in the wallet history.
+
+Setup definition (per coin):
+  LONG : daily EMA20 > EMA50, 4h RSI14 <= rsi_long_max, price within level_proximity_pct of 20d low or daily EMA20,
+         stop = min(4h swing low, px - 1.5*ATR14d), target = 20d high, RR >= min_rr
+  SHORT: mirror. Preferred when funding is positive (short side collects funding).
+Also alerts on funding-carry opportunities (|annualised funding| > funding_carry_alert_apr).
+Every alert includes the position size that keeps the stop loss at risk_per_trade_pct of equity.
+"""
+import time
+
+import numpy as np
+import pandas as pd
+
+from .common import Notifier, State, fnum, info, load_config, log, setup_logging
+
+
+def candles(inf, coin, interval, days):
+    now = int(time.time() * 1000)
+    c = inf.candles_snapshot(coin, interval, now - days * 86400_000, now)
+    df = pd.DataFrame(c)
+    for k in "ohlcv":
+        df[k] = df[k].astype(float)
+    df["t"] = pd.to_datetime(df["t"], unit="ms", utc=True)
+    return df
+
+
+def ema(s, n):
+    return s.ewm(span=n, adjust=False).mean()
+
+
+def rsi(s, n=14):
+    d = s.diff()
+    up = d.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    dn = (-d.clip(upper=0)).ewm(alpha=1 / n, adjust=False).mean()
+    return 100 - 100 / (1 + up / dn.replace(0, np.nan))
+
+
+def atr(df, n=14):
+    tr = pd.concat([df.h - df.l, (df.h - df.c.shift()).abs(), (df.l - df.c.shift()).abs()], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / n, adjust=False).mean()
+
+
+def analyse(inf, coin, S, ctx):
+    d = candles(inf, coin, "1d", 90)
+    h4 = candles(inf, coin, "4h", 30)
+    if len(d) < 55 or len(h4) < 30:
+        return None
+    px = h4.c.iloc[-1]
+    e20, e50 = ema(d.c, 20).iloc[-1], ema(d.c, 50).iloc[-1]
+    a = atr(d).iloc[-1]
+    r = rsi(h4.c).iloc[-1]
+    hi20, lo20 = d.h.iloc[-21:-1].max(), d.l.iloc[-21:-1].min()
+    swing_lo, swing_hi = h4.l.iloc[-12:].min(), h4.h.iloc[-12:].max()
+    funding_apr = fnum(ctx["funding"]) * 24 * 365 * 100
+    prox = S["level_proximity_pct"] / 100
+    out = {"coin": coin, "px": px, "rsi4h": r, "trend": "UP" if e20 > e50 else "DOWN", "funding_apr": funding_apr, "setup": None}
+
+    if e20 > e50 and r <= S["rsi_long_max"] and (px <= lo20 * (1 + prox) or abs(px - e20) / px <= prox):
+        stop = min(swing_lo, px - 1.5 * a)
+        rr = (hi20 - px) / max(px - stop, 1e-9)
+        out.update(setup="LONG", stop=stop, target=hi20, rr=rr)
+    elif e20 < e50 and r >= S["rsi_short_min"] and (px >= hi20 * (1 - prox) or abs(px - e20) / px <= prox):
+        stop = max(swing_hi, px + 1.5 * a)
+        rr = (px - lo20) / max(stop - px, 1e-9)
+        out.update(setup="SHORT", stop=stop, target=lo20, rr=rr)
+    if out["setup"] and out["rr"] < S["min_rr"]:
+        out["rejected"] = f"RR {out['rr']:.1f} < {S['min_rr']}"
+        out["setup"] = None
+    return out
+
+
+def run_once(cfg, inf, notif, state):
+    S, R = cfg["scanner"], cfg["rules"]
+    meta, ctxs = inf.meta_and_asset_ctxs()
+    ctx = {u["name"]: c for u, c in zip(meta["universe"], ctxs)}
+    st = inf.user_state(cfg["account"])
+    equity = fnum(st["marginSummary"]["accountValue"])
+    risk_usd = equity * R["risk_per_trade_pct"] / 100
+    open_coins = {p["position"]["coin"] for p in st["assetPositions"]}
+    rows = []
+    for coin in S["coins"]:
+        try:
+            a = analyse(inf, coin, S, ctx[coin])
+        except Exception as e:  # noqa: BLE001
+            log.error("%s scan failed: %s", coin, e)
+            continue
+        if not a:
+            continue
+        rows.append(a)
+        if abs(a["funding_apr"]) > S["funding_carry_alert_apr"]:
+            side = "short perp / long spot" if a["funding_apr"] > 0 else "long perp / short spot"
+            notif.send(f"FUNDING CARRY {coin}: {a['funding_apr']:+.0f}% APR -> {side}", key=f"fund_{coin}_{int(a['funding_apr'] // 10)}", cooldown_s=6 * 3600)
+        if a["setup"]:
+            dist = abs(a["px"] - a["stop"])
+            size = risk_usd / dist
+            note = ""
+            if a["setup"] == "SHORT" and a["funding_apr"] > 0 and S["prefer_short_when_funding_positive"]:
+                note = f" (+funding {a['funding_apr']:.0f}% APR in your favour)"
+            if a["setup"] == "LONG" and a["funding_apr"] > 15:
+                note = f" (careful: paying {a['funding_apr']:.0f}% APR funding)"
+            if coin in open_coins:
+                note += " [already in a position - do NOT add]"
+            msg = (
+                f"SETUP {a['setup']} {coin} @ {a['px']:.5g}{note}\n"
+                f"  trend {a['trend']} | 4h RSI {a['rsi4h']:.0f}\n"
+                f"  stop {a['stop']:.5g} | target {a['target']:.5g} | RR {a['rr']:.1f}\n"
+                f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
+                f"  rules: limit entry (maker), stop placed BEFORE entry, no adds if red, close by day 7"
+            )
+            notif.send(msg, key=f"setup_{coin}_{a['setup']}", cooldown_s=12 * 3600)
+    tbl = " | ".join(
+        f"{r['coin']} {r['px']:.5g} {r['trend']} rsi{r['rsi4h']:.0f} f{r['funding_apr']:+.0f}%"
+        + (f" **{r['setup']}**" if r["setup"] else (f" ({r['rejected']})" if r.get("rejected") else ""))
+        for r in rows
+    )
+    log.info("scan: %s", tbl)
+    return rows
+
+
+def main():
+    setup_logging()
+    cfg = load_config()
+    inf = info()
+    notif = Notifier(cfg)
+    state = State(cfg["state_file"])
+    while True:
+        try:
+            run_once(cfg, inf, notif, state)
+        except Exception as e:  # noqa: BLE001
+            log.exception("scan loop error: %s", e)
+        time.sleep(cfg["scanner"]["interval_minutes"] * 60)
+
+
+if __name__ == "__main__":
+    main()
