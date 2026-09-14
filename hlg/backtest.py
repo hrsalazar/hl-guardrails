@@ -50,6 +50,13 @@ VARIANTS = {
                                  target=None, min_rr=0, max_days=21, trail_atr=3.0),
     "breakout_long_anytrend": dict(side="long", trend="any", rsi_max=100, level="breakout", stop_atr=2.0,
                                    target=None, min_rr=0, max_days=21, trail_atr=3.0),
+    # short side of the breakout rule (close below 20d low in a downtrend) and both sides together
+    "breakout_short": dict(side="short", trend="with", rsi_min=0, level="breakout", stop_atr=2.0,
+                           target=None, min_rr=0, max_days=21, trail_atr=3.0),
+    "breakout_short_anytrend": dict(side="short", trend="any", rsi_min=0, level="breakout", stop_atr=2.0,
+                                    target=None, min_rr=0, max_days=21, trail_atr=3.0),
+    "breakout_both": dict(side="both", trend="with", rsi_max=100, rsi_min=0, level="breakout", stop_atr=2.0,
+                          target=None, min_rr=0, max_days=21, trail_atr=3.0),
     # control: mirror of pullback_long on the short side (miner says this should be poor)
     "pullback_short": dict(side="short", trend="any", rsi_min=50, level="pullback", stop_atr=1.5,
                            target=None, min_rr=0, max_days=21, trail_atr=3.0),
