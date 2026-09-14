@@ -115,6 +115,8 @@ def main():
         "locked_until": state.get("lock_until", 0),
         "day_start_equity": state.get("day_start_equity"),
         "week_start_equity": state.get("week_start_equity"),
+        "day_pnl": state.get("day_pnl"),
+        "week_pnl": state.get("week_pnl"),
         "positions": positions,
         "alerts": alerts,
         "scan": rows,

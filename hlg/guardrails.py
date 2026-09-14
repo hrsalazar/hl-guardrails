@@ -143,19 +143,41 @@ def run_once(cfg, inf, notif, state, ex):
         return tot
 
     dk, wk = day_key(now), week_key(now)
-    if state.get("day_key") != dk:
-        state.set("day_key", dk)
-        state.set("day_start_equity", equity)
-        state.set("day_start_ts", now_ms)
     if state.get("week_key") != wk:
         state.set("week_key", wk)
-        state.set("week_start_equity", equity)
-        state.set("week_start_ts", now_ms)
         state.set("lock_until", 0)
-    day_pnl = equity - state.get("day_start_equity") - flows_since(state.get("day_start_ts"))
-    week_pnl = equity - state.get("week_start_equity") - flows_since(state.get("week_start_ts"))
-    day_base = max(state.get("day_start_equity"), 1e-9)
-    week_base = max(state.get("week_start_equity"), 1e-9)
+    state.set("day_key", dk)
+
+    # HL's own perp PnL series (already net of deposits/withdrawals/spot<->perp transfers,
+    # including flows the ledger endpoint does not report) differenced at the period start.
+    port = dict(inf.post("/info", {"type": "portfolio", "user": acct}))
+    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week0 = day0 - dt.timedelta(days=now.weekday())
+
+    def period_pnl(win, t0):
+        t0_ms = int(t0.timestamp() * 1000)
+        pnl, av = port[win]["pnlHistory"], port[win]["accountValueHistory"]
+        base = [(float(p), float(v)) for (t, p), (_, v) in zip(pnl, av) if t <= t0_ms]
+        p0, v0 = base[-1] if base else (float(pnl[0][1]), float(av[0][1]))
+        return float(pnl[-1][1]) - p0, v0
+
+    try:
+        day_pnl, day_base = period_pnl("perpDay", day0)
+        week_pnl, week_base = period_pnl("perpWeek", week0)
+    except (KeyError, IndexError) as e:
+        log.error("portfolio pnl unavailable (%s); falling back to equity snapshot", e)
+        if state.get("day_start_equity") is None or state.get("day_start_day") != dk:
+            state.set("day_start_equity", equity), state.set("day_start_ts", now_ms), state.set("day_start_day", dk)
+        if state.get("week_start_equity") is None or state.get("week_start_week") != wk:
+            state.set("week_start_equity", equity), state.set("week_start_ts", now_ms), state.set("week_start_week", wk)
+        day_pnl = equity - state.get("day_start_equity") - flows_since(state.get("day_start_ts"))
+        week_pnl = equity - state.get("week_start_equity") - flows_since(state.get("week_start_ts"))
+        day_base, week_base = state.get("day_start_equity"), state.get("week_start_equity")
+    day_base, week_base = max(day_base, 1e-9), max(week_base, 1e-9)
+    state.set("day_start_equity", day_base)
+    state.set("week_start_equity", week_base)
+    state.set("day_pnl", day_pnl)
+    state.set("week_pnl", week_pnl)
 
     positions = [p["position"] for p in st["assetPositions"]]
     problems = []

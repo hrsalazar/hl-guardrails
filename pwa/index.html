@@ -47,19 +47,26 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
 const $=s=>document.querySelector(s);
 const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 const cls=n=>n>=0?'pos':'neg';
+const hasNotif=typeof Notification!=='undefined';
+const pct=(n,b)=>b?` <small class="mut">(${n>=0?'+':''}${fmt(100*n/b,1)}%)</small>`:'';
 let lastKeys=new Set(JSON.parse(localStorage.getItem('seenKeys')||'[]'));
 
 async function load(){
+  try{await render()}catch(e){$('#gen').textContent='error: '+(e&&e.message||e)}
+}
+async function render(){
   const r=await fetch('alerts.json?t='+Date.now(),{cache:'no-store'});
   if(!r.ok){$('#gen').textContent='no data yet — first Actions run pending';return}
   const d=await r.json();
   const age=(Date.now()-Date.parse(d.generated))/60000;
   $('#gen').textContent=`${d.account.slice(0,6)}…${d.account.slice(-4)} · updated ${age.toFixed(0)} min ago`;
   const locked=d.locked_until&&d.locked_until>Date.now();
-  const dayPnl=d.day_start_equity?d.equity-d.day_start_equity:0;
+  const dayPnl=d.day_pnl!=null?d.day_pnl:(d.day_start_equity?d.equity-d.day_start_equity:0);
+  const weekPnl=d.week_pnl!=null?d.week_pnl:(d.week_start_equity?d.equity-d.week_start_equity:0);
   $('#kpis').innerHTML=`
    <div><div class="mut">Perp equity</div><div class="kpi">$${fmt(d.equity)}</div></div>
-   <div><div class="mut">Day PnL</div><div class="kpi ${cls(dayPnl)}">${dayPnl>=0?'+':''}${fmt(dayPnl)}</div></div>
+   <div><div class="mut">Day PnL <small>(UTC)</small></div><div class="kpi ${cls(dayPnl)}">${dayPnl>=0?'+':''}${fmt(dayPnl)}${pct(dayPnl,d.day_start_equity)}</div></div>
+   <div><div class="mut">Week PnL</div><div class="kpi ${cls(weekPnl)}">${weekPnl>=0?'+':''}${fmt(weekPnl)}${pct(weekPnl,d.week_start_equity)}</div></div>
    <div><div class="mut">Positions</div><div class="kpi">${d.positions.length}<span class="mut">/${d.rules.max_positions}</span></div></div>
    <div><div class="mut">Status</div><div class="kpi ${locked?'lock':'ok'}">${locked?'LOCKED until '+new Date(d.locked_until).toUTCString().slice(5,22):'trading allowed'}</div></div>`;
   const g=d.alerts.filter(a=>a.kind==='guardrail'),s=d.alerts.filter(a=>a.kind==='scanner');
@@ -71,7 +78,7 @@ async function load(){
     d.scan.map(r=>`<tr${r.watch?' style="opacity:.6"':''}><td>${r.coin}${r.watch?' <small>watch</small>':''}</td><td>${fmt(r.px,r.px<10?4:r.px<1000?2:0)}</td><td>${r.trend}</td><td>${fmt(r.rsi4h)}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td>${r.setup?`<b>${r.setup}</b> stop ${fmt(r.stop,4)}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:' trailing'}`:(r.rejected||(r.hi20?`below 20d high ${fmt(r.hi20,4)}`:'—'))}</td></tr>`).join('')+'</table>';
   // local notifications for keys not seen on this device
   const fresh=d.alerts.filter(a=>!lastKeys.has(a.key));
-  if(fresh.length&&Notification.permission==='granted'){
+  if(fresh.length&&hasNotif&&Notification.permission==='granted'){
     const reg=await navigator.serviceWorker?.getRegistration();
     const opts={body:fresh.map(a=>a.text.split('\n')[0]).join('\n').slice(0,300),icon:'icon-192.png',tag:'hlg'};
     reg?reg.showNotification(`HL guardrails: ${fresh.length} alert(s)`,opts):new Notification('HL guardrails',opts);
@@ -79,7 +86,8 @@ async function load(){
   d.alerts.forEach(a=>lastKeys.add(a.key));
   localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)));
 }
-$('#notif').onclick=async()=>{const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Notifications on':'Blocked';
+$('#notif').onclick=async()=>{if(!hasNotif){alert('Notifications are not available in this browser. On iPhone: open in Safari, Share -> Add to Home Screen, then launch from the icon.');return}
+  const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Notifications on':'Blocked';
   if(p==='granted'&&window.VAPID_PUBLIC_KEY)$('#push').disabled=false};
 function b64ToU8(b){const p='='.repeat((4-b.length%4)%4);const s=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(s,c=>c.charCodeAt(0))}
 $('#push').onclick=async()=>{
@@ -88,9 +96,10 @@ $('#push').onclick=async()=>{
   $('#sub').textContent=JSON.stringify(sub.toJSON());$('#pushbox').hidden=false;$('#push').textContent='Push subscribed';
 };
 $('#copy').onclick=()=>navigator.clipboard.writeText($('#sub').textContent);
-if(Notification.permission==='granted'){$('#notif').textContent='Notifications on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
+if(!hasNotif)$('#notif').textContent='Notifications n/a';
+if(hasNotif&&Notification.permission==='granted'){$('#notif').textContent='Notifications on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
 if(!window.VAPID_PUBLIC_KEY)$('#push').title='Set repo variable VAPID_PUBLIC_KEY to enable Web Push';
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 load();setInterval(load,5*60*1000);
 </script>
 </body>
