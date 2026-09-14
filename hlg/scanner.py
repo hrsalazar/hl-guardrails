@@ -1,7 +1,7 @@
 """Setup scanner.
 
 scanner.strategy = breakout (default, backtested: see hlg.backtest / README):
-  LONG only: daily EMA20 > EMA50 and the last COMPLETED daily close > prior 20-day high.
+  LONG only: EMA20 > EMA50 and the last COMPLETED close > prior 20-bar high, on scanner.timeframe (1d default, or 4h).
   stop = close - stop_atr*ATR14d, then trail trail_atr*ATR below the highest high; time stop max_hold_days.
   "forming" = price above the 20d high intraday but the daily candle has not closed yet (do not chase).
 scanner.strategy = pullback (legacy, tested negative in the backtest):
@@ -47,32 +47,34 @@ def atr(df, n=14):
 
 
 def analyse_breakout(inf, coin, S, ctx):
-    d = candles(inf, coin, "1d", 120)
+    tf = S.get("timeframe", "1d")  # 1d (backtested default) or 4h (faster, 20/50-bar windows on 4h bars)
+    d = candles(inf, coin, tf, 120 if tf == "1d" else 30)
     if len(d) < 55:
         return None
-    live, done = d.iloc[-1], d.iloc[:-1]  # last row is the open (incomplete) daily candle
+    live, done = d.iloc[-1], d.iloc[:-1]  # last row is the open (incomplete) candle
     k = done.iloc[-1]
     e20, e50 = ema(done.c, 20).iloc[-1], ema(done.c, 50).iloc[-1]
     a = atr(done).iloc[-1]
-    hi20 = done.h.iloc[-21:-1].max()  # 20-day high BEFORE the last completed candle
+    hi20 = done.h.iloc[-21:-1].max()  # 20-bar high BEFORE the last completed candle
     hi20_live = done.h.iloc[-20:].max()  # level the live candle has to close above
     r = rsi(done.c).iloc[-1]
     funding_apr = fnum(ctx["funding"]) * 24 * 365 * 100
     px = live.c
     out = {"coin": coin, "px": px, "rsi4h": r, "trend": "UP" if e20 > e50 else "DOWN", "funding_apr": funding_apr,
-           "setup": None, "hi20": hi20_live, "atr": a}
+           "setup": None, "hi20": hi20_live, "atr": a, "tf": tf}
     if e20 <= e50:
         out["rejected"] = "trend down"
         return out
     if k.c > hi20:
         stop = k.c - S["stop_atr"] * a
-        out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k.c, signal_day=str(k.t.date()))
+        sig = str(k.t.date()) if tf == "1d" else k.t.strftime("%Y-%m-%d %H:%M")
+        out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k.c, signal_day=sig)
         # entry is the open after the signal close; if price already ran > 1 ATR beyond it, don't chase
         if px > k.c + a:
             out["rejected"] = f"ran {((px / k.c) - 1) * 100:.1f}% since signal close, wait for next setup"
             out["setup"] = None
     elif px > hi20_live:
-        out["rejected"] = f"forming: above 20d high {hi20_live:.5g}, needs daily close"
+        out["rejected"] = f"forming: above 20-bar high {hi20_live:.5g}, needs {tf} close"
     return out
 
 
@@ -150,12 +152,12 @@ def run_once(cfg, inf, notif, state):
                 note += " [already in a position - do NOT add]"
             msg = (
                 f"BREAKOUT LONG {coin} @ {a['px']:.5g}{note}\n"
-                f"  daily close {a['signal_close']:.5g} on {a['signal_day']} > 20d high | trend UP | daily RSI {a['rsi4h']:.0f}\n"
+                f"  {a['tf']} close {a['signal_close']:.5g} on {a['signal_day']} > 20-bar high | trend UP | {a['tf']} RSI {a['rsi4h']:.0f}\n"
                 f"  stop {a['stop']:.5g} ({S['stop_atr']}x ATR) | trail {S['trail_atr']}x ATR ({S['trail_atr'] * a['atr']:.5g}) below highest high | time stop day {R['max_hold_days']}\n"
                 f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
                 f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
             )
-            notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600)
+            notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600)
         elif a["setup"]:
             dist = abs(a["px"] - a["stop"])
             size = risk_usd / dist

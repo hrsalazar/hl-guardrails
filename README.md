@@ -139,3 +139,19 @@ trades that run to the 21-day time stop. The legacy pullback rule stays availabl
 `scanner.watch_coins` (default: HL tradfi perps xyz:CL, xyz:GOLD, xyz:XYZ100) are scanned and shown on the dashboard
 for information only - no alerts. The same breakout rule tested PF ~1.2 on them, but with only ~9 months of
 history and market-hours gaps; revisit with `hlg.backtest --coins xyz:...` once there is a year+ of data.
+
+### Timeframe
+
+`scanner.timeframe` selects the bar the breakout rule runs on: `1d` (default) or `4h`. Backtest on the same
+period (2024-06 -> now, 15 coins, `python -m hlg.backtest --interval 4h --native`):
+
+| timeframe | trades | PF | total | max DD | avg hold |
+|---|---:|---:|---:|---:|---:|
+| 1d | 73 | 2.14 | +60% | -13% | 12 d |
+| 4h (20/50-bar windows) | 388 | 1.33 | +141% | -40% | 2.6 d |
+| 4h (day-equivalent windows) | 252 | 1.25 | +52% | -30% | 1.4 d |
+
+4h trades ~5x more often and compounds faster in the simulation, but with a third of the edge per trade (PF 1.3 vs 2.1),
+three times the drawdown, and no slippage modelled - on a 388-trade sample that matters. Daily stays the default; use
+4h only if you accept the drawdown profile. Hyperliquid serves ~5000 candles per interval, so the 4h test covers
+~2.3 years vs 3.3 for daily.

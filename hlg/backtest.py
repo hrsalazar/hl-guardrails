@@ -22,7 +22,10 @@ DEF = dict(
     coins=["BTC", "ETH", "SOL", "HYPE", "XRP", "NEAR", "DOGE", "LINK", "UNI", "AAVE", "SUI", "AVAX", "TON", "PENDLE", "ZEC"],
     start="2023-06-01", equity0=1000.0, risk_pct=1.5, max_positions=3, max_lev=3.0,
     maker_fee=0.00015, taker_fee=0.00045, cache_dir="miner_cache", out_dir="backtest_out",
+    interval="1d",  # 1d | 4h | 1h ; indicator horizons stay in *days* (scaled to bars) unless native=True
+    native=False,
 )
+INTERVAL_H = {"1d": 24, "4h": 4, "1h": 1}
 
 VARIANTS = {
     # current scanner rule: trend-following pullback, both sides, target 20d extreme, 7d time stop
@@ -65,26 +68,37 @@ def post(body, retries=10):
     raise RuntimeError("rate limited")
 
 
-def daily(coin, cache):
-    p = cache / f"bt_1d_{coin}.json"
+def bars(coin, cache, interval="1d"):
+    p = cache / f"bt_{interval}_{coin}.json"
     if p.exists():
         d = json.loads(p.read_text())
     else:
-        d = post({"type": "candleSnapshot", "req": {"coin": coin, "interval": "1d", "startTime": 0, "endTime": int(time.time() * 1000)}})
+        d, end = [], int(time.time() * 1000)
+        while True:  # API returns the last ~5000 candles before endTime -> page backwards
+            b = post({"type": "candleSnapshot", "req": {"coin": coin, "interval": interval, "startTime": 0, "endTime": end}})
+            b = [x for x in b if x["t"] < (d[0]["t"] if d else end + 1)]
+            if not b:
+                break
+            d = b + d
+            if len(b) < 4000:
+                break
+            end = d[0]["t"] - 1
+            time.sleep(0.2)
         p.write_text(json.dumps(d))
     if not d:
         return None
+    step = f"{INTERVAL_H[interval]}h"
     df = pd.DataFrame(d)
-    df["t"] = pd.to_datetime(df["t"], unit="ms", utc=True).dt.floor("D")
+    df["t"] = pd.to_datetime(df["t"], unit="ms", utc=True).dt.floor(step)
     for c in "ohlcv":
         df[c] = df[c].astype(float)
     df = df.set_index("t").sort_index()
-    df = df[df.index < pd.Timestamp.utcnow().floor("D")]  # drop the live (incomplete) candle
+    df = df[df.index < pd.Timestamp.utcnow().floor(step)]  # drop the live (incomplete) candle
     return df
 
 
-def funding(coin, start_ms, cache):
-    """Hourly funding rates -> daily sum (fraction of notional paid by longs)."""
+def funding(coin, start_ms, cache, interval="1d"):
+    """Hourly funding rates -> per-bar sum (fraction of notional paid by longs)."""
     p = cache / f"bt_fund_{coin}.json"
     if p.exists():
         d = json.loads(p.read_text())
@@ -103,15 +117,16 @@ def funding(coin, start_ms, cache):
     if not d:
         return pd.Series(dtype=float)
     s = pd.DataFrame(d)
-    s["t"] = pd.to_datetime(s.time, unit="ms", utc=True).dt.floor("D")
+    s["t"] = pd.to_datetime(s.time, unit="ms", utc=True).dt.floor(f"{INTERVAL_H[interval]}h")
     s["r"] = s.fundingRate.astype(float)
     return s.groupby("t").r.sum()
 
 
-def features(df):
+def features(df, k=1):
+    """k = bars per day; indicator windows are the daily-system windows x k (k=1 -> native bars)."""
     df = df.copy()
-    df["ema20"], df["ema50"], df["rsi"], df["atr"] = ema(df.c, 20), ema(df.c, 50), rsi(df.c), atr(df)
-    df["hi20"], df["lo20"] = df.h.rolling(20).max().shift(1), df.l.rolling(20).min().shift(1)
+    df["ema20"], df["ema50"], df["rsi"], df["atr"] = ema(df.c, 20 * k), ema(df.c, 50 * k), rsi(df.c, 14 * k), atr(df, 14 * k)
+    df["hi20"], df["lo20"] = df.h.rolling(20 * k).max().shift(1), df.l.rolling(20 * k).min().shift(1)
     return df
 
 
@@ -198,7 +213,7 @@ def run(V, data, fund, P):
                     exit_px, why = max(k.o, p["stop"]), "stop"
                 elif p["tgt"] and k.l <= p["tgt"]:
                     exit_px, why = min(k.o, p["tgt"]), "target"
-            if exit_px is None and (d - p["start"]).days >= V["max_days"]:
+            if exit_px is None and (d - p["start"]) >= pd.Timedelta(days=V["max_days"]):
                 exit_px, why = k.c, "time"
             if exit_px is None and V["trail_atr"]:
                 p["best"] = max(p["best"], k.h) if sgn > 0 else min(p["best"], k.l)
@@ -210,7 +225,7 @@ def run(V, data, fund, P):
                 net = pnl - fee - p["fee"] + p["fund"]
                 eq += pnl - fee + p["fund"]
                 trades.append(dict(coin=coin, side=p["side"], entry=p["entry"], exit=exit_px, start=p["start"], end=d,
-                                   days=(d - p["start"]).days, why=why, gross=pnl, fees=fee + p["fee"], fund=p["fund"],
+                                   days=(d - p["start"]).total_seconds() / 86400, why=why, gross=pnl, fees=fee + p["fee"], fund=p["fund"],
                                    net=net, net_pct=net / (eq - net) * 100, notional=p["sz"] * p["entry"]))
                 del open_pos[coin]
         # 3) mark to market + signals at close
@@ -236,7 +251,7 @@ def stats(T, C, dd, P):
     yrs = (C.index[-1] - C.index[0]).days / 365.25
     g = T.net[T.net > 0].sum()
     l = -T.net[T.net < 0].sum()
-    daily_ret = C.pct_change().dropna()
+    daily_ret = C.resample("1D").last().dropna().pct_change().dropna()
     return dict(trades=len(T), win_rate=(T.net > 0).mean(), pf=g / max(l, 1e-9),
                 avg_win_pct=T.net_pct[T.net > 0].mean(), avg_loss_pct=T.net_pct[T.net < 0].mean(),
                 net=C.iloc[-1] - P["equity0"], total_return_pct=(C.iloc[-1] / P["equity0"] - 1) * 100,
@@ -258,28 +273,41 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--variant", nargs="*")
     ap.add_argument("--coins", nargs="*")
+    ap.add_argument("--interval", choices=list(INTERVAL_H))
+    ap.add_argument("--native", action="store_true", help="use 20/50/14-bar windows on the chosen interval instead of day-equivalent windows")
     a = ap.parse_args()
     cfg = load_config(a.config) if Path(a.config).exists() else {}
     P = {**DEF, **cfg.get("backtest", {})}
     if a.coins:
         P["coins"] = a.coins
+    if a.interval:
+        P["interval"] = a.interval
+    if a.native:
+        P["native"] = True
+    iv = P["interval"]
+    k = 1 if P["native"] else 24 // INTERVAL_H[iv]
+    tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
     cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    if iv != "1d":
+        out = out / tag
+        out.mkdir(exist_ok=True)
     start_ms = int(pd.Timestamp(P["start"], tz="UTC").timestamp() * 1000)
 
     data, fund = {}, {}
     for c in P["coins"]:
-        df = daily(c, cache)
-        if df is None or len(df) < 80:
+        df = bars(c, cache, iv)
+        if df is None or len(df) < 80 * k:
             log.warning("%s: no/short history, skipped", c)
             continue
-        data[c] = features(df)
-        fund[c] = funding(c, start_ms, cache)
-        log.info("%s: %d daily bars from %s, %d funding days", c, len(df), df.index[0].date(), len(fund[c]))
+        data[c] = features(df, k)
+        fund[c] = funding(c, start_ms, cache, iv)
+        log.info("%s: %d %s bars from %s, %d funding bars", c, len(df), iv, df.index[0].date(), len(fund[c]))
 
     R = [f"# Backtest report\n\nCoins: {', '.join(data)}. Start {P['start']}, equity ${P['equity0']:,.0f}, risk {P['risk_pct']}%/trade, "
          f"max {P['max_positions']} positions, notional cap {P['max_lev']}x equity, maker entry {P['maker_fee']*100:.3f}% / taker exit "
-         f"{P['taker_fee']*100:.3f}%, real hourly funding. Daily bars: signal at close, fill next open, stop on low/high (gap -> open).\n"]
+         f"{P['taker_fee']*100:.3f}%, real hourly funding. {iv} bars (indicator windows {'native' if k == 1 else f'x{k} = day-equivalent'}): "
+         f"signal at close, fill next open, stop on low/high (gap -> open).\n"]
     summ = {}
     for name, V in VARIANTS.items():
         if a.variant and name not in a.variant:
@@ -304,7 +332,7 @@ def main():
     if not S.empty:
         cols = [c for c in ["trades", "win_rate", "pf", "total_return_pct", "cagr_pct", "max_dd_pct", "sharpe", "avg_days"] if c in S]
         R.insert(1, "## Summary\n\n" + S[cols].astype(float).round(2).to_markdown() + "\n")
-    R.append("\nCaveats: daily bars (intra-day stop-outs that recovered by the close are counted as stops only if the low touched — "
+    R.append("\nCaveats: bar-based (intra-bar stop-outs that recovered by the close are counted as stops only if the low touched — "
              "realistic — but entries are next-day open, not intraday); no slippage; HL history only (most alts start 2023-2024); "
              "parameters were chosen from the miner, not optimised on this data, but the coin list overlaps with the miner sample.")
     (out / "report.md").write_text("\n".join(R))
