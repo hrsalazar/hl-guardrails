@@ -111,3 +111,27 @@ Read `w_pos` (share of wallets for which a setup is net positive) before `pf`: a
 one wallet made money on is noise. Output in `miner_out/report.md`, `wallets.csv`, `trades.csv`.
 Caveats: survivorship bias (winners only), leaderboard PnL includes unrealized, 6-month window,
 daily-candle context only. Hypothesis generation, not a backtest.
+
+## Backtest (`hlg.backtest`)
+
+```bash
+python -m hlg.backtest            # all variants, 15 coins, 2023-06 -> now, real funding, fees
+```
+
+Daily-bar portfolio backtest (signal at close, fill next open, stop on low/high, 1.5% risk, max 3
+positions, 3x notional cap, maker entry / taker exit, real hourly funding). Results 2023-06 -> 2026-09:
+
+| variant | trades | PF | total | max DD |
+|---|---|---|---|---|
+| scanner pullback rule (legacy, both sides, 7d) | 319 | 0.85 | -29% | -38% |
+| long pullback, 21d + 3 ATR trail | 289 | 1.07 | +22% | -50% |
+| long pullback, 7d | 410 | 0.88 | -29% | -46% |
+| **long breakout of 20d high in uptrend, 2 ATR stop, 3 ATR trail, 21d** | 126 | **1.67** | **+67%** | **-18%** |
+| breakout sensitivity (45d / 2 ATR trail / 1.5 ATR stop / any trend) | 112-176 | 1.45-1.86 | +43..+116% | -19..-23% |
+| short pullback (control) | 310 | 0.84 | -28% | -62% |
+
+The breakout rule was positive in every year (2023-2026) and on 11 of 15 coins, with all
+sensitivity variants positive, so it is now the default `scanner.strategy: breakout`. It is a
+36% win-rate / 3:1 payoff system: most trades stop out small, the profit comes from the ~20% of
+trades that run to the 21-day time stop. The legacy pullback rule stays available as
+`scanner.strategy: pullback` but tested negative. `rules.max_hold_days` was raised to 21 to match.

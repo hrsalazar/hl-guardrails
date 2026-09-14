@@ -13,15 +13,18 @@ rules:
   max_same_direction: 2
   max_gross_exposure_x: 3.0      # sum(|notional|) / equity
   max_leverage: 5
-  max_hold_days: 7
+  max_hold_days: 21
   daily_loss_limit_pct: 3.0      # realized+unrealized vs start-of-day equity
   weekly_loss_limit_pct: 6.0
-  allowed_coins: [BTC, ETH, SOL, NEAR, HYPE, XRP]
+  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]
   no_add_underwater: true
 
 scanner:
-  coins: [BTC, ETH, SOL, NEAR, HYPE, XRP]
+  strategy: breakout   # breakout (backtested, long-only) | pullback (legacy, tested negative)
+  coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]
   interval_minutes: 30
+  stop_atr: 2.0
+  trail_atr: 3.0
   # 3-7d swing: daily trend (EMA20 vs EMA50) + 4h pullback (RSI) + proximity to 20d extreme
   rsi_long_max: 35
   rsi_short_min: 65

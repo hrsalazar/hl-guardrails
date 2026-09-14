@@ -1,6 +1,10 @@
-"""Setup scanner for the 3-7 day swing style that was profitable in the wallet history.
+"""Setup scanner.
 
-Setup definition (per coin):
+scanner.strategy = breakout (default, backtested: see hlg.backtest / README):
+  LONG only: daily EMA20 > EMA50 and the last COMPLETED daily close > prior 20-day high.
+  stop = close - stop_atr*ATR14d, then trail trail_atr*ATR below the highest high; time stop max_hold_days.
+  "forming" = price above the 20d high intraday but the daily candle has not closed yet (do not chase).
+scanner.strategy = pullback (legacy, tested negative in the backtest):
   LONG : daily EMA20 > EMA50, 4h RSI14 <= rsi_long_max, price within level_proximity_pct of 20d low or daily EMA20,
          stop = min(4h swing low, px - 1.5*ATR14d), target = 20d high, RR >= min_rr
   SHORT: mirror. Preferred when funding is positive (short side collects funding).
@@ -41,7 +45,39 @@ def atr(df, n=14):
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
+def analyse_breakout(inf, coin, S, ctx):
+    d = candles(inf, coin, "1d", 120)
+    if len(d) < 55:
+        return None
+    live, done = d.iloc[-1], d.iloc[:-1]  # last row is the open (incomplete) daily candle
+    k = done.iloc[-1]
+    e20, e50 = ema(done.c, 20).iloc[-1], ema(done.c, 50).iloc[-1]
+    a = atr(done).iloc[-1]
+    hi20 = done.h.iloc[-21:-1].max()  # 20-day high BEFORE the last completed candle
+    hi20_live = done.h.iloc[-20:].max()  # level the live candle has to close above
+    r = rsi(done.c).iloc[-1]
+    funding_apr = fnum(ctx["funding"]) * 24 * 365 * 100
+    px = live.c
+    out = {"coin": coin, "px": px, "rsi4h": r, "trend": "UP" if e20 > e50 else "DOWN", "funding_apr": funding_apr,
+           "setup": None, "hi20": hi20_live, "atr": a}
+    if e20 <= e50:
+        out["rejected"] = "trend down"
+        return out
+    if k.c > hi20:
+        stop = k.c - S["stop_atr"] * a
+        out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k.c, signal_day=str(k.t.date()))
+        # entry is the open after the signal close; if price already ran > 1 ATR beyond it, don't chase
+        if px > k.c + a:
+            out["rejected"] = f"ran {((px / k.c) - 1) * 100:.1f}% since signal close, wait for next setup"
+            out["setup"] = None
+    elif px > hi20_live:
+        out["rejected"] = f"forming: above 20d high {hi20_live:.5g}, needs daily close"
+    return out
+
+
 def analyse(inf, coin, S, ctx):
+    if S.get("strategy", "breakout") == "breakout":
+        return analyse_breakout(inf, coin, S, ctx)
     d = candles(inf, coin, "1d", 90)
     h4 = candles(inf, coin, "4h", 30)
     if len(d) < 55 or len(h4) < 30:
@@ -91,7 +127,21 @@ def run_once(cfg, inf, notif, state):
         if abs(a["funding_apr"]) > S["funding_carry_alert_apr"]:
             side = "short perp / long spot" if a["funding_apr"] > 0 else "long perp / short spot"
             notif.send(f"FUNDING CARRY {coin}: {a['funding_apr']:+.0f}% APR -> {side}", key=f"fund_{coin}_{int(a['funding_apr'] // 10)}", cooldown_s=6 * 3600)
-        if a["setup"]:
+        if a["setup"] and a.get("rr") is None:  # breakout strategy
+            dist = abs(a["px"] - a["stop"])
+            size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
+            note = f" (paying {a['funding_apr']:.0f}% APR funding)" if a["funding_apr"] > 15 else ""
+            if coin in open_coins:
+                note += " [already in a position - do NOT add]"
+            msg = (
+                f"BREAKOUT LONG {coin} @ {a['px']:.5g}{note}\n"
+                f"  daily close {a['signal_close']:.5g} on {a['signal_day']} > 20d high | trend UP | daily RSI {a['rsi4h']:.0f}\n"
+                f"  stop {a['stop']:.5g} ({S['stop_atr']}x ATR) | trail {S['trail_atr']}x ATR ({S['trail_atr'] * a['atr']:.5g}) below highest high | time stop day {R['max_hold_days']}\n"
+                f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
+                f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
+            )
+            notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600)
+        elif a["setup"]:
             dist = abs(a["px"] - a["stop"])
             size = risk_usd / dist
             note = ""

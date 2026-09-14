@@ -6,3 +6,4 @@ __pycache__/
 site/
 miner_cache/
 miner_out/
+backtest_out/
