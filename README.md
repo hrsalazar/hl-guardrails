@@ -155,3 +155,10 @@ period (2024-06 -> now, 15 coins, `python -m hlg.backtest --interval 4h --native
 three times the drawdown, and no slippage modelled - on a 388-trade sample that matters. Daily stays the default; use
 4h only if you accept the drawdown profile. Hyperliquid serves ~5000 candles per interval, so the 4h test covers
 ~2.3 years vs 3.3 for daily.
+
+### Regime analysis (`python -m hlg.regime`)
+
+Tags every day with a BTC regime (bull/bear vs EMA200, range/trending by 20d span vs ATR, breadth, drawdown) and
+attributes each backtest trade to the regime on its signal day, for breakout vs the pullback variants. Also runs an
+out-of-sample regime-switch test (pick the best variant per regime on the first half, apply on the second half).
+Output: `backtest_out/regime_report.md`, `backtest_out/regimes.csv`.
