@@ -89,3 +89,25 @@ scanner in alert mode for 6–8 weeks and log the outcomes before sizing up.
 - Enforce actions are market orders with 3% slippage cap on stops; on illiquid coins widen/adjust.
 - Loss limits use perp `accountValue`; spot balances are ignored by design (keep them out of reach).
 - Polling is 60 s: a fast move can exceed the risk cap before the stop is placed. Place stops yourself at entry; the bot is the safety net.
+
+## Setup miner (`hlg.miner`)
+
+Finds *discretionary winners with capital similar to yours* on the Hyperliquid leaderboard and
+reports which setup fingerprints are profitable across many of them.
+
+```bash
+python -m hlg.miner              # ~10-20 min first run (fills are cached in miner_cache/)
+python -m hlg.miner --wallets 40 # quicker sample
+```
+
+Pipeline: leaderboard (45k wallets) → equity $500–50k with positive month & all-time PnL →
+fetch 180d fills → reconstruct round trips → drop market makers (maker share > 60%), HFT (> 15
+trades/day), scalpers (median hold < 2h), TWAP bots, hedged farmers (overlapping long/short) and
+wallets not actually profitable on closed trades (PF < 1.2) → attach daily-candle context at entry
+(EMA20/50 trend, RSI14, distance to 20d high/low, 5d momentum) → aggregate by holding period, size,
+side × trend, entry level, adds behaviour, coin and combined fingerprints.
+
+Read `w_pos` (share of wallets for which a setup is net positive) before `pf`: a setup that only
+one wallet made money on is noise. Output in `miner_out/report.md`, `wallets.csv`, `trades.csv`.
+Caveats: survivorship bias (winners only), leaderboard PnL includes unrealized, 6-month window,
+daily-candle context only. Hypothesis generation, not a backtest.

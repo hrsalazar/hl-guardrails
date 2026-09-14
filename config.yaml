@@ -32,3 +32,16 @@ scanner:
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars
+
+# python -m hlg.miner : mine setups from similar-capital discretionary winners on the leaderboard
+miner:
+  equity_min: 500
+  equity_max: 50000
+  windows_positive: [month, allTime]
+  wallets: 120            # kept wallets target (3x this many are screened)
+  lookback_days: 180
+  min_trades: 40
+  max_trades_per_day: 15  # above -> HFT/bot
+  max_maker_share: 0.6    # above -> market maker
+  min_median_hold_h: 2    # below -> scalper
+  min_wallets_per_setup: 5

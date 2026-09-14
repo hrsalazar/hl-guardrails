@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .env
 site/
+miner_cache/
+miner_out/

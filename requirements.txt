@@ -5,3 +5,4 @@ numpy
 pyyaml
 pywebpush>=2
 cryptography
+tabulate
