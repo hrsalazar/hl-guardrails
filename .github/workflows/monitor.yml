@@ -45,6 +45,8 @@ jobs:
             echo "window.VAPID_PUBLIC_KEY='${{ vars.VAPID_PUBLIC_KEY }}';" > site/config.js
           fi
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
