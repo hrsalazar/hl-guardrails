@@ -135,3 +135,7 @@ sensitivity variants positive, so it is now the default `scanner.strategy: break
 36% win-rate / 3:1 payoff system: most trades stop out small, the profit comes from the ~20% of
 trades that run to the 21-day time stop. The legacy pullback rule stays available as
 `scanner.strategy: pullback` but tested negative. `rules.max_hold_days` was raised to 21 to match.
+
+`scanner.watch_coins` (default: HL tradfi perps xyz:CL, xyz:GOLD, xyz:XYZ100) are scanned and shown on the dashboard
+for information only - no alerts. The same breakout rule tested PF ~1.2 on them, but with only ~9 months of
+history and market-hours gaps; revisit with `hlg.backtest --coins xyz:...` once there is a year+ of data.

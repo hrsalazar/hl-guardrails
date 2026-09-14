@@ -21,7 +21,8 @@ from .common import Notifier, State, fnum, info, load_config, log, setup_logging
 
 def candles(inf, coin, interval, days):
     now = int(time.time() * 1000)
-    c = inf.candles_snapshot(coin, interval, now - days * 86400_000, now)
+    c = inf.post("/info", {"type": "candleSnapshot", "req": {"coin": coin, "interval": interval,
+                                                             "startTime": now - days * 86400_000, "endTime": now}})
     df = pd.DataFrame(c)
     for k in "ohlcv":
         df[k] = df[k].astype(float)
@@ -110,18 +111,32 @@ def run_once(cfg, inf, notif, state):
     S, R = cfg["scanner"], cfg["rules"]
     meta, ctxs = inf.meta_and_asset_ctxs()
     ctx = {u["name"]: c for u, c in zip(meta["universe"], ctxs)}
+    watch = S.get("watch_coins", [])
+    for dex in {c.split(":")[0] for c in watch if ":" in c}:
+        try:
+            m2, c2 = inf.post("/info", {"type": "metaAndAssetCtxs", "dex": dex})
+            ctx.update({u["name"]: c for u, c in zip(m2["universe"], c2)})
+        except Exception as e:  # noqa: BLE001
+            log.error("dex %s ctx failed: %s", dex, e)
     st = inf.user_state(cfg["account"])
     equity = fnum(st["marginSummary"]["accountValue"])
     risk_usd = equity * R["risk_per_trade_pct"] / 100
     open_coins = {p["position"]["coin"] for p in st["assetPositions"]}
     rows = []
-    for coin in S["coins"]:
+    for coin in list(S["coins"]) + list(watch):
         try:
-            a = analyse(inf, coin, S, ctx[coin])
+            a = analyse(inf, coin, S, ctx.get(coin, {"funding": 0}))
         except Exception as e:  # noqa: BLE001
             log.error("%s scan failed: %s", coin, e)
             continue
         if not a:
+            continue
+        if coin in watch:  # informational only: shown on the dashboard, never alerted
+            a["watch"] = True
+            if a["setup"]:
+                a["rejected"] = f"watch-only: breakout signal (stop {a['stop']:.5g})"
+                a["setup"] = None
+            rows.append(a)
             continue
         rows.append(a)
         if abs(a["funding_apr"]) > S["funding_carry_alert_apr"]:
