@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>HL Guardrails</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#0f1115;--card:#171a21;--fg:#e6e6e6;--mut:#8b93a7;--red:#ff5c5c;--grn:#3ddc84;--yel:#ffd166;--blu:#5aa9ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #222}
+h1{font-size:17px;margin:0}small{color:var(--mut)}
+main{padding:12px 16px;max-width:900px;margin:0 auto}
+.card{background:var(--card);border-radius:10px;padding:12px 14px;margin:10px 0}
+.row{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.kpi{font-size:22px;font-weight:600}.mut{color:var(--mut)}
+.alert{border-left:4px solid var(--red);padding:8px 10px;margin:8px 0;background:#1d1417;border-radius:6px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.alert.scanner{border-color:var(--blu);background:#141a24}.alert .new{color:var(--yel);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;text-align:right;border-bottom:1px solid #22262f}td:first-child,th:first-child{text-align:left}
+.pos{color:var(--grn)}.neg{color:var(--red)}
+button{background:#262b36;color:var(--fg);border:1px solid #333;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}button:disabled{opacity:.5}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#262b36}
+.ok{color:var(--grn)}.lock{color:var(--red);font-weight:600}
+pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>HL Guardrails</h1><small id="gen">loading…</small></div>
+  <div class="row"><button id="notif">Enable notifications</button><button id="push" disabled>Enable push</button></div>
+</header>
+<main>
+  <div class="card row" id="kpis"></div>
+  <div class="card"><h3 style="margin:0 0 6px">Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></div>
+  <div class="card"><h3 style="margin:0 0 6px">Positions</h3><div id="positions"></div></div>
+  <div class="card"><h3 style="margin:0 0 6px">Scanner</h3><div id="scan"></div></div>
+  <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
+    <p class="mut">Copy this JSON into the repo secret <code>PUSH_SUBSCRIPTIONS</code> (as a list to add several devices). Actions will then push to this device even when the page is closed.</p>
+    <pre id="sub"></pre><button id="copy">Copy</button></div>
+  <p class="mut">Data refreshes every 15 min via GitHub Actions. Alert mode only — nothing here places orders.</p>
+</main>
+<script src="config.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
+const cls=n=>n>=0?'pos':'neg';
+let lastKeys=new Set(JSON.parse(localStorage.getItem('seenKeys')||'[]'));
+
+async function load(){
+  const r=await fetch('alerts.json?t='+Date.now(),{cache:'no-store'});
+  if(!r.ok){$('#gen').textContent='no data yet — first Actions run pending';return}
+  const d=await r.json();
+  const age=(Date.now()-Date.parse(d.generated))/60000;
+  $('#gen').textContent=`${d.account.slice(0,6)}…${d.account.slice(-4)} · updated ${age.toFixed(0)} min ago`;
+  const locked=d.locked_until&&d.locked_until>Date.now();
+  const dayPnl=d.day_start_equity?d.equity-d.day_start_equity:0;
+  $('#kpis').innerHTML=`
+   <div><div class="mut">Perp equity</div><div class="kpi">$${fmt(d.equity)}</div></div>
+   <div><div class="mut">Day PnL</div><div class="kpi ${cls(dayPnl)}">${dayPnl>=0?'+':''}${fmt(dayPnl)}</div></div>
+   <div><div class="mut">Positions</div><div class="kpi">${d.positions.length}<span class="mut">/${d.rules.max_positions}</span></div></div>
+   <div><div class="mut">Status</div><div class="kpi ${locked?'lock':'ok'}">${locked?'LOCKED until '+new Date(d.locked_until).toUTCString().slice(5,22):'trading allowed'}</div></div>`;
+  const g=d.alerts.filter(a=>a.kind==='guardrail'),s=d.alerts.filter(a=>a.kind==='scanner');
+  $('#ncount').textContent=`${g.length} guardrail · ${s.length} scanner`;
+  $('#alerts').innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.kind}">${a.new?'<span class="new">NEW </span>':''}${a.text.replace(/</g,'&lt;')}</div>`).join(''):'<div class="ok">All rules satisfied.</div>';
+  $('#positions').innerHTML=d.positions.length?`<table><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Notional</th><th>uPnL</th><th>Lev</th><th>Liq</th></tr>`+
+    d.positions.map(p=>`<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${Math.abs(p.szi)}</td><td>${p.entryPx}</td><td>$${fmt(p.positionValue)}</td><td class="${cls(p.unrealizedPnl)}">${fmt(p.unrealizedPnl)}</td><td>${p.leverage}x</td><td>${p.liquidationPx?fmt(p.liquidationPx,2):'-'}</td></tr>`).join('')+'</table>':'<span class="mut">flat</span>';
+  $('#scan').innerHTML=`<table><tr><th>Coin</th><th>Price</th><th>Trend</th><th>4h RSI</th><th>Funding APR</th><th>Setup</th></tr>`+
+    d.scan.map(r=>`<tr><td>${r.coin}</td><td>${fmt(r.px,r.px<10?4:r.px<1000?2:0)}</td><td>${r.trend}</td><td>${fmt(r.rsi4h)}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td>${r.setup?`<b>${r.setup}</b> stop ${fmt(r.stop,4)} tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:(r.rejected||'—')}</td></tr>`).join('')+'</table>';
+  // local notifications for keys not seen on this device
+  const fresh=d.alerts.filter(a=>!lastKeys.has(a.key));
+  if(fresh.length&&Notification.permission==='granted'){
+    const reg=await navigator.serviceWorker?.getRegistration();
+    const opts={body:fresh.map(a=>a.text.split('\n')[0]).join('\n').slice(0,300),icon:'icon-192.png',tag:'hlg'};
+    reg?reg.showNotification(`HL guardrails: ${fresh.length} alert(s)`,opts):new Notification('HL guardrails',opts);
+  }
+  d.alerts.forEach(a=>lastKeys.add(a.key));
+  localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)));
+}
+$('#notif').onclick=async()=>{const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Notifications on':'Blocked';
+  if(p==='granted'&&window.VAPID_PUBLIC_KEY)$('#push').disabled=false};
+function b64ToU8(b){const p='='.repeat((4-b.length%4)%4);const s=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(s,c=>c.charCodeAt(0))}
+$('#push').onclick=async()=>{
+  const reg=await navigator.serviceWorker.ready;
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
+  $('#sub').textContent=JSON.stringify(sub.toJSON());$('#pushbox').hidden=false;$('#push').textContent='Push subscribed';
+};
+$('#copy').onclick=()=>navigator.clipboard.writeText($('#sub').textContent);
+if(Notification.permission==='granted'){$('#notif').textContent='Notifications on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
+if(!window.VAPID_PUBLIC_KEY)$('#push').title='Set repo variable VAPID_PUBLIC_KEY to enable Web Push';
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+load();setInterval(load,5*60*1000);
+</script>
+</body>
+</html>

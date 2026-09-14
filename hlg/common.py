@@ -24,9 +24,11 @@ class Notifier:
         self.token = os.environ.get("TELEGRAM_BOT_TOKEN")
         self.chat = os.environ.get("TELEGRAM_CHAT_ID")
         self._last = {}
+        self.collected = {}
 
     def send(self, text, key=None, cooldown_s=3600):
-        """Send an alert; identical `key` is suppressed for cooldown_s."""
+        """Send an alert; identical `key` is suppressed for cooldown_s. All alerts are kept in `collected`."""
+        self.collected[key or text] = text
         now = time.time()
         if key and now - self._last.get(key, 0) < cooldown_s:
             return

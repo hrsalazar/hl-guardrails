@@ -3,3 +3,5 @@ requests
 pandas
 numpy
 pyyaml
+pywebpush>=2
+cryptography

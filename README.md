@@ -38,6 +38,25 @@ Telegram: create a bot with @BotFather, get your chat id from @userinfobot, then
 
 Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
 
+## Serverless mode: GitHub Actions + PWA (no Telegram, no server)
+
+`.github/workflows/monitor.yml` runs `python -m hlg.report` every 15 minutes, publishes
+`site/alerts.json` + the PWA in `pwa/` to GitHub Pages, and notifies you three ways:
+
+1. **PWA** (`https://<user>.github.io/<repo>/`) — dashboard; "Add to Home Screen" on phone. Click
+   *Enable notifications* to get a browser notification for new alerts whenever the page is open.
+2. **Web Push** (alerts with the app closed): run `python -m hlg.vapid` once; add the private key as
+   Actions secret `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT=mailto:you@x.com`) and the public key as repo
+   **variable** `VAPID_PUBLIC_KEY`. Open the PWA, click *Enable push*, copy the subscription JSON into
+   secret `PUSH_SUBSCRIPTIONS` (a JSON list for several devices). iOS requires the PWA installed to the
+   Home Screen.
+3. **GitHub Issue** — every new alert is appended to an open issue labelled `alerts`; subscribe to the
+   issue and the GitHub mobile app pushes it to you. Zero setup.
+
+Enable it: repo *Settings → Pages → Source: GitHub Actions*, then run the workflow once manually.
+Only alert mode runs in Actions (no keys in CI); run enforce mode on a machine you control.
+Cron granularity is ~15 min (GitHub may delay further) — this is a safety net, not a real-time stop.
+
 ## Rules enforced (config.yaml → `rules`)
 
 | Rule | alert | enforce |
