@@ -39,14 +39,22 @@ def test_notifier_collects_every_message_even_during_cooldown():
 
 
 def test_notifier_cooldown_suppresses_repeat_within_window(monkeypatch):
-    base = 1_700_000_000.0  # realistic epoch seconds, so "now - 0" comfortably clears cooldown_s
-    times = iter([base, base + 0.5, base + 5000.0])
-    monkeypatch.setattr("hlg.common.time.time", lambda: next(times))
+    # A settable fake clock, not a finite iterator: `hlg.common.time` is the real `time` module
+    # (shared process-wide), so patching `.time` here also affects the stdlib `logging` module's
+    # own internal time.time() call when send() -> log.warning() creates a LogRecord. That call
+    # happens or doesn't depending on ambient logging config, so the fake must tolerate being
+    # called any number of times rather than assuming exactly one call per send().
+    clock = {"now": 1_700_000_000.0}  # realistic epoch seconds, so "now - 0" comfortably clears cooldown_s
+    monkeypatch.setattr("hlg.common.time.time", lambda: clock["now"])
     notif = Notifier({"telegram": {"enabled": False}})
 
     notif.send("a", key="k", cooldown_s=3600)
-    assert notif._last["k"] == base
+    assert notif._last["k"] == clock["now"]
+
+    clock["now"] += 0.5
     notif.send("b", key="k", cooldown_s=3600)  # within cooldown, should not refresh _last
-    assert notif._last["k"] == base
+    assert notif._last["k"] == 1_700_000_000.0
+
+    clock["now"] += 5000.0
     notif.send("c", key="k", cooldown_s=3600)  # well past cooldown
-    assert notif._last["k"] == base + 5000.0
+    assert notif._last["k"] == clock["now"]
