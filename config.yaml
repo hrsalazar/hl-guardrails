@@ -19,6 +19,7 @@ rules:
 
 scanner:
   strategy: breakout   # breakout (backtested, long-only) | pullback (legacy, tested negative)
+  timeframes: [1d, 4h]  # breakout runs independently on each (both backtested, see README "Timeframe")
   coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]
   watch_coins: [xyz:CL, xyz:GOLD, xyz:XYZ100]   # tradfi perps, dashboard only - no alerts (short history, PF ~1.2)
   interval_minutes: 30
@@ -31,6 +32,11 @@ scanner:
   min_rr: 2.0
   prefer_short_when_funding_positive: true
   funding_carry_alert_apr: 20    # alert if |annualised funding| > this %
+  # fast heads-up for moves too quick for 1d/4h breakout levels to confirm (e.g. a sharp 1h spike) -
+  # NOT a backtested setup (1h breakout PF 1.16 / -44% max DD on ~7mo of history - too weak to trade on,
+  # see hlg.backtest --interval 1h --native), so this alerts with no stop/size/target, just a nudge to look.
+  momentum_window_hours: 4
+  momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

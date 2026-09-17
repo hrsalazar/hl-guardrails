@@ -1,15 +1,18 @@
 """Setup scanner.
 
 scanner.strategy = breakout (default, backtested: see hlg.backtest / README):
-  LONG only: EMA20 > EMA50 and the last COMPLETED close > prior 20-bar high, on scanner.timeframe (1d default, or 4h).
+  LONG only: EMA20 > EMA50 and the last COMPLETED close > prior 20-bar high, on each of scanner.timeframes
+  (default [1d]; both 1d and 4h are backtested, see README "Timeframe" -- each timeframe alerts independently).
   stop = close - stop_atr*ATR14d, then trail trail_atr*ATR below the highest high; time stop max_hold_days.
-  "forming" = price above the 20d high intraday but the daily candle has not closed yet (do not chase).
+  "forming" = price above the 20d high intraday but the candle has not closed yet (do not chase).
 scanner.strategy = pullback (legacy, tested negative in the backtest):
   LONG : daily EMA20 > EMA50, 4h RSI14 <= rsi_long_max, price within level_proximity_pct of 20d low or daily EMA20,
          stop = min(4h swing low, px - 1.5*ATR14d), target = 20d high, RR >= min_rr
   SHORT: mirror. Preferred when funding is positive (short side collects funding).
-Also alerts on funding-carry opportunities (|annualised funding| > funding_carry_alert_apr).
-Every alert includes the position size that keeps the stop loss at risk_per_trade_pct of equity.
+Also alerts on funding-carry opportunities (|annualised funding| > funding_carry_alert_apr), and on plain
+momentum -- price moved > momentum_alert_pct in momentum_window_hours -- for moves too fast for 1d/4h breakout
+levels to catch in time. Momentum alerts are a heads-up only: no backtested edge, so no stop/size/target.
+Every setup alert includes the position size that keeps the stop loss at risk_per_trade_pct of equity.
 """
 import time
 
@@ -46,8 +49,8 @@ def atr(df, n=14):
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
-def analyse_breakout(inf, coin, S, ctx):
-    tf = S.get("timeframe", "1d")  # 1d (backtested default) or 4h (faster, 20/50-bar windows on 4h bars)
+def analyse_breakout(inf, coin, S, ctx, tf=None):
+    tf = tf or S.get("timeframe", "1d")  # 1d (backtested default) or 4h (faster, 20/50-bar windows on 4h bars)
     d = candles(inf, coin, tf, 120 if tf == "1d" else 30)
     if len(d) < 55:
         return None
@@ -78,9 +81,22 @@ def analyse_breakout(inf, coin, S, ctx):
     return out
 
 
-def analyse(inf, coin, S, ctx):
+def momentum_pct(inf, coin, S):
+    """Plain % price change over the last momentum_window_hours -- not a backtested setup, just
+    a fast heads-up for moves the 1d/4h breakout timeframes are too slow to confirm in time."""
+    window = S.get("momentum_window_hours", 4)
+    d = candles(inf, coin, "1h", 2)
+    if len(d) <= window:
+        return None
+    now_px, ref_px = d.c.iloc[-1], d.c.iloc[-(window + 1)]
+    if ref_px == 0:
+        return None
+    return (now_px / ref_px - 1) * 100
+
+
+def analyse(inf, coin, S, ctx, tf=None):
     if S.get("strategy", "breakout") == "breakout":
-        return analyse_breakout(inf, coin, S, ctx)
+        return analyse_breakout(inf, coin, S, ctx, tf)
     d = candles(inf, coin, "1d", 90)
     h4 = candles(inf, coin, "4h", 30)
     if len(d) < 55 or len(h4) < 30:
@@ -124,58 +140,78 @@ def run_once(cfg, inf, notif, state):
     equity = fnum(st["marginSummary"]["accountValue"])
     risk_usd = equity * R["risk_per_trade_pct"] / 100
     open_coins = {p["position"]["coin"] for p in st["assetPositions"]}
+    tfs = S.get("timeframes") or [S.get("timeframe", "1d")]
+    breakout_tfs = tfs if S.get("strategy", "breakout") == "breakout" else [None]  # pullback ignores tf, one pass
     rows = []
     for coin in list(S["coins"]) + list(watch):
-        try:
-            a = analyse(inf, coin, S, ctx.get(coin, {"funding": 0}))
-        except Exception as e:  # noqa: BLE001
-            log.error("%s scan failed: %s", coin, e)
-            continue
-        if not a:
-            continue
-        if coin in watch:  # informational only: shown on the dashboard, never alerted
-            a["watch"] = True
-            if a["setup"]:
-                a["rejected"] = f"watch-only: breakout signal (stop {a['stop']:.5g})"
-                a["setup"] = None
+        c_ctx = ctx.get(coin, {"funding": 0})
+        for tf in breakout_tfs:
+            try:
+                a = analyse(inf, coin, S, c_ctx, tf)
+            except Exception as e:  # noqa: BLE001
+                log.error("%s (%s) scan failed: %s", coin, tf or S.get("strategy", "breakout"), e)
+                continue
+            if not a:
+                continue
+            if coin in watch:  # informational only: shown on the dashboard, never alerted
+                a["watch"] = True
+                if a["setup"]:
+                    a["rejected"] = f"watch-only: breakout signal (stop {a['stop']:.5g})"
+                    a["setup"] = None
+                rows.append(a)
+                continue
             rows.append(a)
+            if a["setup"] and a.get("rr") is None:  # breakout strategy
+                dist = abs(a["px"] - a["stop"])
+                size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
+                note = f" (paying {a['funding_apr']:.0f}% APR funding)" if a["funding_apr"] > 15 else ""
+                if coin in open_coins:
+                    note += " [already in a position - do NOT add]"
+                msg = (
+                    f"BREAKOUT LONG {coin} @ {a['px']:.5g}{note}\n"
+                    f"  {a['tf']} close {a['signal_close']:.5g} on {a['signal_day']} > 20-bar high | trend UP | {a['tf']} RSI {a['rsi4h']:.0f}\n"
+                    f"  stop {a['stop']:.5g} ({S['stop_atr']}x ATR) | trail {S['trail_atr']}x ATR ({S['trail_atr'] * a['atr']:.5g}) below highest high | time stop day {R['max_hold_days']}\n"
+                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
+                    f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
+                )
+                notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600)
+            elif a["setup"]:
+                dist = abs(a["px"] - a["stop"])
+                size = risk_usd / dist
+                note = ""
+                if a["setup"] == "SHORT" and a["funding_apr"] > 0 and S["prefer_short_when_funding_positive"]:
+                    note = f" (+funding {a['funding_apr']:.0f}% APR in your favour)"
+                if a["setup"] == "LONG" and a["funding_apr"] > 15:
+                    note = f" (careful: paying {a['funding_apr']:.0f}% APR funding)"
+                if coin in open_coins:
+                    note += " [already in a position - do NOT add]"
+                msg = (
+                    f"SETUP {a['setup']} {coin} @ {a['px']:.5g}{note}\n"
+                    f"  trend {a['trend']} | 4h RSI {a['rsi4h']:.0f}\n"
+                    f"  stop {a['stop']:.5g} | target {a['target']:.5g} | RR {a['rr']:.1f}\n"
+                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
+                    f"  rules: limit entry (maker), stop placed BEFORE entry, no adds if red, close by day 7"
+                )
+                notif.send(msg, key=f"setup_{coin}_{a['setup']}", cooldown_s=12 * 3600)
+        if coin in watch:
             continue
-        rows.append(a)
-        if abs(a["funding_apr"]) > S["funding_carry_alert_apr"]:
-            side = "short perp / long spot" if a["funding_apr"] > 0 else "long perp / short spot"
-            notif.send(f"FUNDING CARRY {coin}: {a['funding_apr']:+.0f}% APR -> {side}", key=f"fund_{coin}_{int(a['funding_apr'] // 10)}", cooldown_s=6 * 3600)
-        if a["setup"] and a.get("rr") is None:  # breakout strategy
-            dist = abs(a["px"] - a["stop"])
-            size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
-            note = f" (paying {a['funding_apr']:.0f}% APR funding)" if a["funding_apr"] > 15 else ""
-            if coin in open_coins:
-                note += " [already in a position - do NOT add]"
-            msg = (
-                f"BREAKOUT LONG {coin} @ {a['px']:.5g}{note}\n"
-                f"  {a['tf']} close {a['signal_close']:.5g} on {a['signal_day']} > 20-bar high | trend UP | {a['tf']} RSI {a['rsi4h']:.0f}\n"
-                f"  stop {a['stop']:.5g} ({S['stop_atr']}x ATR) | trail {S['trail_atr']}x ATR ({S['trail_atr'] * a['atr']:.5g}) below highest high | time stop day {R['max_hold_days']}\n"
-                f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
-                f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
+        funding_apr = fnum(c_ctx.get("funding", 0)) * 24 * 365 * 100
+        if abs(funding_apr) > S["funding_carry_alert_apr"]:
+            side = "short perp / long spot" if funding_apr > 0 else "long perp / short spot"
+            notif.send(f"FUNDING CARRY {coin}: {funding_apr:+.0f}% APR -> {side}", key=f"fund_{coin}_{int(funding_apr // 10)}", cooldown_s=6 * 3600)
+        try:
+            mom = momentum_pct(inf, coin, S)
+        except Exception as e:  # noqa: BLE001
+            log.error("%s momentum check failed: %s", coin, e)
+            mom = None
+        mom_threshold = S.get("momentum_alert_pct", 8)
+        if mom is not None and abs(mom) >= mom_threshold:
+            window = S.get("momentum_window_hours", 4)
+            direction = "up" if mom > 0 else "down"
+            notif.send(
+                f"MOMENTUM {coin} {direction} {mom:+.1f}% in {window}h - no setup here (not backtested at this speed), just a heads-up to go look",
+                key=f"mom_{coin}_{int(abs(mom) // 5)}", cooldown_s=2 * 3600,
             )
-            notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600)
-        elif a["setup"]:
-            dist = abs(a["px"] - a["stop"])
-            size = risk_usd / dist
-            note = ""
-            if a["setup"] == "SHORT" and a["funding_apr"] > 0 and S["prefer_short_when_funding_positive"]:
-                note = f" (+funding {a['funding_apr']:.0f}% APR in your favour)"
-            if a["setup"] == "LONG" and a["funding_apr"] > 15:
-                note = f" (careful: paying {a['funding_apr']:.0f}% APR funding)"
-            if coin in open_coins:
-                note += " [already in a position - do NOT add]"
-            msg = (
-                f"SETUP {a['setup']} {coin} @ {a['px']:.5g}{note}\n"
-                f"  trend {a['trend']} | 4h RSI {a['rsi4h']:.0f}\n"
-                f"  stop {a['stop']:.5g} | target {a['target']:.5g} | RR {a['rr']:.1f}\n"
-                f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
-                f"  rules: limit entry (maker), stop placed BEFORE entry, no adds if red, close by day 7"
-            )
-            notif.send(msg, key=f"setup_{coin}_{a['setup']}", cooldown_s=12 * 3600)
     tbl = " | ".join(
         f"{r['coin']} {r['px']:.5g} {r['trend']} rsi{r['rsi4h']:.0f} f{r['funding_apr']:+.0f}%"
         + (f" **{r['setup']}**" if r["setup"] else (f" ({r['rejected']})" if r.get("rejected") else ""))

@@ -140,7 +140,9 @@ history and market-hours gaps; revisit with `hlg.backtest --coins xyz:...` once 
 
 ### Timeframe
 
-`scanner.timeframe` selects the bar the breakout rule runs on: `1d` (default) or `4h`. Backtest on the same
+`scanner.timeframes` is a list of bars the breakout rule runs on independently - each timeframe gets its own
+signals, stops, sizing, and alert cooldown (`24h` for `1d` signals, `4h` for anything faster), so a coin can
+show a `1d` row and a `4h` row on the dashboard at the same time. Default is `[1d, 4h]`. Backtest on the same
 period (2024-06 -> now, 15 coins, `python -m hlg.backtest --interval 4h --native`):
 
 | timeframe | trades | PF | total | max DD | avg hold |
@@ -150,9 +152,26 @@ period (2024-06 -> now, 15 coins, `python -m hlg.backtest --interval 4h --native
 | 4h (day-equivalent windows) | 252 | 1.25 | +52% | -30% | 1.4 d |
 
 4h trades ~5x more often and compounds faster in the simulation, but with a third of the edge per trade (PF 1.3 vs 2.1),
-three times the drawdown, and no slippage modelled - on a 388-trade sample that matters. Daily stays the default; use
-4h only if you accept the drawdown profile. Hyperliquid serves ~5000 candles per interval, so the 4h test covers
-~2.3 years vs 3.3 for daily.
+three times the drawdown, and no slippage modelled - on a 388-trade sample that matters. 1d alone will miss moves that
+resolve within a day (4h catches most of those); running both means slower, better-tested 1d signals and faster,
+weaker-edge 4h signals both surface, each labelled with its own timeframe so you can weight them differently. Hyperliquid
+serves ~5000 candles per interval, so the 4h test covers ~2.3 years vs 3.3 for daily. `1d` alone remains the safer choice
+if you'd rather not carry 4h's extra drawdown.
+
+We also tested `1h` (`python -m hlg.backtest --interval 1h --native`) to see if it would catch single-hour spikes 4h
+still misses: PF 1.16, -44% max DD, and **every one of 426 trades exited via stop** (avg hold 14h) on only ~7 months of
+history (Hyperliquid caps `candleSnapshot` at ~5000 bars, so 1h has much less runway than 4h or 1d). That's too thin
+and too short a sample to trade on, so `1h` is not offered as a `scanner.timeframes` option - see Momentum below for
+how fast moves are surfaced instead.
+
+### Momentum heads-up
+
+Separately from the breakout rule, the scanner flags plain price momentum: if a coin moves more than
+`momentum_alert_pct` (default 8%) within `momentum_window_hours` (default 4h), it sends a heads-up. This is
+**not a setup** - no stop, no size, no entry - just a nudge to go look at the chart, for moves fast enough that
+by the time 4h confirms them (or 1h, which the backtest above ruled out as too weak to trade on) most of the
+move is already over. Alerts re-fire if the move grows past another 5-percentage-point bucket, so one long
+continuous spike doesn't get lost after the first alert but also doesn't spam every scan cycle.
 
 ### Regime analysis (`python -m hlg.regime`)
 
