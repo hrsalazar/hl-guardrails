@@ -1,18 +1,17 @@
-"""Guard-rail monitor for a Hyperliquid perp account.
+"""Guard-rail monitor for a Hyperliquid perp account. Advisory only: it never places, modifies,
+or cancels an order, and never touches a private key. Every rule below only ever produces a
+warning (console + optional Telegram) for a human to act on.
 
 Rules (see config.yaml):
   1. every position has a reduce-only stop sized so the loss <= risk_per_trade_pct of equity
   2. never add to a losing position
   3. max positions / same-direction / gross exposure / leverage caps
   4. time stop: positions older than max_hold_days
-  5. daily and weekly loss limits -> flatten + lock
+  5. daily and weekly loss limits -> flag "should be flat" + lock the advice until the next period
   6. coin whitelist
-
-mode=alert only reports; mode=enforce also acts (needs HL_PRIVATE_KEY of the wallet or an API/agent wallet).
 """
 import datetime as dt
 import math
-import os
 import time
 
 from .common import Notifier, State, fnum, info, load_config, log, setup_logging
@@ -31,55 +30,6 @@ def day_key(t):
 def week_key(t):
     y, w, _ = t.isocalendar()
     return f"{y}-W{w:02d}"
-
-
-class Exec:
-    """Thin wrapper around the SDK Exchange; None when running in alert mode."""
-
-    def __init__(self, account, meta):
-        from eth_account import Account
-        from hyperliquid.exchange import Exchange
-        from .common import API
-
-        key = os.environ["HL_PRIVATE_KEY"]
-        self.ex = Exchange(Account.from_key(key), API, account_address=account)
-        self.sz_dec = {u["name"]: u["szDecimals"] for u in meta["universe"]}
-
-    def round_px(self, coin, px):
-        dec = 6 - self.sz_dec[coin]
-        px = float(f"{px:.5g}")
-        return round(px, dec)
-
-    def round_sz(self, coin, sz):
-        return round(sz, self.sz_dec[coin])
-
-    def place_stop(self, coin, pos_sz, trig_px, mark):
-        is_buy = pos_sz < 0
-        trig = self.round_px(coin, trig_px)
-        limit = self.round_px(coin, trig * (1.03 if is_buy else 0.97))
-        ot = {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": "sl"}}
-        r = self.ex.order(coin, is_buy, self.round_sz(coin, abs(pos_sz)), limit, ot, reduce_only=True)
-        log.info("placed stop %s %s @%s -> %s", coin, pos_sz, trig, r)
-        return r
-
-    def close(self, coin, sz=None):
-        r = self.ex.market_close(coin, sz=self.round_sz(coin, sz) if sz else None)
-        log.info("market_close %s %s -> %s", coin, sz, r)
-        return r
-
-    def cancel_all(self, open_orders):
-        for o in open_orders:
-            try:
-                self.ex.cancel(o["coin"], o["oid"])
-            except Exception as e:  # noqa: BLE001
-                log.error("cancel %s failed: %s", o["oid"], e)
-
-    def set_leverage(self, coin, lev):
-        try:
-            r = self.ex.update_leverage(lev, coin, True)
-            log.info("update_leverage %s %sx -> %s", coin, lev, r)
-        except Exception as e:  # noqa: BLE001
-            log.error("update_leverage failed: %s", e)
 
 
 def episode_start(fills, coin, cur_sz):
@@ -108,7 +58,7 @@ def stop_coverage(open_orders, coin, pos_sz):
     return cov, trig
 
 
-def run_once(cfg, inf, notif, state, ex):
+def run_once(cfg, inf, notif, state):
     R = cfg["rules"]
     acct = cfg["account"]
     st = inf.user_state(acct)
@@ -184,38 +134,30 @@ def run_once(cfg, inf, notif, state, ex):
     lock_until = state.get("lock_until", 0)
     locked = now_ms < lock_until
 
-    def breach(msg, key, action=None):
+    def breach(msg, key):
         problems.append(msg)
         notif.send(msg, key=key)
-        if ex and action:
-            try:
-                action()
-            except Exception as e:  # noqa: BLE001
-                log.error("enforce action failed: %s", e)
 
     if day_pnl / day_base * 100 <= -R["daily_loss_limit_pct"]:
         nxt = (now + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         state.set("lock_until", int(nxt.timestamp() * 1000))
         locked = True
         breach(
-            f"DAILY LOSS LIMIT hit: {day_pnl:+.0f} USD ({day_pnl / day_base * 100:+.1f}%). Flatten; no trading until {nxt:%Y-%m-%d %H:%M} UTC.",
+            f"DAILY LOSS LIMIT hit: {day_pnl:+.0f} USD ({day_pnl / day_base * 100:+.1f}%). You should be flat; no trading advised until {nxt:%Y-%m-%d %H:%M} UTC.",
             "daily_limit",
-            lambda: (ex.cancel_all(oo), [ex.close(p["coin"]) for p in positions]),
         )
     if week_pnl / week_base * 100 <= -R["weekly_loss_limit_pct"]:
         nxt = (now + dt.timedelta(days=7 - now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
         state.set("lock_until", int(nxt.timestamp() * 1000))
         locked = True
         breach(
-            f"WEEKLY LOSS LIMIT hit: {week_pnl:+.0f} USD ({week_pnl / week_base * 100:+.1f}%). Flatten; no trading until {nxt:%Y-%m-%d} UTC.",
+            f"WEEKLY LOSS LIMIT hit: {week_pnl:+.0f} USD ({week_pnl / week_base * 100:+.1f}%). You should be flat; no trading advised until {nxt:%Y-%m-%d} UTC.",
             "weekly_limit",
-            lambda: (ex.cancel_all(oo), [ex.close(p["coin"]) for p in positions]),
         )
     if locked and positions:
         breach(
-            f"LOCKED until {dt.datetime.fromtimestamp(state.get('lock_until') / 1000, dt.timezone.utc):%Y-%m-%d %H:%M} UTC but {len(positions)} position(s) open.",
+            f"LOCKED until {dt.datetime.fromtimestamp(state.get('lock_until') / 1000, dt.timezone.utc):%Y-%m-%d %H:%M} UTC but {len(positions)} position(s) still open. Close them yourself.",
             "locked_open",
-            lambda: [ex.close(p["coin"]) for p in positions],
         )
 
     # ---- portfolio-level caps ----
@@ -245,7 +187,7 @@ def run_once(cfg, inf, notif, state, ex):
         if coin not in R["allowed_coins"]:
             breach(f"{tag}: {coin} not in allowed list {R['allowed_coins']}", f"coin_{coin}")
         if lev > R["max_leverage"]:
-            breach(f"{tag}: leverage {lev}x > max {R['max_leverage']}x", f"lev_{coin}", lambda c=coin: ex.set_leverage(c, R["max_leverage"]))
+            breach(f"{tag}: leverage {lev}x > max {R['max_leverage']}x. Lower it.", f"lev_{coin}")
 
         # stop-loss coverage
         cov, trig = stop_coverage(oo, coin, sz)
@@ -255,13 +197,11 @@ def run_once(cfg, inf, notif, state, ex):
                 breach(
                     f"{tag}: NO STOP and already past max risk ({upnl:+.0f} < -{risk_usd:.0f}). Close it.",
                     f"nostop_{coin}",
-                    lambda c=coin: ex.close(c),
                 )
             else:
                 breach(
                     f"{tag}: NO STOP covering position. Required stop @ {want_stop:.5g} (risk {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity)",
                     f"nostop_{coin}",
-                    lambda c=coin, s=sz, w=want_stop, m=mark: ex.place_stop(c, s, w, m),
                 )
         else:
             worst = abs(trig - entry) * abs(sz)
@@ -278,7 +218,6 @@ def run_once(cfg, inf, notif, state, ex):
                     breach(
                         f"{tag}: ADDED {added:.4g} while underwater (averaging down). Trim back.",
                         f"add_{coin}_{int(abs(sz) * 1e6)}",
-                        lambda c=coin, a=added: ex.close(c, a),
                     )
 
         # time stop
@@ -286,7 +225,7 @@ def run_once(cfg, inf, notif, state, ex):
         if start:
             age_d = (now_ms - start) / 86400_000
             if age_d > R["max_hold_days"]:
-                breach(f"{tag}: open {age_d:.1f} days > {R['max_hold_days']}d time stop. Close.", f"age_{coin}", lambda c=coin: ex.close(c))
+                breach(f"{tag}: open {age_d:.1f} days > {R['max_hold_days']}d time stop. Close.", f"age_{coin}")
 
     state.set("positions", snap)
     log.info(
@@ -303,17 +242,10 @@ def main():
     inf = info()
     notif = Notifier(cfg)
     state = State(cfg["state_file"])
-    ex = None
-    if cfg["mode"] == "enforce":
-        if not os.environ.get("HL_PRIVATE_KEY"):
-            raise SystemExit("mode=enforce requires HL_PRIVATE_KEY")
-        ex = Exec(cfg["account"], inf.meta())
-        log.info("ENFORCE mode: orders will be placed")
-    else:
-        log.info("ALERT mode: read-only")
+    log.info("advisory mode: read-only, no orders are ever placed")
     while True:
         try:
-            run_once(cfg, inf, notif, state, ex)
+            run_once(cfg, inf, notif, state)
         except Exception as e:  # noqa: BLE001
             log.exception("loop error: %s", e)
         time.sleep(cfg["poll_seconds"])

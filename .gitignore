@@ -7,3 +7,4 @@ site/
 miner_cache/
 miner_out/
 backtest_out/
+.pytest_cache/

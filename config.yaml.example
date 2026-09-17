@@ -1,9 +1,7 @@
-# Account being monitored (public address). Read-only unless HL_PRIVATE_KEY is set and mode=enforce.
+# Account being monitored (public address). Always read-only -- this tool never places,
+# modifies, or cancels an order, and never needs a private key.
 account: "0x68b18d388994336f341b4997360bb45f9f8701c9"
 
-# alert  -> only warn (console + Telegram)
-# enforce -> place missing stops, trim adds-underwater, flatten on time stop / loss limits
-mode: alert
 poll_seconds: 60
 state_file: state.json
 

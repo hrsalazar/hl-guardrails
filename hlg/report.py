@@ -75,7 +75,6 @@ def github_issue(new_alerts):
 def main():
     setup_logging()
     cfg = load_config()
-    cfg["mode"] = "alert"
     site_url = os.environ.get("SITE_URL", "")
     OUT.mkdir(exist_ok=True)
 
@@ -89,7 +88,7 @@ def main():
 
     inf = info()
     gn, sn = Notifier(cfg), Notifier(cfg)
-    guardrails.run_once(cfg, inf, gn, state, None)
+    guardrails.run_once(cfg, inf, gn, state)
     rows = scanner.run_once(cfg, inf, sn, state)
 
     st = inf.user_state(cfg["account"])

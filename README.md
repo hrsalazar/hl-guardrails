@@ -1,9 +1,11 @@
 # hl-guardrails
 
-Guard-rail enforcer + swing-setup scanner for a Hyperliquid perp account. Built from the analysis of
-`0x68b1…01c9`: the losses came from unstopped, averaged-down positions held >7 days and from sub-24h
-taker scalping; the profitable pocket was 3–7 day swings at moderate size. This bot makes the first
-impossible and alerts on the second.
+Guard-rail monitor + swing-setup scanner for a Hyperliquid perp account. **Advisory only** — it
+watches a configurable account (a public address, no key needed) and warns you; it never places,
+modifies, or cancels an order. Built from the analysis of `0x68b1…01c9`: the losses came from
+unstopped, averaged-down positions held >7 days and from sub-24h taker scalping; the profitable
+pocket was 3–7 day swings at moderate size. This bot flags the first and alerts on the second —
+acting on either is always up to you.
 
 ## Install
 
@@ -23,15 +25,8 @@ python -m hlg.guardrails
 python -m hlg.scanner
 ```
 
-Enforce mode (actually places stops, trims adds, flattens on limits):
-
-```bash
-export HL_PRIVATE_KEY=0x...      # main wallet key OR an API/agent wallet authorised at app.hyperliquid.xyz/API
-sed -i 's/^mode: alert/mode: enforce/' config.yaml
-python -m hlg.guardrails
-```
-
-Use an **API wallet** (agent key) rather than the main key: it can trade but cannot withdraw.
+Both only ever read public account data and emit warnings — neither one ever places, modifies,
+or cancels an order, so there is no private key to configure.
 
 Telegram: create a bot with @BotFather, get your chat id from @userinfobot, then
 `export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...` and set `telegram.enabled: true`.
@@ -54,21 +49,25 @@ Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
    issue and the GitHub mobile app pushes it to you. Zero setup.
 
 Enable it: repo *Settings → Pages → Source: GitHub Actions*, then run the workflow once manually.
-Only alert mode runs in Actions (no keys in CI); run enforce mode on a machine you control.
-Cron granularity is ~15 min (GitHub may delay further) — this is a safety net, not a real-time stop.
+No keys are needed in CI, since nothing this tool does ever requires one.
+Cron granularity is ~15 min (GitHub may delay further) — this is a monitoring cadence, not a
+real-time alert.
 
-## Rules enforced (config.yaml → `rules`)
+## Rules watched (config.yaml → `rules`)
 
-| Rule | alert | enforce |
-|---|---|---|
-| Position without a reduce-only stop | warn, prints required stop price | places stop so loss = `risk_per_trade_pct` of equity; closes if already past max risk |
-| Existing stop risks > 1.25× allowed | warn | warn |
-| Added to a position while underwater | warn | market-closes the added amount |
-| Position older than `max_hold_days` | warn | closes |
-| Leverage > `max_leverage` | warn | lowers leverage |
-| > `max_positions`, > `max_same_direction`, gross > `max_gross_exposure_x` | warn | warn |
-| Coin not in `allowed_coins` | warn | warn |
-| Daily / weekly loss limit (transfer-adjusted equity) | warn | cancels all, flattens, locks; any position opened while locked is closed |
+Every rule below only ever produces a warning (console + optional Telegram) — nothing is ever
+enforced automatically. Acting on it is up to you.
+
+| Rule | What triggers the warning |
+|---|---|
+| Position without a reduce-only stop | prints the stop price that would cap the loss at `risk_per_trade_pct` of equity |
+| Existing stop risks > 1.25× allowed | warn |
+| Added to a position while underwater | warn — averaging down |
+| Position older than `max_hold_days` | warn — time stop |
+| Leverage > `max_leverage` | warn |
+| > `max_positions`, > `max_same_direction`, gross > `max_gross_exposure_x` | warn |
+| Coin not in `allowed_coins` | warn |
+| Daily / weekly loss limit (transfer-adjusted equity) | warn that you should be flat; the advice stays "locked" until the next period, and re-fires if a position is still open |
 
 State (day/week start equity, lock, last position snapshot) lives in `state.json`.
 
@@ -85,10 +84,9 @@ scanner in alert mode for 6–8 weeks and log the outcomes before sizing up.
 
 ## Caveats
 
-- Alert mode is fully read-only (public `/info` endpoints only).
-- Enforce actions are market orders with 3% slippage cap on stops; on illiquid coins widen/adjust.
+- Fully read-only (public `/info` endpoints only) — it never places, modifies, or cancels an order.
 - Loss limits use perp `accountValue`; spot balances are ignored by design (keep them out of reach).
-- Polling is 60 s: a fast move can exceed the risk cap before the stop is placed. Place stops yourself at entry; the bot is the safety net.
+- Polling is 60 s: a fast move can breach the risk cap before you see the warning. Place your own stops at entry; this is a second pair of eyes, not a safety net that acts for you.
 
 ## Setup miner (`hlg.miner`)
 
@@ -162,3 +160,16 @@ Tags every day with a BTC regime (bull/bear vs EMA200, range/trending by 20d spa
 attributes each backtest trade to the regime on its signal day, for breakout vs the pullback variants. Also runs an
 out-of-sample regime-switch test (pick the best variant per regime on the first half, apply on the second half).
 Output: `backtest_out/regime_report.md`, `backtest_out/regimes.csv`.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Tests use fakes for the Hyperliquid API (`tests/conftest.py::FakeInfo`) and never touch the
+network. They cover the guardrail rules in `hlg/guardrails.py` (every rule, including the
+daily/weekly loss-limit lock), the breakout/pullback setup detection in `hlg/scanner.py`, and
+`hlg/common.py`'s `State` and `Notifier`. CI (`.github/workflows/test.yml`) runs the same suite
+on every push and pull request.
