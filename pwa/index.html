@@ -78,8 +78,10 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
   </div>
   </div>
   <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
-    <p class="mut">Copy this JSON into the repo secret <code>PUSH_SUBSCRIPTIONS</code> (as a list to add several devices). Actions will then push to this device even when the page is closed.</p>
-    <pre id="sub"></pre><button id="copy">Copy</button></div>
+    <p class="mut">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
+      <a href="https://github.com/hrsalazar/hl-guardrails/settings/secrets/actions" target="_blank" rel="noopener">the repo's Actions secrets</a>,
+      and save it as <code>PUSH_SUBSCRIPTIONS</code>. For several devices, put their entries in one list: <code>[{...},{...}]</code>.</p>
+    <pre id="sub" style="white-space:pre-wrap;word-break:break-all"></pre><button id="copy">Copy</button></div>
   <p class="mut">Refreshed whenever the monitor workflow runs — see the timestamp above, which turns amber then red as it ages. Alert mode only — nothing here places orders.</p>
 </main>
 <script src="config.js"></script>
@@ -320,10 +322,11 @@ $('#notif').onclick=async()=>{if(!hasNotif){alert('Notifications are not availab
 function b64ToU8(b){const p='='.repeat((4-b.length%4)%4);const s=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(s,c=>c.charCodeAt(0))}
 $('#push').onclick=async()=>{
   const reg=await navigator.serviceWorker.ready;
-  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
-  $('#sub').textContent=JSON.stringify(sub.toJSON());$('#pushbox').hidden=false;$('#push').textContent='Push subscribed';
+  // reuse an existing subscription: subscribing again can rotate the endpoint and orphan the saved secret
+  const sub=await reg.pushManager.getSubscription()||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
+  $('#sub').textContent=JSON.stringify([sub.toJSON()]);$('#pushbox').hidden=false;$('#push').textContent='Push subscribed';
 };
-$('#copy').onclick=()=>navigator.clipboard.writeText($('#sub').textContent);
+$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#sub').textContent);$('#copy').textContent='Copied'}catch(e){$('#copy').textContent='Select the text and copy it'}};
 if(!hasNotif)$('#notif').textContent='Notifications n/a';
 if(hasNotif&&Notification.permission==='granted'){$('#notif').textContent='Notifications on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
 if(!window.VAPID_PUBLIC_KEY)$('#push').title='Set repo variable VAPID_PUBLIC_KEY to enable Web Push';

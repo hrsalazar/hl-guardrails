@@ -182,3 +182,32 @@ def test_missing_account_stops_the_monitors_but_not_the_research_tools(tmp_path,
     assert cfg["backtest"]["start"] == "2024-01-01"
     with pytest.raises(SystemExit):
         common.require_account(cfg)
+
+
+# ---------------------------------------------------------------- web push
+def test_push_failure_logs_status_not_the_endpoint(monkeypatch, caplog):
+    """A subscription endpoint is a capability URL; the public log gets the HTTP status only."""
+    import sys
+    import types
+
+    class WebPushException(Exception):
+        def __init__(self, msg, response=None):
+            super().__init__(msg)
+            self.response = response
+
+    sent = []
+
+    def webpush(subscription_info, **kw):
+        if subscription_info["endpoint"].endswith("gone"):
+            raise WebPushException("Push failed: 410 Gone https://push.example/SECRET-gone",
+                                   types.SimpleNamespace(status_code=410))
+        sent.append(subscription_info)
+
+    monkeypatch.setitem(sys.modules, "pywebpush", types.SimpleNamespace(webpush=webpush, WebPushException=WebPushException))
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "k\n")
+    monkeypatch.setenv("PUSH_SUBSCRIPTIONS", json.dumps([{"endpoint": "https://push.example/SECRET-gone"},
+                                                         {"endpoint": "https://push.example/ok"}]))
+    with caplog.at_level(logging.INFO, "hlg"):
+        report.web_push([{"key": "a", "text": "x"}], {})
+    assert len(sent) == 1  # one dead device doesn't stop the others
+    assert "SECRET" not in caplog.text and "HTTP 410" in caplog.text and "push: 1/2" in caplog.text

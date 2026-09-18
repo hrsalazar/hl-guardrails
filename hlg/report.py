@@ -80,7 +80,7 @@ def publish(name, obj, vlt, in_ci):
 
 
 def web_push(new_alerts, cfg):
-    key, subs = os.environ.get("VAPID_PRIVATE_KEY"), os.environ.get("PUSH_SUBSCRIPTIONS")
+    key, subs = (os.environ.get("VAPID_PRIVATE_KEY") or "").strip(), os.environ.get("PUSH_SUBSCRIPTIONS")
     if not (key and subs and new_alerts):
         return
     from pywebpush import WebPushException, webpush
@@ -90,6 +90,7 @@ def web_push(new_alerts, cfg):
         subs = [subs]
     title = f"HL guardrails: {len(new_alerts)} new alert(s)"
     body = "\n".join(a["text"].split("\n")[0] for a in new_alerts)[:400]
+    sent = 0
     for s in subs:
         try:
             webpush(
@@ -99,8 +100,13 @@ def web_push(new_alerts, cfg):
                 vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "mailto:alerts@example.com")},
                 ttl=3600,
             )
+            sent += 1
         except WebPushException as e:
-            log.error("webpush failed: %s", e)
+            # status only: the exception text carries the subscription endpoint, and this log is public
+            code = getattr(e.response, "status_code", None)
+            hint = " (subscription expired: re-subscribe and update PUSH_SUBSCRIPTIONS)" if code in (404, 410) else ""
+            log.error("webpush failed: HTTP %s%s", code, hint)
+    log.info("push: %d/%d device(s)", sent, len(subs), extra={"safe": True})
 
 
 def main():

@@ -42,10 +42,13 @@ Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
 1. **PWA** (`https://<user>.github.io/<repo>/`) — dashboard; "Add to Home Screen" on phone. Click
    *Enable notifications* to get a browser notification for new alerts whenever the page is open.
 2. **Web Push** (alerts with the app closed): run `python -m hlg.vapid` once; add the private key as
-   Actions secret `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT=mailto:you@x.com`) and the public key as repo
-   **variable** `VAPID_PUBLIC_KEY`. Open the PWA, click *Enable push*, copy the subscription JSON into
-   secret `PUSH_SUBSCRIPTIONS` (a JSON list for several devices). iOS requires the PWA installed to the
-   Home Screen.
+   Actions secret `VAPID_PRIVATE_KEY` (+ `VAPID_SUBJECT`, a `mailto:` or bare `https://host` -
+   pywebpush rejects a URL with a path) and the public key as repo **variable** `VAPID_PUBLIC_KEY`.
+   Open the PWA, click *Enable notifications* then *Enable push*, and save the JSON it shows as secret
+   `PUSH_SUBSCRIPTIONS` (one list, one entry per device). iOS requires the PWA installed to the Home
+   Screen and opened from there. A push goes out only for alerts not in the previous run, and its text
+   shows on the lock screen. Failures log the HTTP status only (the endpoint is a capability URL); a
+   404/410 means the device's subscription expired - re-subscribe and update the secret.
 Alerts used to be appended to a GitHub Issue as well. On a public repo that made every position
 readable by anyone, logged in or not, so that channel was removed.
 
