@@ -8,6 +8,7 @@ from hlg import account, guardrails
 from hlg.common import Notifier, State
 
 from .conftest import (
+    NOW_MS,
     FakeInfo,
     base_cfg,
     make_position,
@@ -125,6 +126,45 @@ def test_unified_loss_limits_use_the_whole_account_series(tmp_path):
     # -900 of 27,000 = -3.3% of the whole account: over the 3% daily limit
     problems, _ = run(unified_info([], day_pnl=-900, week_pnl=-900), tmp_path)
     assert any("DAILY LOSS LIMIT" in p for p in problems)
+
+
+def test_a_lock_set_under_the_old_equity_base_is_voided(tmp_path):
+    """The live case: a daily lock fired when equity was read as $872 of perp margin, while the
+    whole account was up 8%. Under the corrected base it is not a breach and must not linger."""
+    state = State(tmp_path / "s.json")
+    state.set("lock_until", NOW_MS + 6 * 3600_000)  # left behind by the old code: no lock_basis
+    # same week, or the unrelated week-rollover reset clears the lock and this passes for nothing
+    state.set("week_key", guardrails.week_key(guardrails.utc_now()))
+    cfg = base_cfg()
+    guardrails.run_once(cfg, unified_info([], day_pnl=2000, week_pnl=3000), Notifier(cfg), state)
+    assert state.get("lock_until") == 0
+    assert state.get("lock_basis") == "USDC collateral"
+
+
+def test_a_legacy_lock_on_a_classic_account_survives_the_upgrade(tmp_path):
+    """Old code always sized on perp equity, which is still a classic account's base -- so a real
+    lock left behind on one must not be voided just because no basis was recorded."""
+    from .conftest import make_portfolio
+
+    state = State(tmp_path / "s.json")
+    state.set("lock_until", NOW_MS + 6 * 3600_000)
+    state.set("week_key", guardrails.week_key(guardrails.utc_now()))
+    cfg = base_cfg()
+    inf = FakeInfo(user_state=make_user_state(10000, []), portfolio=make_portfolio(0, 0, 10000))
+    guardrails.run_once(cfg, inf, Notifier(cfg), state)
+    assert state.get("lock_until") == NOW_MS + 6 * 3600_000
+
+
+def test_a_real_lock_survives_under_an_unchanged_basis(tmp_path):
+    """Locks are meant to persist for the day even if PnL recovers -- the basis guard must not
+    turn into a way of clearing a genuine one."""
+    state = State(tmp_path / "s.json")
+    cfg = base_cfg()
+    guardrails.run_once(cfg, unified_info([], day_pnl=-900), Notifier(cfg), state)  # -3.3%: locks
+    locked = state.get("lock_until")
+    assert locked > NOW_MS
+    guardrails.run_once(cfg, unified_info([], day_pnl=500), Notifier(cfg), state)   # recovered
+    assert state.get("lock_until") == locked
 
 
 def test_perp_long_stacked_on_a_spot_bag_is_flagged_as_one_bet(tmp_path):

@@ -102,6 +102,22 @@ def run_once(cfg, inf, notif, state):
         state.set("lock_until", 0)
     state.set("day_key", dk)
 
+    # A loss-limit lock is only meaningful against the base it was computed on. Locks normally
+    # persist for the period even if PnL recovers -- deliberately -- but one measured against a
+    # different definition of equity was never a real breach: the first lock on this account fired
+    # when the tool read equity as $872 of perp margin instead of $15.8k of USDC collateral, while
+    # the account was up 8% on the day. So a change of basis (new account model, or an account
+    # switching between classic and unified) voids an outstanding lock instead of inheriting it.
+    # A lock with no recorded basis predates this check, and that code always sized on perp equity
+    # -- so it is inferred rather than assumed different. A genuine lock on a classic account, whose
+    # base never changed, must survive the upgrade; only a basis that really moved voids one.
+    basis, prev = model["base_label"], state.get("lock_basis") or "perp equity"
+    if prev != basis:
+        if state.get("lock_until", 0) > now_ms:
+            log.warning("voiding loss-limit lock computed on %r; equity base is now %r", prev, basis)
+        state.set("lock_until", 0)
+    state.set("lock_basis", basis)
+
     # HL's own PnL series (already net of deposits/withdrawals/spot<->perp transfers, including
     # flows the ledger endpoint does not report) differenced at the period start. On a unified
     # account that is the whole-account series ("day"/"week"): spot is collateral there, so a bad
