@@ -79,7 +79,7 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
   </div>
   <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
     <p class="mut">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
-      <a href="https://github.com/hrsalazar/hl-guardrails/settings/secrets/actions" target="_blank" rel="noopener">the repo's Actions secrets</a>,
+      <a id="secretslink" href="#" target="_blank" rel="noopener">the repo's Actions secrets</a>,
       and save it as <code>PUSH_SUBSCRIPTIONS</code>. For several devices, put their entries in one list: <code>[{...},{...}]</code>.</p>
     <pre id="sub" style="white-space:pre-wrap;word-break:break-all"></pre><button id="copy">Copy</button></div>
   <p class="mut">Refreshed whenever the monitor workflow runs — see the timestamp above, which turns amber then red as it ages. Alert mode only — nothing here places orders.</p>
@@ -326,6 +326,8 @@ $('#push').onclick=async()=>{
   const sub=await reg.pushManager.getSubscription()||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
   $('#sub').textContent=JSON.stringify([sub.toJSON()]);$('#pushbox').hidden=false;$('#push').textContent='Push subscribed';
 };
+// <owner>.github.io/<repo>/ -> that repo's secrets page, so a fork links to its own settings
+(()=>{const o=location.hostname.split('.')[0],r=location.pathname.split('/')[1];$('#secretslink').href=`https://github.com/${o}/${r}/settings/secrets/actions`})();
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#sub').textContent);$('#copy').textContent='Copied'}catch(e){$('#copy').textContent='Select the text and copy it'}};
 if(!hasNotif)$('#notif').textContent='Notifications n/a';
 if(hasNotif&&Notification.permission==='granted'){$('#notif').textContent='Notifications on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}

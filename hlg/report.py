@@ -9,6 +9,7 @@ Env:
   VAPID_PRIVATE_KEY     (optional) base64url VAPID private key -> Web Push
   VAPID_SUBJECT         (optional) mailto:you@example.com
   PUSH_SUBSCRIPTIONS    (optional) JSON list of PushSubscription objects (or a single object)
+  HLG_TEST_PUSH         "true" -> also push a test notification (the workflow's manual `test_push`)
 
 Alerts used to be appended to a GitHub Issue as well. On a public repo that published every
 position to anyone, logged in or not, so that channel is gone; Web Push is end-to-end encrypted
@@ -211,6 +212,8 @@ def main():
     if vlt is not None or not in_ci:
         try:
             web_push(new, cfg)
+            if os.environ.get("HLG_TEST_PUSH") == "true":
+                web_push([{"key": "test", "text": "Test notification: background alerts reach this device."}], cfg)
         except Exception as e:  # noqa: BLE001
             log.error("push error: %s", e)
     log.info("run ok: published %s in %.1fs", "encrypted" if vlt else ("locked stub" if in_ci else "plaintext (local)"),

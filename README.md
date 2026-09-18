@@ -7,6 +7,10 @@ unstopped, averaged-down positions held >7 days and from sub-24h taker scalping;
 pocket was 3–7 day swings at moderate size. This bot flags the first and alerts on the second —
 acting on either is always up to you.
 
+**Documentation:** [setup & operations](docs/operations.md) · [architecture](docs/architecture.md) ·
+[security model](docs/security.md) · [product notes](docs/product.md) · [changelog](CHANGELOG.md).
+This README holds the research: rules, scanner, backtests and what was tested and rejected.
+
 ## Install
 
 ```bash
@@ -48,7 +52,8 @@ Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
    `PUSH_SUBSCRIPTIONS` (one list, one entry per device). iOS requires the PWA installed to the Home
    Screen and opened from there. A push goes out only for alerts not in the previous run, and its text
    shows on the lock screen. Failures log the HTTP status only (the endpoint is a capability URL); a
-   404/410 means the device's subscription expired - re-subscribe and update the secret.
+   404/410 means the device's subscription expired - re-subscribe and update the secret. To check a
+   device, run the workflow manually with **"Also send a test notification"** ticked.
 Alerts used to be appended to a GitHub Issue as well. On a public repo that made every position
 readable by anyone, logged in or not, so that channel was removed.
 
