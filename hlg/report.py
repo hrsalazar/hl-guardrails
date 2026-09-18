@@ -1,11 +1,18 @@
-"""One-shot run for GitHub Actions: guardrails + scanner -> site/alerts.json, Web Push, GitHub Issue.
+"""One-shot run for GitHub Actions: guardrails + scanner -> encrypted site/*.json, Web Push.
 
 Env:
-  SITE_URL              public Pages URL (to fetch previous state/alerts for de-dup)
+  SITE_URL              public Pages URL (to fetch the previous state/alerts for de-dup)
+  DASHBOARD_PASSPHRASE  encrypts everything published (hlg.vault). In CI, without it nothing
+                        with account data is published at all -- see `publish`
+  HLG_ACCOUNT           the wallet address, kept out of the public repo
+  HLG_REDACT            keep account data out of the (public) Actions log -- see common._redact
   VAPID_PRIVATE_KEY     (optional) base64url VAPID private key -> Web Push
   VAPID_SUBJECT         (optional) mailto:you@example.com
   PUSH_SUBSCRIPTIONS    (optional) JSON list of PushSubscription objects (or a single object)
-  GITHUB_TOKEN + GITHUB_REPOSITORY (set by Actions) -> issue comments
+
+Alerts used to be appended to a GitHub Issue as well. On a public repo that published every
+position to anyone, logged in or not, so that channel is gone; Web Push is end-to-end encrypted
+to your device and stays.
 """
 import datetime as dt
 import json
@@ -15,11 +22,22 @@ import time
 from pathlib import Path
 
 import requests
+from cryptography.exceptions import InvalidTag
 
-from . import account, guardrails, liquidations, market, scanner
-from .common import Notifier, State, info, load_config, log, setup_logging
+from . import account, guardrails, liquidations, market, scanner, vault
+from .common import (
+    Notifier,
+    State,
+    info,
+    load_config,
+    log,
+    require_account,
+    setup_logging,
+)
 
 OUT = Path("site")
+FILES = ("state.json", "alerts.json", "history.json")
+LOCKED_STUB = {"locked": "encryption not configured: set the DASHBOARD_PASSPHRASE secret"}
 
 
 def fetch_prev(site_url, name):
@@ -30,6 +48,35 @@ def fetch_prev(site_url, name):
         return r.json() if r.ok else None
     except (requests.RequestException, ValueError):
         return None
+
+
+def load_prev(raw, name, vlt):
+    """Previous published file -> its plain content, or None. Accepts plaintext too, so the first
+    encrypted run can carry forward state published before encryption existed."""
+    if raw is None or raw == LOCKED_STUB or (isinstance(raw, dict) and "locked" in raw):
+        return None
+    if vault.is_envelope(raw):
+        if vlt is None:
+            return None
+        try:
+            return vlt.unseal(raw, name)
+        except InvalidTag:
+            log.error("cannot decrypt previous %s (passphrase changed?) - starting it fresh", name)
+            return None
+    return raw
+
+
+def publish(name, obj, vlt, in_ci):
+    """Write one site file. Encrypted when a passphrase is set. In CI without one, write a stub
+    instead of the data: failing closed means a missing secret hides the dashboard rather than
+    publishing the account in plaintext. Locally, plaintext is fine -- site/ is gitignored."""
+    if vlt is not None:
+        body = vlt.seal(obj, name)
+    elif in_ci:
+        body = LOCKED_STUB
+    else:
+        body = obj
+    (OUT / name).write_text(json.dumps(body, indent=None if vlt else 1))
 
 
 def web_push(new_alerts, cfg):
@@ -56,35 +103,29 @@ def web_push(new_alerts, cfg):
             log.error("webpush failed: %s", e)
 
 
-def github_issue(new_alerts):
-    tok, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
-    if not (tok and repo and new_alerts):
-        return
-    h = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"}
-    api = f"https://api.github.com/repos/{repo}/issues"
-    r = requests.get(api, headers=h, params={"labels": "alerts", "state": "open"}, timeout=15)
-    r.raise_for_status()
-    body = "\n\n".join(f"**{a['kind'].upper()}** — `{a['key']}`\n```\n{a['text']}\n```" for a in new_alerts)
-    body += f"\n\n_{dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M} UTC_"
-    if r.json():
-        num = r.json()[0]["number"]
-        requests.post(f"{api}/{num}/comments", headers=h, json={"body": body}, timeout=15).raise_for_status()
-    else:
-        requests.post(api, headers=h, json={"title": "HL guardrails alerts", "body": body, "labels": ["alerts"]}, timeout=15).raise_for_status()
-
-
 def main():
+    started = time.monotonic()
     setup_logging()
     cfg = load_config()
+    require_account(cfg)
     site_url = os.environ.get("SITE_URL", "")
+    in_ci = os.environ.get("GITHUB_ACTIONS") == "true"
     OUT.mkdir(exist_ok=True)
 
+    raw = {n: fetch_prev(site_url, n) for n in FILES}
+    pw = os.environ.get("DASHBOARD_PASSPHRASE")
+    # reuse the published salt so the key is stable across runs (a device that unlocked stays so)
+    salt = next((vault.salt_of(r) for r in raw.values() if vault.is_envelope(r)), None)
+    vlt = vault.Vault(pw, salt) if pw else None
+    if in_ci and vlt is None:
+        log.error("DASHBOARD_PASSPHRASE is not set: publishing a locked stub, not account data")
+    prev_state, prev, prev_hist = (load_prev(raw[n], n, vlt) for n in FILES)
+
     state_path = OUT / "state.json"
-    prev_state = fetch_prev(site_url, "state.json")
     if prev_state and not state_path.exists():
         state_path.write_text(json.dumps(prev_state))
     state = State(state_path)
-    prev = fetch_prev(site_url, "alerts.json") or {}
+    prev = prev or {}
     prev_keys = {a["key"] for a in prev.get("alerts", [])}
 
     inf = info()
@@ -119,14 +160,14 @@ def main():
     market_rows = market.ctx_rows(ctx, list(S["coins"]))
     tradfi_rows, tradfi_dropped = market.tradfi_rows(ctx, tradfi_coins)
     log.info("market: %d coins, %d tradfi (%d stale hidden) in %.1fs",
-             len(market_rows), len(tradfi_rows), tradfi_dropped, time.monotonic() - t0)
+             len(market_rows), len(tradfi_rows), tradfi_dropped, time.monotonic() - t0, extra={"safe": True})
 
     liq = None
     if F.get("enabled", True):
         t1 = time.monotonic()
         got = liquidations.fetch(F.get("liquidation_coins") or ["BTC", "ETH", "SOL"],
                                  budget_s=F.get("budget_s", 10))
-        log.info("liquidations: %d coin(s) in %.1fs", len(got), time.monotonic() - t1)
+        log.info("liquidations: %d coin(s) in %.1fs", len(got), time.monotonic() - t1, extra={"safe": True})
         # Absent rather than empty when the source gave nothing: the dashboard then fetches OKX
         # itself, which works even if OKX is blocked from Actions the way FRED is.
         liq = {"src": "baked", "rows": got} if got else None
@@ -151,20 +192,23 @@ def main():
         "liquidations": liq,
         "rules": cfg["rules"],
     }
-    (OUT / "alerts.json").write_text(json.dumps(out, indent=1))
-    hist = fetch_prev(site_url, "history.json") or []
+    hist = prev_hist if isinstance(prev_hist, list) else []
     hist.append({"t": out["generated"], "equity": out["equity"], "n_alerts": len(alerts), "new": [a["key"] for a in new]})
-    (OUT / "history.json").write_text(json.dumps(hist[-2000:]))
+    # state.json last: State wrote it in plaintext as it went, and this overwrites that
+    publish("alerts.json", out, vlt, in_ci)
+    publish("history.json", hist[-2000:], vlt, in_ci)
+    publish("state.json", state.d, vlt, in_ci)
     log.info("%d alerts (%d new), %d positions", len(alerts), len(new), len(positions))
 
-    try:
-        web_push(new, cfg)
-    except Exception as e:  # noqa: BLE001
-        log.error("push error: %s", e)
-    try:
-        github_issue(new)
-    except Exception as e:  # noqa: BLE001
-        log.error("issue error: %s", e)
+    # Without the passphrase every alert looks new each run (the previous file can't be read), so
+    # pushing would spam every 15 minutes until the secret is set.
+    if vlt is not None or not in_ci:
+        try:
+            web_push(new, cfg)
+        except Exception as e:  # noqa: BLE001
+            log.error("push error: %s", e)
+    log.info("run ok: published %s in %.1fs", "encrypted" if vlt else ("locked stub" if in_ci else "plaintext (local)"),
+             time.monotonic() - started, extra={"safe": True})
     return 0
 
 

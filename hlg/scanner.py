@@ -20,7 +20,16 @@ import numpy as np
 import pandas as pd
 
 from . import account
-from .common import Notifier, State, fnum, info, load_config, log, setup_logging
+from .common import (
+    Notifier,
+    State,
+    fnum,
+    info,
+    load_config,
+    log,
+    require_account,
+    setup_logging,
+)
 
 
 def candles(inf, coin, interval, days):
@@ -263,6 +272,7 @@ def run_once(cfg, inf, notif, state):
 def main():
     setup_logging()
     cfg = load_config()
+    require_account(cfg)
     inf = info()
     notif = Notifier(cfg)
     state = State(cfg["state_file"])

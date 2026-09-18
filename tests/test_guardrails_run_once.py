@@ -19,7 +19,7 @@ def run(cfg, info, state):
 def test_profit_locking_stop_is_not_called_too_wide(tmp_path):
     """A long's stop ABOVE entry locks in profit and risks nothing. It used to be measured as
     |stop - entry| and flagged "risks N USD, tighten" -- advice to tighten a stop already
-    protecting gains. Seen live on NEAR (entry 3.2165, stop 3.5337, flagged as 365 USD of risk)."""
+    protecting gains -- which it did, live, on a profitable long with its stop trailed above entry."""
     cfg = base_cfg()
     state = State(tmp_path / "state.json")
     pos = make_position("BTC", sz=10.0, entry=100, upnl=300, position_value=1300)

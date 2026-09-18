@@ -3,6 +3,8 @@ state*.json
 __pycache__/
 *.pyc
 .env
+# holds the wallet address locally; the repo is public
+config.local.yaml
 site/
 miner_cache/
 miner_out/

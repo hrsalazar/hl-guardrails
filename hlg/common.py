@@ -1,4 +1,7 @@
-import json, logging, os, time
+import json
+import logging
+import os
+import time
 from pathlib import Path
 
 import requests
@@ -10,12 +13,39 @@ API = "https://api.hyperliquid.xyz"
 
 
 def load_config(path="config.yaml"):
+    """config.yaml, overlaid with an optional gitignored config.local.yaml, and the account taken
+    from $HLG_ACCOUNT when set. The repo is public, so the wallet address lives in a secret (CI) or
+    the local overlay (your machine) rather than in the committed file."""
     with open(path) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    local = Path(path).with_name("config.local.yaml")
+    if local.exists():
+        cfg.update(yaml.safe_load(local.read_text()) or {})
+    cfg["account"] = os.environ.get("HLG_ACCOUNT") or cfg.get("account")
+    return cfg
+
+
+def require_account(cfg):
+    """Only the monitors need an account; backtest/regime/miner load the same config without one."""
+    a = str(cfg.get("account") or "")
+    if not (a.startswith("0x") and len(a) == 42):
+        raise SystemExit("no account configured: set HLG_ACCOUNT, or `account:` in config.local.yaml")
+    return a
+
+
+def _redact(record):
+    """Actions logs on a public repo are readable by anyone with a GitHub account, and the monitor
+    used to print equity, PnL and every position into them every 15 minutes. Fail closed: only
+    errors and lines explicitly marked safe (extra={"safe": True}) get through, so a log call added
+    later cannot leak account data by default -- it has to be opted in."""
+    return record.levelno >= logging.ERROR or getattr(record, "safe", False)
 
 
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if os.environ.get("HLG_REDACT"):
+        for h in logging.getLogger().handlers:
+            h.addFilter(_redact)
 
 
 class Notifier:

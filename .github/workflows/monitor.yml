@@ -13,11 +13,12 @@ on:
   push:
     branches: [main]
 
+# No `issues: write`: alerts are no longer posted to an issue, which on a public repo made every
+# position readable by anyone. Least privilege is the whole point of this job.
 permissions:
   contents: read
   pages: write
   id-token: write
-  issues: write
 
 concurrency:
   group: monitor
@@ -43,10 +44,16 @@ jobs:
       - name: Run guardrails + scanner
         env:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          # Everything published is encrypted with this (hlg/vault.py). Without it the job
+          # publishes a locked stub, never plaintext.
+          DASHBOARD_PASSPHRASE: ${{ secrets.DASHBOARD_PASSPHRASE }}
+          # The wallet stays out of the public repo; as a secret it is also masked in this log.
+          HLG_ACCOUNT: ${{ secrets.HLG_ACCOUNT }}
+          # This log is public on a public repo: print errors and explicitly-safe lines only.
+          HLG_REDACT: "1"
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
           PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m hlg.report
       - name: Stamp site
         run: |

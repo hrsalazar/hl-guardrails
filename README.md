@@ -2,7 +2,7 @@
 
 Guard-rail monitor + swing-setup scanner for a Hyperliquid perp account. **Advisory only** — it
 watches a configurable account (a public address, no key needed) and warns you; it never places,
-modifies, or cancels an order. Built from the analysis of `0x68b1…01c9`: the losses came from
+modifies, or cancels an order. Built from the analysis of a real account's history: the losses came from
 unstopped, averaged-down positions held >7 days and from sub-24h taker scalping; the profitable
 pocket was 3–7 day swings at moderate size. This bot flags the first and alerts on the second —
 acting on either is always up to you.
@@ -13,6 +13,7 @@ acting on either is always up to you.
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 cp config.yaml.example config.yaml   # or edit config.yaml directly
+echo "account: '0xYOUR_ADDRESS'" > config.local.yaml   # gitignored: the address stays off GitHub
 ```
 
 ## Run
@@ -45,11 +46,49 @@ Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
    **variable** `VAPID_PUBLIC_KEY`. Open the PWA, click *Enable push*, copy the subscription JSON into
    secret `PUSH_SUBSCRIPTIONS` (a JSON list for several devices). iOS requires the PWA installed to the
    Home Screen.
-3. **GitHub Issue** — every new alert is appended to an open issue labelled `alerts`; subscribe to the
-   issue and the GitHub mobile app pushes it to you. Zero setup.
+Alerts used to be appended to a GitHub Issue as well. On a public repo that made every position
+readable by anyone, logged in or not, so that channel was removed.
 
-Enable it: repo *Settings → Pages → Source: GitHub Actions*, then run the workflow once manually.
-No keys are needed in CI, since nothing this tool does ever requires one.
+Enable it: repo *Settings → Pages → Source: GitHub Actions*, add the secrets below, then run the
+workflow once manually. No trading keys are ever needed — nothing this tool does can place an order.
+
+### Keeping it private on a public repo
+
+The repo can stay public (free Pages, free Actions) while the numbers stay yours. That needs more
+than a login screen: Pages is static hosting with no server to check a password, so a JavaScript
+prompt would stop nobody — the data files are one URL away. Every place the account used to leak
+had to be closed:
+
+| Where it leaked | What happens now |
+|---|---|
+| `alerts.json`, `state.json`, `history.json` on Pages | encrypted in CI before publishing; only ciphertext is ever served |
+| an issue collecting every alert | channel removed (Web Push stays: it is end-to-end encrypted to your device) |
+| the Actions log, public on a public repo | `HLG_REDACT` drops everything but errors and lines explicitly marked safe |
+| the wallet address in `config.yaml` | an Actions secret in CI, `config.local.yaml` (gitignored) locally |
+
+**Encryption** (`hlg/vault.py`, and its WebCrypto twin in `pwa/index.html`): AES-256-GCM with a key
+from PBKDF2-SHA256 at 600,000 iterations. GCM is authenticated, so a wrong passphrase or any
+tampering fails outright instead of decrypting to garbage; the file name is bound in as associated
+data so one file can't be served as another; a fresh random IV is used every time. The salt is
+random and carried forward between runs, so the key stays stable and a device can unlock once. The
+dashboard keeps the derived key in IndexedDB as a **non-extractable** `CryptoKey` — usable to
+decrypt, but not readable, not even by the page's own JavaScript. *Lock* forgets it.
+
+**It fails closed.** If `DASHBOARD_PASSPHRASE` is missing in CI, the job publishes a locked stub, not
+the data, and sends no push (every alert would otherwise look new each run). The redaction is an
+allowlist for the same reason: a log line added later is hidden unless someone opts it in.
+
+Secrets (*Settings → Secrets and variables → Actions*):
+
+| Secret | Value |
+|---|---|
+| `DASHBOARD_PASSPHRASE` | a long passphrase only you know — it is the only thing protecting the data; a password manager is the right place for it |
+| `HLG_ACCOUNT` | the wallet address being monitored |
+
+**What this cannot hide.** Hyperliquid is a public chain: anyone who knows the address can see its
+positions and PnL on Hyperliquid itself, whatever this dashboard does. Keeping the address out of
+the repo stops it being handed out here, but anything ever committed stays in git history. The only
+complete separation is a wallet that was never published anywhere.
 
 ### Keeping the dashboard current
 
@@ -134,18 +173,18 @@ should be depends on the account model. `userAbstraction` says which:
 
 On a unified account the perp `accountValue` is only the slice of USDC the perps are drawing at
 that moment, and it moves as collateral is allocated internally with no ledger transfer to show
-for it. On the account this was built against it read **$1,208** against **$15,785** of USDC and a
-$27k portfolio — so the tool was sizing risk at $18 a trade instead of $237, calling a 0.77x book
-"8.5x gross exposure", and showing an equity drop that no transfer explained. It also cannot be
-switched blindly: of 40 leaderboard accounts sampled, 25 were classic, and one of those had
-$596k of perp equity and $0 of spot USDC.
+for it. On the account this was built against the perp value was roughly a thirteenth of the USDC
+collateral — so the tool was sizing risk about 13x too small, reporting a sub-1x book as several
+times "gross exposure", and showing an equity drop that no transfer explained. It also cannot be
+switched blindly: of 40 leaderboard accounts sampled, 25 were classic, including ones with large
+perp equity and no spot USDC at all.
 
 The unified figures are not an approximation. They reproduce HL's *Unified Account Summary* to
 the displayed precision:
 
-- **Unified account ratio** = perp maintenance margin ÷ USDC (3.84%)
-- **Unified account leverage** = perp notional ÷ USDC (0.77x) — and `max_gross_exposure_x` is
-  checked against exactly this
+- **Unified account ratio** = perp maintenance margin ÷ USDC
+- **Unified account leverage** = perp notional ÷ USDC — and `max_gross_exposure_x` is checked
+  against exactly this
 
 What else changes on a unified account:
 
@@ -157,7 +196,7 @@ What else changes on a unified account:
   the same coin's perp position, so a perp long stacked on a spot bag is flagged as the one bet it
   is, and a perp short against it reads as a hedge. Spot is valued at the liquid **perp** mid, never
   at its own book: illiquid spot marks are garbage (valuing every token off its own pair once
-  priced this account at $23.8M).
+  put a small memecoin balance in the tens of millions).
 - If `userAbstraction` fails, the account is treated as classic — on a unified account that sizes
   off the small perp value, i.e. too conservatively rather than too aggressively.
 

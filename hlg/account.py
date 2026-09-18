@@ -8,23 +8,25 @@ Hyperliquid has two account models, and they need different bases:
 
   unified ("unifiedAccount")
       Spot balances collateralise perps. The perp `accountValue` is then only the slice of USDC
-      the perps are currently drawing -- e.g. $1.2k on a book backed by $15.8k of USDC -- and it
-      moves as collateral is allocated internally, with no ledger transfer to show for it. Sizing
-      off it understates capacity ~13x and makes every exposure check fire.
+      the perps are currently drawing -- an order of magnitude below the real collateral on a
+      typical book -- and it moves as collateral is allocated internally, with no ledger transfer
+      to show for it. Sizing off it understates capacity by that same factor and makes every
+      exposure check fire.
 
 For a unified account the base is the spot USDC balance. That is not a judgement call: HL's own
 "Unified Account Ratio" and "Unified Account Leverage" are exactly
 
-    ratio    = perp maintenance margin / USDC      (3.84% on the account this was built against)
-    leverage = perp notional / USDC               (0.77x)
+    ratio    = perp maintenance margin / USDC
+    leverage = perp notional / USDC
 
-reproduced to the displayed precision, so this module matches what the exchange shows you.
+which were checked against the exchange's own account summary to its displayed precision, so this
+module matches what HL shows you.
 
 Spot tokens other than USDC are deliberately NOT part of the sizing base. They are exposure, not
 spare capacity: counting a HYPE bag as room to open more HYPE risk double-counts it. They are
 instead folded into per-coin exposure (`spot_units`), valued at the liquid perp mid rather than
-at their own spot marks, since illiquid spot pairs carry absurd marks (a memecoin balance valued
-off its own book once came out at $23.8M).
+at their own spot marks, since illiquid spot pairs carry absurd marks (valuing every token off its
+own book once put a small memecoin balance in the tens of millions).
 """
 from .common import fnum, log
 

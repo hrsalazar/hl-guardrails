@@ -35,9 +35,24 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
 <body>
 <header>
   <div><h1>HL Guardrails</h1><small id="gen">loading…</small></div>
-  <div class="row"><button id="notif">Enable notifications</button><button id="push" disabled>Enable push</button></div>
+  <div class="row"><button id="notif">Enable notifications</button><button id="push" disabled>Enable push</button><button id="lock" hidden>Lock</button></div>
 </header>
 <main>
+  <!-- The published data is AES-256-GCM ciphertext (hlg/vault.py). Nothing below #app exists in
+       readable form until this browser decrypts it, so hiding #app is presentation, not the
+       security boundary -- the encryption is. -->
+  <form class="card" id="gate" hidden autocomplete="on">
+    <h3 style="margin:0 0 6px">Locked</h3>
+    <p class="mut" id="gatemsg" style="margin:0 0 10px">Enter the dashboard passphrase. It is checked by decrypting the data in this browser — it is never sent anywhere.</p>
+    <input type="text" name="username" autocomplete="username" value="hl-guardrails" hidden>
+    <div class="row" style="justify-content:flex-start">
+      <input id="pass" type="password" name="password" autocomplete="current-password" placeholder="passphrase" required
+        style="flex:1;min-width:180px;background:#0b0d11;color:var(--fg);border:1px solid #333;border-radius:8px;padding:8px 10px;font-size:14px">
+      <button id="unlockbtn" type="submit">Unlock</button>
+    </div>
+    <p id="unlockmsg" class="neg" style="margin:8px 0 0;font-size:13px"></p>
+  </form>
+  <div id="app" hidden>
   <!-- KPIs and Alerts live outside the tabs on purpose: they are the act-now layer and must never
        be one tap away behind a tab you happen not to be on. -->
   <div class="card row" id="kpis"></div>
@@ -61,6 +76,7 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
     <div class="card"><h3 style="margin:0 0 6px">Volume &amp; open interest</h3><div id="market"></div></div>
     <div class="card"><h3 style="margin:0 0 6px">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></div>
   </div>
+  </div>
   <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
     <p class="mut">Copy this JSON into the repo secret <code>PUSH_SUBSCRIPTIONS</code> (as a list to add several devices). Actions will then push to this device even when the page is closed.</p>
     <pre id="sub"></pre><button id="copy">Copy</button></div>
@@ -75,13 +91,74 @@ const hasNotif=typeof Notification!=='undefined';
 const pct=(n,b)=>b?` <small class="mut">(${n>=0?'+':''}${fmt(100*n/b,1)}%)</small>`:'';
 let lastKeys=new Set(JSON.parse(localStorage.getItem('seenKeys')||'[]'));
 
+// ---- decryption: must stay byte-compatible with hlg/vault.py --------------------------------
+// AES-256-GCM, key = PBKDF2-SHA256(passphrase, salt, iter), 96-bit IV, AAD = file name.
+const MIN_ITER=600000, enc=new TextEncoder(), b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function deriveKey(pass,env){
+  // a served envelope asking for fewer iterations is refused rather than trusted
+  if(!(env.iter>=MIN_ITER))throw new Error('weak KDF parameters refused');
+  const base=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
+  // extractable=false: the key can decrypt, but no script -- including this page -- can read it out
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(env.salt),iterations:env.iter,hash:'SHA-256'},
+    base,{name:'AES-GCM',length:256},false,['decrypt']);
+}
+async function unseal(env,key,name){
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(env.iv),additionalData:enc.encode(name)},key,b64(env.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+// The derived key is remembered in IndexedDB as a non-extractable CryptoKey, alongside the salt
+// it belongs to. Memory is the fallback where IndexedDB is unavailable (e.g. private browsing).
+let memKey=null, pending=null;
+function idb(){return new Promise((ok,ko)=>{const r=indexedDB.open('hlg',1);r.onupgradeneeded=()=>r.result.createObjectStore('keys');r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error)})}
+async function idbDo(mode,fn){const db=await idb();return new Promise((ok,ko)=>{const t=db.transaction('keys',mode);const q=fn(t.objectStore('keys'));t.oncomplete=()=>ok(q&&q.result);t.onerror=()=>ko(t.error)})}
+async function savedKey(salt){
+  let k=memKey;
+  if(!k)try{k=await idbDo('readonly',s=>s.get('k'))}catch(e){}
+  return k&&k.salt===salt?k.key:null;
+}
+async function saveKey(key,salt){memKey={key,salt};try{await idbDo('readwrite',s=>s.put({key,salt},'k'))}catch(e){}}
+async function forgetKey(){memKey=null;try{await idbDo('readwrite',s=>s.delete('k'))}catch(e){}}
+
+function gate(msg){
+  $('#app').hidden=true;$('#lock').hidden=true;$('#gate').hidden=false;
+  $('#gen').textContent='locked';
+  if(msg)$('#gatemsg').textContent=msg;
+}
+$('#gate').onsubmit=async e=>{
+  e.preventDefault();
+  const pass=$('#pass').value;
+  if(!pass||!pending)return;
+  $('#unlockbtn').disabled=true;$('#unlockmsg').className='mut';$('#unlockmsg').textContent='deriving key…';
+  try{
+    const key=await deriveKey(pass,pending);
+    await unseal(pending,key,'alerts.json');  // prove the passphrase before remembering anything
+    await saveKey(key,pending.salt);
+    $('#pass').value='';$('#unlockmsg').textContent='';
+    await load();
+  }catch(err){
+    $('#unlockmsg').className='neg';
+    $('#unlockmsg').textContent=err&&err.message==='weak KDF parameters refused'?err.message:'Wrong passphrase.';
+  }finally{$('#unlockbtn').disabled=false}
+};
+$('#lock').onclick=async()=>{await forgetKey();location.reload()};
+
 async function load(){
   try{await render()}catch(e){$('#gen').textContent='error: '+(e&&e.message||e)}
 }
 async function render(){
   const r=await fetch('alerts.json?t='+Date.now(),{cache:'no-store'});
   if(!r.ok){$('#gen').textContent='no data yet — first Actions run pending';return}
-  const d=await r.json();
+  let d=await r.json();
+  if(d.locked){gate('Nothing is published yet: the monitor refuses to publish account data until the DASHBOARD_PASSPHRASE secret is set.');$('#pass').disabled=true;return}
+  const encrypted=!!d.ct;
+  if(encrypted){
+    const key=await savedKey(d.salt);
+    if(!key){pending=d;gate();return}
+    try{d=await unseal(d,key,'alerts.json')}
+    catch(e){await forgetKey();pending=d;gate('The saved key no longer opens the data — the passphrase has probably changed.');return}
+  }
+  $('#gate').hidden=true;$('#app').hidden=false;
+  $('#lock').hidden=!encrypted;  // a local plaintext preview has nothing to lock
   // Staleness is shown rather than assumed. GitHub's scheduler does not honour short crons (see
   // monitor.yml), so "when was this actually last refreshed" is the thing worth surfacing -- a
   // guardrail you believe is live but is four hours old is worse than no guardrail.

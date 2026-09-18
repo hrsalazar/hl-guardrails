@@ -15,7 +15,16 @@ import math
 import time
 
 from . import account
-from .common import Notifier, State, fnum, info, load_config, log, setup_logging
+from .common import (
+    Notifier,
+    State,
+    fnum,
+    info,
+    load_config,
+    log,
+    require_account,
+    setup_logging,
+)
 
 ADDR = None
 
@@ -104,9 +113,9 @@ def run_once(cfg, inf, notif, state):
 
     # A loss-limit lock is only meaningful against the base it was computed on. Locks normally
     # persist for the period even if PnL recovers -- deliberately -- but one measured against a
-    # different definition of equity was never a real breach: the first lock on this account fired
-    # when the tool read equity as $872 of perp margin instead of $15.8k of USDC collateral, while
-    # the account was up 8% on the day. So a change of basis (new account model, or an account
+    # different definition of equity was never a real breach: a lock fired while the tool read
+    # equity as the small perp-margin slice instead of the USDC collateral, with the whole account
+    # up on the day. So a change of basis (new account model, or an account
     # switching between classic and unified) voids an outstanding lock instead of inheriting it.
     # A lock with no recorded basis predates this check, and that code always sized on perp equity
     # -- so it is inferred rather than assumed different. A genuine lock on a classic account, whose
@@ -282,6 +291,7 @@ def run_once(cfg, inf, notif, state):
 def main():
     setup_logging()
     cfg = load_config()
+    require_account(cfg)
     inf = info()
     notif = Notifier(cfg)
     state = State(cfg["state_file"])
