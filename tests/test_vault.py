@@ -150,6 +150,13 @@ def test_account_comes_from_the_environment(tmp_path, monkeypatch):
     assert common.require_account(cfg) == "0x" + "ab" * 20
 
 
+def test_account_secret_with_a_trailing_newline_still_works(tmp_path, monkeypatch):
+    """What actually broke the first deploy: a secret piped in from a shell gained a newline."""
+    (tmp_path / "config.yaml").write_text("account: null\nrules: {}\n")
+    monkeypatch.setenv("HLG_ACCOUNT", "0x" + "ab" * 20 + "\r\n")
+    assert common.require_account(common.load_config(str(tmp_path / "config.yaml"))) == "0x" + "ab" * 20
+
+
 def test_account_from_a_gitignored_local_overlay(tmp_path, monkeypatch):
     monkeypatch.delenv("HLG_ACCOUNT", raising=False)
     (tmp_path / "config.yaml").write_text("account: null\nrules: {}\n")

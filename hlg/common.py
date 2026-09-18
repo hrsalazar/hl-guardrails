@@ -21,7 +21,9 @@ def load_config(path="config.yaml"):
     local = Path(path).with_name("config.local.yaml")
     if local.exists():
         cfg.update(yaml.safe_load(local.read_text()) or {})
-    cfg["account"] = os.environ.get("HLG_ACCOUNT") or cfg.get("account")
+    # strip: a secret set by piping or pasting routinely carries a trailing newline, which once
+    # turned a valid address into a rejected one and stopped the monitor
+    cfg["account"] = (os.environ.get("HLG_ACCOUNT") or "").strip() or cfg.get("account")
     return cfg
 
 
