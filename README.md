@@ -50,8 +50,43 @@ Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
 
 Enable it: repo *Settings → Pages → Source: GitHub Actions*, then run the workflow once manually.
 No keys are needed in CI, since nothing this tool does ever requires one.
-Cron granularity is ~15 min (GitHub may delay further) — this is a monitoring cadence, not a
-real-time alert.
+
+### Keeping the dashboard current
+
+**GitHub will not run a 15-minute cron.** Measured on this repo over 80 hours: 22 scheduled runs
+where a `*/15` cron implies 321, a median gap of **235 minutes**, and the shortest gap ever
+observed was 121 minutes — it never once fired at 15. Scheduled workflows are explicitly
+best-effort and short intervals get deprioritised. Nothing was misconfigured: the workflow was
+`active`, no runs were cancelled, and the cron syntax was valid.
+
+That is survivable for the scanner (daily/4h breakouts held for weeks) but not for the guardrails,
+which are the safety layer — a stop-coverage or loss-limit check that runs every four hours is
+mostly decorative.
+
+So `monitor.yml` keeps an hourly cron as a backstop only, and real cadence comes from an external
+scheduler calling the dispatch API:
+
+```
+POST https://api.github.com/repos/<you>/hl-guardrails/actions/workflows/monitor.yml/dispatches
+Authorization: Bearer <token>
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+
+{"ref":"main"}
+```
+
+Set it up with any free scheduler (cron-job.org, EasyCron, an always-on box's own crontab):
+
+1. GitHub → *Settings → Developer settings → Fine-grained tokens* → new token, **Repository access:
+   only `hl-guardrails`**, **Repository permissions → Actions: Read and write**. Nothing else —
+   in particular not `contents`, so a leaked token can start this read-only workflow and nothing more.
+2. Point the scheduler at the URL above every 15 minutes with that token as a bearer header.
+3. Confirm it works: `gh run list --workflow=monitor.yml` should start showing `workflow_dispatch`
+   runs on a regular cadence.
+
+The dashboard does not take the cadence on trust either way — the timestamp in the header turns
+amber past 20 minutes and red past 40, because a guardrail you believe is live but is four hours
+old is worse than no guardrail.
 
 ### Dashboard sections
 

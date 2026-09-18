@@ -1,8 +1,14 @@
 name: monitor
 
 on:
+  # GitHub's scheduler will not honour a 15-minute cron. Measured on this repo over 80 hours:
+  # 22 scheduled runs instead of 321, median gap 235 min, and the shortest gap ever observed was
+  # 121 min -- it never once fired at 15. Scheduled workflows are best-effort and short intervals
+  # get deprioritised, so the cron here is only a backstop at an interval GitHub might actually
+  # keep. Real cadence comes from an external scheduler calling the workflow_dispatch API
+  # (README "Keeping the dashboard current"), which is exact and costs nothing.
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 * * * *"   # hourly, off the hour: on-the-hour slots are the most contended
   workflow_dispatch:
   push:
     branches: [main]
