@@ -39,7 +39,9 @@ scanner:
   momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours
   # Macro backdrop (FRED, no key) shown on alerts and the dashboard. Context ONLY - it gates nothing:
   # every risk-on filter tested worse than dropping the same trades at random (README "Macro").
-  macro_context: true
+  # OFF by default because FRED read-times-out from GitHub Actions runners, so the scheduled
+  # monitor would burn 300s a run for nothing. Turn it on when running the scanner locally.
+  macro_context: false
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

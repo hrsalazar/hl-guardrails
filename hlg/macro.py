@@ -40,7 +40,9 @@ def fetch(name, series_id, start="2020-01-01", cache_dir="miner_cache"):
     if p.exists() and time.time() - p.stat().st_mtime < CACHE_TTL_S:
         raw = p.read_text()
     else:
-        r = requests.get(FRED, params={"id": series_id, "cosd": start}, headers=UA, timeout=30)
+        # Short timeout on purpose: FRED is unreachable from some networks (GitHub Actions runners
+        # among them) and a caller that has it enabled there should lose seconds, not minutes.
+        r = requests.get(FRED, params={"id": series_id, "cosd": start}, headers=UA, timeout=10)
         r.raise_for_status()
         raw = r.text
         p.parent.mkdir(exist_ok=True)

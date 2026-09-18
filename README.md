@@ -238,8 +238,16 @@ That is **not** wired in as a rule. It is a post-hoc hypothesis on 27 trades, fo
 sample that generated it, and the p-values ignore that 11 filters were tried first — invert the gate
 and you are fitting noise with a good story attached. So the backdrop ships as **context only**: a
 line on breakout alerts and a strip on the dashboard, changing no decision, there to be logged
-against outcomes until there is enough fresh data to say something honest. Set
-`scanner.macro_context: false` to turn it off.
+against outcomes until there is enough fresh data to say something honest.
+
+> **`scanner.macro_context` ships off**, because `fred.stlouisfed.org` read-times-out from GitHub
+> Actions runners — 10 of 10 requests hit the timeout, adding ~300 s to a job that runs every 15
+> minutes and returning nothing (`"macro": null`). It degrades cleanly rather than failing a scan,
+> but it is dead weight there. FRED answers normally from a workstation, so set it to `true` if you
+> run `python -m hlg.scanner` locally; `python -m hlg.macro` prints the current backdrop, and the
+> backtest filters above use the same data. If you want it on the hosted dashboard, the FRED *API*
+> host (`api.stlouisfed.org`, needs a free key) is a different endpoint and may not be blocked —
+> untested.
 
 ### Regime analysis (`python -m hlg.regime`)
 

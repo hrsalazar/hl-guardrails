@@ -30,19 +30,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      # The FRED series behind the macro context are DAILY, but this job runs every 15 min, and
-      # fetching them from an Actions runner costs ~60s each (~5 min a run, delaying every alert).
-      # Persist hlg.macro's own disk cache so only the first run of each UTC day pays for it; the
-      # date in the key expires it, restore-keys lets a run fall back to yesterday's copy while
-      # today's is still being fetched. A miss is harmless - macro_context degrades to no context.
-      - id: day
-        run: echo "utc=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-      - name: Cache macro series (daily)
-        uses: actions/cache@v4
-        with:
-          path: miner_cache
-          key: macro-${{ steps.day.outputs.utc }}
-          restore-keys: macro-
+      # No macro step here on purpose: fred.stlouisfed.org read-times-out from Actions runners
+      # (verified - 10/10 requests hit the 30s timeout, adding 300s to a job that runs every 15
+      # minutes and producing nothing). config.yaml ships with scanner.macro_context off for that
+      # reason; hlg.macro is for local research and backtests, where FRED answers fine.
       - name: Run guardrails + scanner
         env:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
