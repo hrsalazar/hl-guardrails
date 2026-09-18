@@ -16,8 +16,8 @@ from pathlib import Path
 
 import requests
 
-from . import guardrails, liquidations, market, scanner
-from .common import Notifier, State, fnum, info, load_config, log, setup_logging
+from . import account, guardrails, liquidations, market, scanner
+from .common import Notifier, State, info, load_config, log, setup_logging
 
 OUT = Path("site")
 
@@ -92,7 +92,7 @@ def main():
     guardrails.run_once(cfg, inf, gn, state)
     rows = scanner.run_once(cfg, inf, sn, state)
 
-    st = inf.user_state(cfg["account"])
+    acct, st = account.load(inf, cfg["account"])
     positions = [
         {k: p["position"][k] for k in ("coin", "szi", "entryPx", "positionValue", "unrealizedPnl", "liquidationPx")}
         | {"leverage": p["position"]["leverage"]["value"], "margin_type": p["position"]["leverage"].get("type")}
@@ -133,7 +133,10 @@ def main():
     out = {
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "account": cfg["account"],
-        "equity": fnum(st["marginSummary"]["accountValue"]),
+        # the sizing base (USDC collateral on a unified account); `acct` carries the rest. Not
+        # "account": that key already holds the address string the dashboard header slices.
+        "equity": acct["base"],
+        "acct": acct,
         "locked_until": state.get("lock_until", 0),
         "day_start_equity": state.get("day_start_equity"),
         "week_start_equity": state.get("week_start_equity"),
@@ -144,7 +147,6 @@ def main():
         "scan": rows,
         "macro": scanner.macro_context(cfg["scanner"]),  # cached on disk by hlg.macro, so no second fetch
         "market": market_rows,
-        "margin": market.margin_health(st),
         "tradfi": {"rows": tradfi_rows, "dropped": tradfi_dropped},
         "liquidations": liq,
         "rules": cfg["rules"],

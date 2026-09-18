@@ -78,6 +78,26 @@ def make_fill(coin, side, sz, time_ms):
     return {"coin": coin, "side": side, "sz": str(sz), "time": time_ms}
 
 
+def make_spot(usdc, **tokens):
+    """A spotClearinghouseState payload: USDC is token 0, anything else is a named holding."""
+    bal = [{"coin": "USDC", "token": 0, "total": str(usdc), "hold": "0"}]
+    bal += [{"coin": k, "token": 100 + i, "total": str(v), "hold": "0"} for i, (k, v) in enumerate(tokens.items())]
+    return {"balances": bal}
+
+
+def make_unified_portfolio(day_pnl, week_pnl, portfolio_value):
+    """Unified accounts are judged on the whole-account "day"/"week" series, not perpDay/perpWeek."""
+    return [
+        ["day", {"pnlHistory": [[0, "0"], [NOW_MS, str(day_pnl)]],
+                 "accountValueHistory": [[0, str(portfolio_value)], [NOW_MS, str(portfolio_value)]]}],
+        ["week", {"pnlHistory": [[0, "0"], [NOW_MS, str(week_pnl)]],
+                  "accountValueHistory": [[0, str(portfolio_value)], [NOW_MS, str(portfolio_value)]]}],
+        # the perp series of a unified account is tiny and must NOT drive anything
+        ["perpDay", {"pnlHistory": [[0, "0"], [NOW_MS, "-999"]], "accountValueHistory": [[0, "1000"], [NOW_MS, "1000"]]}],
+        ["perpWeek", {"pnlHistory": [[0, "0"], [NOW_MS, "-999"]], "accountValueHistory": [[0, "1000"], [NOW_MS, "1000"]]}],
+    ]
+
+
 def make_portfolio(day_pnl, week_pnl, equity):
     """A perpDay/perpWeek history with one baseline entry far in the past (t=0, always inside
     any real day/week window) and one entry equal to `now` -- period_pnl() diffs the series'
@@ -99,7 +119,8 @@ class FakeInfo:
     """Stands in for hyperliquid.info.Info: returns canned data, never touches the network."""
 
     def __init__(self, *, user_state=None, open_orders=None, mids=None, fills=None,
-                 ledger=None, portfolio=None, candles=None, meta_ctxs=None, meta=None):
+                 ledger=None, portfolio=None, candles=None, meta_ctxs=None, meta=None,
+                 abstraction="disabled", spot=None):
         self._user_state = user_state if user_state is not None else make_user_state(10000, [])
         self._open_orders = open_orders if open_orders is not None else []
         self._mids = mids if mids is not None else {}
@@ -109,6 +130,8 @@ class FakeInfo:
         self._candles = candles if candles is not None else {}
         self._meta_ctxs = meta_ctxs
         self._meta = meta
+        self._abstraction = abstraction  # "disabled" = classic, the most common real value
+        self._spot = spot if spot is not None else {"balances": []}
 
     def user_state(self, acct):
         return self._user_state
@@ -137,6 +160,10 @@ class FakeInfo:
             return self._candles[(coin, interval)]
         if t == "metaAndAssetCtxs":
             return self._meta_ctxs
+        if t == "userAbstraction":
+            return self._abstraction
+        if t == "spotClearinghouseState":
+            return self._spot
         raise ValueError(f"FakeInfo: unhandled /info type {t!r}")
 
 

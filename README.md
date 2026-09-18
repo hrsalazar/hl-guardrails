@@ -116,11 +116,50 @@ Three things worth knowing about the data, because each one is a trap:
   not a 24h total and not Hyperliquid's own. OKX sends permissive CORS headers, so if the CI fetch
   comes back empty the dashboard asks OKX directly from your browser; the card says which it used.
 
-**Maintenance buffer** is the liquidation number that matters. Per-position `liquidationPx` is
-`null` for cross-margined positions — which is the normal case — because Hyperliquid assesses
-liquidation on the whole account. So the Flow tab shows the account buffer
-(`accountValue − crossMaintenanceMarginUsed`) and, more usefully, the percentage move across gross
-notional that would exhaust it.
+**Liquidation risk is account-level.** Per-position `liquidationPx` is `null` for cross-margined
+positions — the normal case — because Hyperliquid assesses liquidation on the whole account. The
+Flow tab shows the collateral, the maintenance margin and HL's own ratio instead. It deliberately
+does not show a derived "move to liquidation": HL does not publish the unified liquidation
+threshold, and a precise-looking figure built on a guessed one is worse than none.
+
+## Equity base: unified vs classic accounts
+
+Every rule and every suggested size scales off one number, and on Hyperliquid what that number
+should be depends on the account model. `userAbstraction` says which:
+
+| mode | what margins the perps | base used here |
+|---|---|---|
+| `disabled` / `default` (classic) | the perp account itself | perp `accountValue` |
+| `unifiedAccount` | spot balances — USDC is the collateral | **spot USDC** |
+
+On a unified account the perp `accountValue` is only the slice of USDC the perps are drawing at
+that moment, and it moves as collateral is allocated internally with no ledger transfer to show
+for it. On the account this was built against it read **$1,208** against **$15,785** of USDC and a
+$27k portfolio — so the tool was sizing risk at $18 a trade instead of $237, calling a 0.77x book
+"8.5x gross exposure", and showing an equity drop that no transfer explained. It also cannot be
+switched blindly: of 40 leaderboard accounts sampled, 25 were classic, and one of those had
+$596k of perp equity and $0 of spot USDC.
+
+The unified figures are not an approximation. They reproduce HL's *Unified Account Summary* to
+the displayed precision:
+
+- **Unified account ratio** = perp maintenance margin ÷ USDC (3.84%)
+- **Unified account leverage** = perp notional ÷ USDC (0.77x) — and `max_gross_exposure_x` is
+  checked against exactly this
+
+What else changes on a unified account:
+
+- **Loss limits** use HL's whole-account `day`/`week` PnL series, as a share of the whole
+  portfolio. Spot is collateral there, so a bad day in the spot book is a bad day. Classic accounts
+  keep the perp-only series, where spot really is a separate wallet.
+- **Spot tokens are exposure, not capacity.** They never raise the sizing base — counting a HYPE bag
+  as room for more HYPE risk would double-count it. `max_coin_exposure_x` instead nets spot into
+  the same coin's perp position, so a perp long stacked on a spot bag is flagged as the one bet it
+  is, and a perp short against it reads as a hedge. Spot is valued at the liquid **perp** mid, never
+  at its own book: illiquid spot marks are garbage (valuing every token off its own pair once
+  priced this account at $23.8M).
+- If `userAbstraction` fails, the account is treated as classic — on a unified account that sizes
+  off the small perp value, i.e. too conservatively rather than too aggressively.
 
 ## Rules watched (config.yaml → `rules`)
 
@@ -129,14 +168,15 @@ enforced automatically. Acting on it is up to you.
 
 | Rule | What triggers the warning |
 |---|---|
-| Position without a reduce-only stop | prints the stop price that would cap the loss at `risk_per_trade_pct` of equity |
+| Position without a reduce-only stop | prints the stop price that would cap the loss at `risk_per_trade_pct` of the equity base |
 | Existing stop risks > 1.25× allowed | warn |
 | Added to a position while underwater | warn — averaging down |
 | Position older than `max_hold_days` | warn — time stop |
 | Leverage > `max_leverage` | warn |
-| > `max_positions`, > `max_same_direction`, gross > `max_gross_exposure_x` | warn |
+| > `max_positions`, > `max_same_direction`, account leverage > `max_gross_exposure_x` | warn |
+| Net perp + spot in one coin > `max_coin_exposure_x` × base (unified only) | warn — one concentrated bet across spot and perp |
 | Coin not in `allowed_coins` | warn |
-| Daily / weekly loss limit (transfer-adjusted equity) | warn that you should be flat; the advice stays "locked" until the next period, and re-fires if a position is still open |
+| Daily / weekly loss limit (whole account when unified, perps when classic) | warn that you should be flat; the advice stays "locked" until the next period, and re-fires if a position is still open |
 
 State (day/week start equity, lock, last position snapshot) lives in `state.json`.
 
@@ -154,7 +194,8 @@ scanner in alert mode for 6–8 weeks and log the outcomes before sizing up.
 ## Caveats
 
 - Fully read-only (public `/info` endpoints only) — it never places, modifies, or cancels an order.
-- Loss limits use perp `accountValue`; spot balances are ignored by design (keep them out of reach).
+- On a classic account, loss limits use the perp account only and spot is ignored (it is a separate
+  wallet). On a unified account spot *is* the collateral, so it counts — see "Equity base" above.
 - Polling is 60 s: a fast move can breach the risk cap before you see the warning. Place your own stops at entry; this is a second pair of eyes, not a safety net that acts for you.
 
 ## Setup miner (`hlg.miner`)

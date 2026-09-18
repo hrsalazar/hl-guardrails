@@ -16,6 +16,43 @@ def run(cfg, info, state):
     return problems, notif
 
 
+def test_profit_locking_stop_is_not_called_too_wide(tmp_path):
+    """A long's stop ABOVE entry locks in profit and risks nothing. It used to be measured as
+    |stop - entry| and flagged "risks N USD, tighten" -- advice to tighten a stop already
+    protecting gains. Seen live on NEAR (entry 3.2165, stop 3.5337, flagged as 365 USD of risk)."""
+    cfg = base_cfg()
+    state = State(tmp_path / "state.json")
+    pos = make_position("BTC", sz=10.0, entry=100, upnl=300, position_value=1300)
+    far_above = make_stop_order("BTC", "A", 10.0, trigger_px=125)  # locks +250; old code: "risks 250"
+    info = FakeInfo(user_state=make_user_state(10000, [pos]), portfolio=make_portfolio(0, 0, 10000),
+                    open_orders=[far_above], mids={"BTC": "130"})
+    problems, _ = run(cfg, info, state)
+    assert not any("risks" in p for p in problems)
+
+
+def test_short_stop_below_entry_is_profit_locking_too(tmp_path):
+    cfg = base_cfg()
+    state = State(tmp_path / "state.json")
+    pos = make_position("BTC", sz=-10.0, entry=100, upnl=300, position_value=700)
+    below = make_stop_order("BTC", "B", 10.0, trigger_px=75)
+    info = FakeInfo(user_state=make_user_state(10000, [pos]), portfolio=make_portfolio(0, 0, 10000),
+                    open_orders=[below], mids={"BTC": "70"})
+    problems, _ = run(cfg, info, state)
+    assert not any("risks" in p for p in problems)
+
+
+def test_a_genuinely_wide_stop_is_still_flagged(tmp_path):
+    """The fix must not blunt the rule: a stop far BELOW a long's entry is real risk."""
+    cfg = base_cfg()
+    state = State(tmp_path / "state.json")
+    pos = make_position("BTC", sz=10.0, entry=100, upnl=0, position_value=1000)
+    wide = make_stop_order("BTC", "A", 10.0, trigger_px=75)  # 250 risk vs 150 budget (1.5% of 10k)
+    info = FakeInfo(user_state=make_user_state(10000, [pos]), portfolio=make_portfolio(0, 0, 10000),
+                    open_orders=[wide], mids={"BTC": "100"})
+    problems, _ = run(cfg, info, state)
+    assert any("risks 250 USD" in p for p in problems)
+
+
 def test_clean_tick_has_no_advice(tmp_path):
     cfg = base_cfg()
     state = State(tmp_path / "state.json")
@@ -226,7 +263,7 @@ def test_gross_exposure_cap(tmp_path):
         mids={"BTC": "100"},
     )
     problems, notif = run(cfg, info, state)
-    assert any("gross exposure" in p for p in problems)
+    assert any("account leverage" in p for p in problems)
 
 
 def test_added_to_a_losing_position_flags_only_the_added_amount(tmp_path):

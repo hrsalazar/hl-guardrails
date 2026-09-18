@@ -6,13 +6,14 @@ poll_seconds: 60
 state_file: state.json
 
 rules:
-  risk_per_trade_pct: 1.5        # max loss per position at stop, % of perp equity
+  risk_per_trade_pct: 1.5        # % of the equity base: USDC collateral (unified) or perp equity (classic)
   max_positions: 3
   max_same_direction: 2
-  max_gross_exposure_x: 3.0      # sum(|notional|) / equity
+  max_gross_exposure_x: 3.0      # perp notional / base = HL's "Unified Account Leverage" when unified
+  max_coin_exposure_x: 1.0       # net perp + spot in one coin vs the base (unified accounts only)
   max_leverage: 5
   max_hold_days: 7
-  daily_loss_limit_pct: 3.0      # realized+unrealized vs start-of-day equity
+  daily_loss_limit_pct: 3.0      # whole account when unified, perps only when classic
   weekly_loss_limit_pct: 6.0
   allowed_coins: [BTC, ETH, SOL, NEAR, HYPE, XRP]
   no_add_underwater: true

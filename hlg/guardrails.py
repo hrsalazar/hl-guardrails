@@ -14,6 +14,7 @@ import datetime as dt
 import math
 import time
 
+from . import account
 from .common import Notifier, State, fnum, info, load_config, log, setup_logging
 
 ADDR = None
@@ -61,8 +62,11 @@ def stop_coverage(open_orders, coin, pos_sz):
 def run_once(cfg, inf, notif, state):
     R = cfg["rules"]
     acct = cfg["account"]
-    st = inf.user_state(acct)
-    equity = fnum(st["marginSummary"]["accountValue"])
+    port = dict(inf.post("/info", {"type": "portfolio", "user": acct}))
+    # `equity` is the base every rule sizes against: the perp account value on a classic account,
+    # the USDC collateral on a unified one (see hlg.account for why those differ ~13x).
+    model, st = account.load(inf, acct, port)
+    equity = model["base"]
     oo = inf.post("/info", {"type": "frontendOpenOrders", "user": acct})
     mids = inf.all_mids()
     now = utc_now()
@@ -98,9 +102,12 @@ def run_once(cfg, inf, notif, state):
         state.set("lock_until", 0)
     state.set("day_key", dk)
 
-    # HL's own perp PnL series (already net of deposits/withdrawals/spot<->perp transfers,
-    # including flows the ledger endpoint does not report) differenced at the period start.
-    port = dict(inf.post("/info", {"type": "portfolio", "user": acct}))
+    # HL's own PnL series (already net of deposits/withdrawals/spot<->perp transfers, including
+    # flows the ledger endpoint does not report) differenced at the period start. On a unified
+    # account that is the whole-account series ("day"/"week"): spot is collateral there, so a bad
+    # day in the spot book is a bad day. On a classic account spot is a separate wallet and the
+    # perp-only series stays the right measure.
+    dwin, wwin = ("day", "week") if model["unified"] else ("perpDay", "perpWeek")
     day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week0 = day0 - dt.timedelta(days=now.weekday())
 
@@ -112,8 +119,8 @@ def run_once(cfg, inf, notif, state):
         return float(pnl[-1][1]) - p0, v0
 
     try:
-        day_pnl, day_base = period_pnl("perpDay", day0)
-        week_pnl, week_base = period_pnl("perpWeek", week0)
+        day_pnl, day_base = period_pnl(dwin, day0)
+        week_pnl, week_base = period_pnl(wwin, week0)
     except (KeyError, IndexError) as e:
         log.error("portfolio pnl unavailable (%s); falling back to equity snapshot", e)
         if state.get("day_start_equity") is None or state.get("day_start_day") != dk:
@@ -168,8 +175,22 @@ def run_once(cfg, inf, notif, state):
     shorts = len(positions) - longs
     if max(longs, shorts) > R["max_same_direction"]:
         breach(f"{max(longs, shorts)} positions same direction > max {R['max_same_direction']} (correlated-bet risk)", "same_dir")
-    if equity > 0 and gross / equity > R["max_gross_exposure_x"]:
-        breach(f"gross exposure {gross:,.0f} = {gross / equity:.1f}x equity > {R['max_gross_exposure_x']}x", "gross")
+    # Same definition as HL's "Unified Account Leverage" on a unified account (notional / USDC),
+    # and plain gross / equity on a classic one.
+    lev_x = model["leverage"]
+    if lev_x is not None and lev_x > R["max_gross_exposure_x"]:
+        breach(f"account leverage {lev_x:.2f}x ({model['notional']:,.0f} notional / {equity:,.0f} {model['base_label']}) "
+               f"> {R['max_gross_exposure_x']}x", "gross")
+
+    # A perp long stacked on a spot bag in the same coin is one bet, not two; the checks above
+    # only ever saw the perp half. Only coins where spot is actually involved are judged here.
+    cap = R.get("max_coin_exposure_x")
+    if cap and equity > 0:
+        for coin, e in account.coin_exposure(model, positions, mids).items():
+            if e["spot_usd"] and abs(e["net_usd"]) > cap * equity:
+                breach(f"{coin}: perp {e['perp_usd']:+,.0f} + spot {e['spot_usd']:,.0f} = {e['net_usd']:+,.0f} USD net "
+                       f"({abs(e['net_usd']) / equity:.2f}x {model['base_label']}) > {cap}x - one concentrated bet across "
+                       f"spot and perp", f"coinexp_{coin}")
 
     # ---- per-position checks ----
     prev = state.get("positions", {})
@@ -204,7 +225,10 @@ def run_once(cfg, inf, notif, state):
                     f"nostop_{coin}",
                 )
         else:
-            worst = abs(trig - entry) * abs(sz)
+            # Loss if the stop fills, measured from entry and signed by direction: a long's stop above
+            # entry (or a short's below) locks in profit and risks nothing. The old abs() distance
+            # read those as risk and told you to tighten stops that were already protecting gains.
+            worst = max(0.0, (entry - trig) * sz)
             if worst > risk_usd * 1.25:
                 breach(f"{tag}: stop @ {trig} risks {worst:.0f} USD > allowed {risk_usd:.0f}. Tighten stop or cut size.", f"widestop_{coin}")
 
@@ -229,8 +253,11 @@ def run_once(cfg, inf, notif, state):
 
     state.set("positions", snap)
     log.info(
-        "equity %.0f | day %+.0f (%.1f%%) week %+.0f (%.1f%%) | %d pos gross %.0f | %d issue(s)%s",
-        equity, day_pnl, day_pnl / day_base * 100, week_pnl, week_pnl / week_base * 100,
+        "%s %.0f (%s) | ratio %s lev %s | day %+.0f (%.1f%%) week %+.0f (%.1f%%) | %d pos gross %.0f | %d issue(s)%s",
+        model["base_label"], equity, model["mode"],
+        f"{model['ratio_pct']:.2f}%" if model["ratio_pct"] is not None else "-",
+        f"{model['leverage']:.2f}x" if model["leverage"] is not None else "-",
+        day_pnl, day_pnl / day_base * 100, week_pnl, week_pnl / week_base * 100,
         len(positions), gross, len(problems), " | LOCKED" if locked else "",
     )
     return problems

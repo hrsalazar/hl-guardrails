@@ -79,23 +79,6 @@ def test_tradfi_rows_sorts_by_volume():
     assert [r["coin"] for r in rows] == ["xyz:B", "xyz:A"]
 
 
-def test_margin_health_computes_the_account_buffer():
-    """Real numbers off the live account: per-position liquidationPx is null under cross margin,
-    so the buffer and the adverse move that exhausts it are the only meaningful liq figures."""
-    st = {"marginSummary": {"accountValue": "1709.234869", "totalNtlPos": "14459.91111",
-                            "totalMarginUsed": "1682.328711"},
-          "crossMaintenanceMarginUsed": "841.164355", "withdrawable": "26.9"}
-    g = market.margin_health(st)
-    assert abs(g["buffer_usd"] - 868.070514) < 1e-6
-    assert abs(g["buffer_pct"] - 50.786) < 0.01
-    assert abs(g["adverse_move_pct"] - 6.003) < 0.01  # ~6% against the whole book wipes it
-
-
-def test_margin_health_on_a_flat_account_does_not_divide_by_zero():
-    g = market.margin_health({"marginSummary": {"accountValue": "0", "totalNtlPos": "0"}})
-    assert g["buffer_pct"] is None and g["adverse_move_pct"] is None
-
-
 # ------------------------------------------------------------------ liquidations
 def okx(details):
     return {"code": "0", "data": [{"instId": "BTC-USD-SWAP", "details": details}]}

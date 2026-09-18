@@ -51,33 +51,6 @@ def row(c, coin):
     }
 
 
-def margin_health(st):
-    """Account-level liquidation buffer.
-
-    Per-position `liquidationPx` is null for cross-margin positions -- which is all of them on a
-    normal Hyperliquid account -- because liquidation is assessed on the whole account, not per
-    coin. So the honest question is not "where does PENDLE liquidate" but "how far can the book go
-    against me before maintenance margin is breached".
-
-    `adverse_move_pct` is the useful one: the buffer expressed as a percentage move across gross
-    notional, i.e. everything moving that far the wrong way at once exhausts it."""
-    ms = st.get("marginSummary") or {}
-    eq = _f(ms.get("accountValue"))
-    ntl = _f(ms.get("totalNtlPos"))
-    maint = _f(st.get("crossMaintenanceMarginUsed"))
-    buffer_usd = eq - maint
-    return {
-        "equity": eq,
-        "notional": ntl,
-        "maint_margin": maint,
-        "margin_used": _f(ms.get("totalMarginUsed")),
-        "withdrawable": _f(st.get("withdrawable")),
-        "buffer_usd": buffer_usd,
-        "buffer_pct": buffer_usd / eq * 100 if eq else None,
-        "adverse_move_pct": buffer_usd / ntl * 100 if ntl else None,
-    }
-
-
 def ctx_rows(ctx, coins):
     """Market structure for the coins actually being scanned. Deliberately not the whole 234-coin
     universe: this tool is scoped to scanner.coins, and a universe-wide leaderboard is a different

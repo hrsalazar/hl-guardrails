@@ -19,6 +19,7 @@ import time
 import numpy as np
 import pandas as pd
 
+from . import account
 from .common import Notifier, State, fnum, info, load_config, log, setup_logging
 
 
@@ -171,8 +172,8 @@ def run_once(cfg, inf, notif, state):
     S, R = cfg["scanner"], cfg["rules"]
     watch = S.get("watch_coins", [])
     ctx = ctx_map(inf, list(watch) + list(S.get("tradfi_coins", [])))
-    st = inf.user_state(cfg["account"])
-    equity = fnum(st["marginSummary"]["accountValue"])
+    model, st = account.load(inf, cfg["account"])
+    equity = model["base"]  # USDC collateral on a unified account, perp equity otherwise
     risk_usd = equity * R["risk_per_trade_pct"] / 100
     open_coins = {p["position"]["coin"] for p in st["assetPositions"]}
     tfs = S.get("timeframes") or [S.get("timeframe", "1d")]
@@ -207,7 +208,7 @@ def run_once(cfg, inf, notif, state):
                     f"BREAKOUT LONG {coin} @ {a['px']:.5g}{note}\n"
                     f"  {a['tf']} close {a['signal_close']:.5g} on {a['signal_day']} > 20-bar high | trend UP | {a['tf']} RSI {a['rsi4h']:.0f}\n"
                     f"  stop {a['stop']:.5g} ({S['stop_atr']}x ATR) | trail {S['trail_atr']}x ATR ({S['trail_atr'] * a['atr']:.5g}) below highest high | time stop day {R['max_hold_days']}\n"
-                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
+                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% of {equity:,.0f} {model['base_label']}\n"
                     f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
                 )
                 if mac:
@@ -227,7 +228,7 @@ def run_once(cfg, inf, notif, state):
                     f"SETUP {a['setup']} {coin} @ {a['px']:.5g}{note}\n"
                     f"  trend {a['trend']} | 4h RSI {a['rsi4h']:.0f}\n"
                     f"  stop {a['stop']:.5g} | target {a['target']:.5g} | RR {a['rr']:.1f}\n"
-                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
+                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% of {equity:,.0f} {model['base_label']}\n"
                     f"  rules: limit entry (maker), stop placed BEFORE entry, no adds if red, close by day 7"
                 )
                 notif.send(msg, key=f"setup_{coin}_{a['setup']}", cooldown_s=12 * 3600)

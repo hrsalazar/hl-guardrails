@@ -92,8 +92,17 @@ async function render(){
   const locked=d.locked_until&&d.locked_until>Date.now();
   const dayPnl=d.day_pnl!=null?d.day_pnl:(d.day_start_equity?d.equity-d.day_start_equity:0);
   const weekPnl=d.week_pnl!=null?d.week_pnl:(d.week_start_equity?d.equity-d.week_start_equity:0);
+  // Same figures HL shows under "Unified Account Summary": ratio = maintenance / USDC, leverage =
+  // notional / USDC. On a classic account the base is perp equity and the labels say so.
+  const A=d.acct||{}, uni=!!A.unified, maxLev=d.rules.max_gross_exposure_x;
+  const levCls=A.leverage==null?'':A.leverage>maxLev?'neg':A.leverage>maxLev*0.66?'yel':'pos';
+  const ratCls=A.ratio_pct==null?'':A.ratio_pct>=50?'neg':A.ratio_pct>=25?'yel':'pos';
   $('#kpis').innerHTML=`
-   <div><div class="mut">Perp equity</div><div class="kpi">$${fmt(d.equity)}</div></div>
+   <div><div class="mut">${uni?'Portfolio':'Perp equity'}</div><div class="kpi">$${fmt(uni&&A.portfolio_value?A.portfolio_value:d.equity)}</div>
+     ${uni?`<small class="mut">$${fmt(A.base)} USDC collateral</small>`:''}</div>
+   <div><div class="mut">${uni?'Unified account ratio':'Margin ratio'}</div><div class="kpi ${ratCls}">${A.ratio_pct==null?'—':fmt(A.ratio_pct,2)+'%'}</div></div>
+   <div><div class="mut">${uni?'Unified account leverage':'Account leverage'}</div><div class="kpi ${levCls}">${A.leverage==null?'—':fmt(A.leverage,2)+'x'}</div>
+     <small class="mut">cap ${maxLev}x</small></div>
    <div><div class="mut">Day PnL <small>(UTC)</small></div><div class="kpi ${cls(dayPnl)}">${dayPnl>=0?'+':''}${fmt(dayPnl)}${pct(dayPnl,d.day_start_equity)}</div></div>
    <div><div class="mut">Week PnL</div><div class="kpi ${cls(weekPnl)}">${weekPnl>=0?'+':''}${fmt(weekPnl)}${pct(weekPnl,d.week_start_equity)}</div></div>
    <div><div class="mut">Positions</div><div class="kpi">${d.positions.length}<span class="mut">/${d.rules.max_positions}</span></div></div>
@@ -148,18 +157,21 @@ function renderMacro(d){
 
 function renderFlow(d){
   // Cross-margin positions have no per-coin liquidationPx (HL assesses liquidation on the whole
-  // account), so a per-position table would be a column of dashes. The account-level buffer is the
-  // number that actually matters: how far the whole book can move against you before maintenance
-  // margin is breached. Per-position rows still show a liq price when one exists (isolated margin).
-  const g=d.margin;
+  // account), so a per-position table would be a column of dashes. The account-level figures are
+  // the ones that matter. HL's own ratio is shown rather than a derived "move to liquidation":
+  // HL does not publish the unified liquidation threshold, and a precise-looking number built on
+  // a guessed threshold would be worse than none.
+  const g=d.acct;
   if(g&&d.positions.length){
-    const mv=g.adverse_move_pct, cl=mv==null?'mut':mv<5?'neg':mv<12?'yel':'pos';
+    const rc=g.ratio_pct==null?'mut':g.ratio_pct>=50?'neg':g.ratio_pct>=25?'yel':'pos';
     $('#liqrisk').innerHTML=`<div class="row" style="margin-bottom:8px">`
-      +`<div><div class="mut">Maintenance buffer</div><div class="kpi ${cl}">${usd(g.buffer_usd)}</div></div>`
-      +`<div><div class="mut">of equity</div><div class="kpi">${g.buffer_pct==null?'—':fmt(g.buffer_pct,0)+'%'}</div></div>`
-      +`<div><div class="mut">Adverse move to wipe it</div><div class="kpi ${cl}">${mv==null?'—':fmt(mv,1)+'%'}</div></div>`
-      +`<div><div class="mut">Gross notional</div><div class="kpi">${usd(g.notional)}</div></div></div>`
-      +`<p class="mut" style="font-size:12px;margin:0 0 10px">Everything moving ${mv==null?'—':fmt(mv,1)+'%'} against you at once exhausts the maintenance margin. Positions are cross-margined, so liquidation is assessed on the account, not per coin.</p>`
+      +`<div><div class="mut">${g.unified?'USDC collateral':'Perp equity'}</div><div class="kpi">${usd(g.base)}</div></div>`
+      +`<div><div class="mut">Maintenance margin</div><div class="kpi">${usd(g.maint_margin)}</div></div>`
+      +`<div><div class="mut">${g.unified?'Unified account ratio':'Margin ratio'}</div><div class="kpi ${rc}">${g.ratio_pct==null?'—':fmt(g.ratio_pct,2)+'%'}</div></div>`
+      +`<div><div class="mut">Perp notional</div><div class="kpi">${usd(g.notional)}</div></div></div>`
+      +`<p class="mut" style="font-size:12px;margin:0 0 10px">${g.unified
+          ?'Unified account: spot USDC collateralises the perps, so risk is sized against it. The ratio is maintenance margin as a share of collateral — the same figure Hyperliquid shows; lower is safer.'
+          :'Classic account: perps are margined by the perp wallet. Ratio is maintenance margin as a share of perp equity; lower is safer.'}</p>`
       +`<table><tr><th>Coin</th><th>Mark</th><th>Margin</th><th>Liq price</th><th>Lev</th></tr>`
       +d.positions.map(p=>{
         const cur=Math.abs(+p.szi)?Math.abs(+p.positionValue/+p.szi):+p.entryPx, liq=+p.liquidationPx;
