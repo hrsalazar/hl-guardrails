@@ -32,6 +32,7 @@ scanner:
   # fast heads-up for moves too quick for 1d/4h breakout levels to confirm - NOT backtested, no stop/size/target
   momentum_window_hours: 4
   momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours
+  macro_context: true            # show the FRED macro backdrop on alerts/dashboard - context only, gates nothing
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

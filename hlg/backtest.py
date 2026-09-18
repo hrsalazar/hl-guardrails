@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import requests
 
+from . import macro
 from .common import API, load_config, log, setup_logging
 from .scanner import atr, ema, rsi
 
@@ -134,7 +135,68 @@ def features(df, k=1):
     df = df.copy()
     df["ema20"], df["ema50"], df["rsi"], df["atr"] = ema(df.c, 20 * k), ema(df.c, 50 * k), rsi(df.c, 14 * k), atr(df, 14 * k)
     df["hi20"], df["lo20"] = df.h.rolling(20 * k).max().shift(1), df.l.rolling(20 * k).min().shift(1)
+    # inputs for the optional entry filters, all read off the completed signal bar
+    df["vol_ratio"] = df.v / df.v.rolling(20 * k).mean()             # breakout conviction
+    df["atr_pctile"] = (df.atr / df.c).rolling(100 * k).rank(pct=True)  # where vol sits vs its own recent range
+    df["ext_atr"] = (df.c - df.ema20) / df.atr                        # how stretched above the mean, in ATR
+    df["ret20"] = df.c.pct_change(20 * k)                             # for the cross-sectional rank
     return df
+
+
+def context(data, fund, macro_f=None):
+    """Adds the columns entry filters read that are *not* this coin's own chart: its funding, the
+    BTC tape, where it ranks against the rest of the universe, and the macro backdrop. Everything
+    is as-of the signal bar (macro already shifted a day in hlg.macro), so nothing here is knowable
+    later than the bar that triggers the trade."""
+    btc = data.get("BTC")
+    btc_bull = (btc.c > ema(btc.c, 200)) if btc is not None else None
+    rs_rank = pd.DataFrame({c: d.ret20 for c, d in data.items()}).rank(axis=1, pct=True)
+    for c, d in data.items():
+        d["funding_apr"] = fund[c].reindex(d.index).fillna(0.0) * 365 * 100
+        d["btc_bull"] = btc_bull.reindex(d.index) if btc_bull is not None else np.nan
+        d["rs_rank"] = rs_rank[c].reindex(d.index)
+        for col in MACRO_COLS:
+            d[col] = macro_f[col].reindex(d.index) if macro_f is not None and not macro_f.empty else np.nan
+    return data
+
+
+# ----------------------------------------------------------------------------- filters
+MACRO_COLS = ["hy_stress", "vix_calm", "spx_bull", "dxy_headwind", "risk_on"]
+
+
+def _pass(v, test):
+    """A filter with no reading has no opinion. Rejecting on NaN would quietly drop the early
+    sample (before rolling windows fill) and make filtered variants incomparable to the baseline,
+    which would look like an edge and be an artefact."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return True
+    return test(v)
+
+
+# Thresholds are median splits or structurally motivated, never scanned for the best value on this
+# sample: 2 ATR extension is exactly the stop distance, 0.5 is a median, the trend comparisons are
+# each series against its own moving average. That is deliberate -- with this little data, a tuned
+# threshold is a curve fit with extra steps.
+FILTERS = {
+    # this coin's own chart, beyond the breakout itself
+    "vol_confirm": lambda k: _pass(getattr(k, "vol_ratio", None), lambda v: v >= 1.5),
+    "squeeze": lambda k: _pass(getattr(k, "atr_pctile", None), lambda v: v <= 0.5),
+    "not_extended": lambda k: _pass(getattr(k, "ext_atr", None), lambda v: v <= 2.0),
+    # crypto-native, off this coin's chart
+    "cheap_funding": lambda k: _pass(getattr(k, "funding_apr", None), lambda v: v <= 30),
+    "btc_bull": lambda k: _pass(getattr(k, "btc_bull", None), bool),
+    "rs_top_half": lambda k: _pass(getattr(k, "rs_rank", None), lambda v: v >= 0.5),
+    # macro / tradfi backdrop (hlg.macro)
+    "no_credit_stress": lambda k: _pass(getattr(k, "hy_stress", None), lambda v: not v),
+    "vix_calm": lambda k: _pass(getattr(k, "vix_calm", None), bool),
+    "spx_bull": lambda k: _pass(getattr(k, "spx_bull", None), bool),
+    "no_dxy_headwind": lambda k: _pass(getattr(k, "dxy_headwind", None), lambda v: not v),
+    "risk_on": lambda k: _pass(getattr(k, "risk_on", None), bool),
+}
+
+BASE_BREAKOUT = VARIANTS["breakout_long"]
+for _f in FILTERS:
+    VARIANTS[f"breakout+{_f}"] = {**BASE_BREAKOUT, "filters": [_f]}
 
 
 # ----------------------------------------------------------------------------- signals
@@ -142,6 +204,9 @@ def signal(k, V):
     """k = completed daily bar. Returns (side, stop, target) or None."""
     if np.isnan(k.ema50) or np.isnan(k.atr) or np.isnan(k.lo20):
         return None
+    for f in V.get("filters", ()):
+        if not FILTERS[f](k):
+            return None
     up = k.ema20 > k.ema50
     px = k.c
     out = []
@@ -274,6 +339,38 @@ def by(T, key):
                              pf=g.apply(lambda x: min(x[x > 0].sum() / max(-x[x < 0].sum(), 1e-9), 99)).round(2)))
 
 
+def bootstrap_pf(base_net, n, actual_pf, n_boot=20_000, seed=0):
+    """Where does a filtered subset's PF sit against randomly dropping the same number of trades?
+
+    A filter that keeps 70% of trades will change PF just by luck -- this strategy makes its money
+    on ~20% of trades, so which ones you happen to keep dominates everything. Returns the percentile
+    of `actual_pf` in that null distribution. Anything between 5 and 95 is indistinguishable from
+    picking at random, no matter how good the rationale sounded."""
+    rng = np.random.default_rng(seed)
+    if n <= 0 or n > len(base_net):
+        return float("nan")
+    draws = np.array([_pf_of(rng.choice(base_net, size=n, replace=False)) for _ in range(n_boot)])
+    return float((draws < actual_pf).mean() * 100)
+
+
+def _pf_of(net):
+    g, l = net[net > 0].sum(), -net[net < 0].sum()
+    return min(g / max(l, 1e-9), 99)
+
+
+def halves(T, mid):
+    """PF on each half of the sample, split by signal date. One shared portfolio path, not two
+    independent sims, so this answers "did the edge persist" -- not "what would a fresh book have
+    made in the second half". A filter that only works in the first half is a fitted filter."""
+    out = {}
+    for label, t in [("IS", T[T.start < mid]), ("OOS", T[T.start >= mid])]:
+        g, l = t.net[t.net > 0].sum(), -t.net[t.net < 0].sum()
+        out[f"{label}_n"] = len(t)
+        out[f"{label}_pf"] = round(min(g / max(l, 1e-9), 99), 2) if len(t) else 0.0
+        out[f"{label}_net"] = round(t.net.sum()) if len(t) else 0
+    return out
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -282,6 +379,8 @@ def main():
     ap.add_argument("--coins", nargs="*")
     ap.add_argument("--interval", choices=list(INTERVAL_H))
     ap.add_argument("--native", action="store_true", help="use 20/50/14-bar windows on the chosen interval instead of day-equivalent windows")
+    ap.add_argument("--filters", nargs="*", help=f"ad-hoc entry filters on the breakout rule: {', '.join(FILTERS)}")
+    ap.add_argument("--no-macro", action="store_true", help="skip the FRED fetch (macro filters then never reject)")
     a = ap.parse_args()
     cfg = load_config(a.config) if Path(a.config).exists() else {}
     P = {**DEF, **cfg.get("backtest", {})}
@@ -311,16 +410,30 @@ def main():
         fund[c] = funding(c, start_ms, cache, iv)
         log.info("%s: %d %s bars from %s, %d funding bars", c, len(df), iv, df.index[0].date(), len(fund[c]))
 
+    macro_f = None
+    if not a.no_macro:
+        macro_f = macro.features(macro.frame(start=P["start"], cache_dir=str(cache)))
+        log.info("macro: %d rows%s", len(macro_f), "" if len(macro_f) else " (filters will not reject)")
+    context(data, fund, macro_f)
+    if a.filters:
+        VARIANTS[f"breakout+{'+'.join(a.filters)}"] = {**BASE_BREAKOUT, "filters": list(a.filters)}
+        a.variant = [f"breakout+{'+'.join(a.filters)}"]
+
     R = [f"# Backtest report\n\nCoins: {', '.join(data)}. Start {P['start']}, equity ${P['equity0']:,.0f}, risk {P['risk_pct']}%/trade, "
          f"max {P['max_positions']} positions, notional cap {P['max_lev']}x equity, maker entry {P['maker_fee']*100:.3f}% / taker exit "
          f"{P['taker_fee']*100:.3f}%, real hourly funding. {iv} bars (indicator windows {'native' if k == 1 else f'x{k} = day-equivalent'}): "
          f"signal at close, fill next open, stop on low/high (gap -> open).\n"]
+    all_days = sorted(set().union(*[set(d.index) for d in data.values()]))
+    all_days = [d for d in all_days if d >= pd.Timestamp(P["start"], tz="UTC")]
+    mid = all_days[len(all_days) // 2]
     summ = {}
     for name, V in VARIANTS.items():
         if a.variant and name not in a.variant:
             continue
         T, C, dd = run(V, data, fund, P)
         s = stats(T, C, dd, P)
+        if not T.empty:
+            s |= halves(T, mid)
         summ[name] = s
         if not T.empty:
             T.to_csv(out / f"trades_{name}.csv", index=False)
@@ -337,8 +450,35 @@ def main():
         R.append("### By exit\n" + by(T, "why").to_markdown() + "\n")
     S = pd.DataFrame(summ).T
     if not S.empty:
-        cols = [c for c in ["trades", "win_rate", "pf", "total_return_pct", "cagr_pct", "max_dd_pct", "sharpe", "avg_days"] if c in S]
-        R.insert(1, "## Summary\n\n" + S[cols].astype(float).round(2).to_markdown() + "\n")
+        cols = [c for c in ["trades", "win_rate", "pf", "total_return_pct", "cagr_pct", "max_dd_pct", "sharpe", "avg_days",
+                            "IS_n", "IS_pf", "OOS_n", "OOS_pf"] if c in S]
+        R.insert(1, "## Summary\n\n" + S[cols].astype(float).round(2).to_markdown() + "\n"
+                 + f"\nIS/OOS split at {mid.date()} by signal date (shared portfolio path, see `halves`).\n")
+    # Only filtered variants are comparable this way: they select a subset of the baseline's own
+    # signals, so "dropping trades at random" is the right null. A different rule (pullback, short,
+    # a wider stop) trades on its own signals and is not a subset -- the test would be meaningless.
+    if "breakout_long" in summ and any(VARIANTS[n].get("filters") for n in summ if n in VARIANTS):
+        base_net = pd.read_csv(out / "trades_breakout_long.csv").net.values
+        rows = []
+        for name in summ:
+            if not VARIANTS.get(name, {}).get("filters") or not summ[name].get("trades"):
+                continue
+            n, p = summ[name]["trades"], summ[name]["pf"]
+            if n >= len(base_net):
+                verdict, pct = "no-op: kept every trade, nothing to test", float("nan")
+            else:
+                pct = bootstrap_pf(base_net, n, p)
+                verdict = "noise" if 5 <= pct <= 95 else ("better" if pct > 95 else "WORSE")
+            rows.append(dict(variant=name, kept=f"{n / len(base_net):.0%}", pf=round(p, 2),
+                             vs_base=round(p - _pf_of(base_net), 2),
+                             pctile="-" if np.isnan(pct) else round(pct, 1), verdict=verdict))
+        if rows:
+            R.append("\n## Against chance\n\nPercentile of each filtered variant's PF in the distribution from dropping the same "
+                     "number of baseline trades at random (20k draws). 5-95 = indistinguishable from luck. Only filters appear here: "
+                     "they select a subset of the baseline's signals, so random subsetting is the right null; a different rule is not "
+                     f"a subset and is not comparable this way. Testing many filters inflates this -- with {len(rows)}, expect "
+                     f"~{0.05 * len(rows):.1f} above the 95th by chance alone.\n\n"
+                     + pd.DataFrame(rows).to_markdown(index=False) + "\n")
     R.append("\nCaveats: bar-based (intra-bar stop-outs that recovered by the close are counted as stops only if the low touched — "
              "realistic — but entries are next-day open, not intraday); no slippage; HL history only (most alts start 2023-2024); "
              "parameters were chosen from the miner, not optimised on this data, but the coin list overlaps with the miner sample.")

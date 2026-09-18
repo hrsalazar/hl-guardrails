@@ -81,6 +81,31 @@ def analyse_breakout(inf, coin, S, ctx, tf=None):
     return out
 
 
+def macro_context(S):
+    """Current macro backdrop as a short label for alerts, or None if unavailable/disabled.
+
+    Deliberately NOT a filter. Gating breakouts on a risk-on backdrop was backtested and is worse
+    than dropping the same number of trades at random (README "Macro"): breakouts that fire while
+    credit is deteriorating were 27 of 126 trades but 63% of the profit. Inverting the gate to only
+    trade those is a 27-trade, post-hoc rule, which is how you overfit. So it rides along as context
+    you can log against outcomes, and changes no decision by itself."""
+    if not S.get("macro_context", True):
+        return None
+    try:
+        from . import macro
+
+        f = macro.features(macro.frame(start="2023-01-01"))
+        if f.empty:
+            return None
+        c = f.iloc[-1]
+        return {"as_of": str(f.index[-1].date()), "hy": float(c.hy), "vix": float(c.vix),
+                "hy_stress": bool(c.hy_stress), "spx_bull": bool(c.spx_bull), "risk_on": bool(c.risk_on),
+                "label": ("credit stress" if c.hy_stress else "credit calm") + (", SPX above 200d" if c.spx_bull else ", SPX below 200d")}
+    except Exception as e:  # noqa: BLE001
+        log.error("macro context failed: %s", e)
+        return None
+
+
 def momentum_pct(inf, coin, S):
     """Plain % price change over the last momentum_window_hours -- not a backtested setup, just
     a fast heads-up for moves the 1d/4h breakout timeframes are too slow to confirm in time."""
@@ -142,6 +167,7 @@ def run_once(cfg, inf, notif, state):
     open_coins = {p["position"]["coin"] for p in st["assetPositions"]}
     tfs = S.get("timeframes") or [S.get("timeframe", "1d")]
     breakout_tfs = tfs if S.get("strategy", "breakout") == "breakout" else [None]  # pullback ignores tf, one pass
+    mac = macro_context(S)
     rows = []
     for coin in list(S["coins"]) + list(watch):
         c_ctx = ctx.get(coin, {"funding": 0})
@@ -174,6 +200,8 @@ def run_once(cfg, inf, notif, state):
                     f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% equity\n"
                     f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
                 )
+                if mac:
+                    msg += f"\n  macro: {mac['label']} (HY {mac['hy']:.2f}, VIX {mac['vix']:.1f}) - context only, not part of the rule"
                 notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600)
             elif a["setup"]:
                 dist = abs(a["px"] - a["stop"])

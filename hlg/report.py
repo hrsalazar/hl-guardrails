@@ -119,6 +119,7 @@ def main():
         "positions": positions,
         "alerts": alerts,
         "scan": rows,
+        "macro": scanner.macro_context(cfg["scanner"]),  # cached on disk by hlg.macro, so no second fetch
         "rules": cfg["rules"],
     }
     (OUT / "alerts.json").write_text(json.dumps(out, indent=1))

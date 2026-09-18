@@ -37,6 +37,9 @@ scanner:
   # see hlg.backtest --interval 1h --native), so this alerts with no stop/size/target, just a nudge to look.
   momentum_window_hours: 4
   momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours
+  # Macro backdrop (FRED, no key) shown on alerts and the dashboard. Context ONLY - it gates nothing:
+  # every risk-on filter tested worse than dropping the same trades at random (README "Macro").
+  macro_context: true
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

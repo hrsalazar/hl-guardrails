@@ -173,6 +173,74 @@ by the time 4h confirms them (or 1h, which the backtest above ruled out as too w
 move is already over. Alerts re-fire if the move grows past another 5-percentage-point bucket, so one long
 continuous spike doesn't get lost after the first alert but also doesn't spam every scan cycle.
 
+### Macro / non-price filters (`hlg.macro`) — tested, and mostly rejected
+
+The breakout rule is pure price action on one coin, so the obvious question is whether anything
+*off* the chart improves it: volume, volatility regime, funding, the BTC tape, or the macro backdrop.
+`hlg.macro` pulls five daily series from FRED with no API key (HY credit spread, VIX, S&P 500, broad
+dollar index, 10y yield), forward-fills them onto the crypto calendar and **shifts everything one day**
+so a filter reading bar `T` can only see data published by `T-1`.
+
+Each idea is a one-line predicate in `backtest.FILTERS` and runs as its own variant:
+
+```bash
+python -m hlg.backtest --variant breakout_long breakout+squeeze breakout+risk_on
+python -m hlg.backtest --filters squeeze cheap_funding    # ad-hoc combination
+python -m hlg.macro                                       # print the current backdrop
+```
+
+Against the 126-trade `breakout_long` baseline (PF 1.67, 2023-06 → 2026-09), with each filter's PF
+compared to **dropping the same number of baseline trades at random** (20k draws — this strategy
+earns on ~20% of its trades, so which ones you keep swamps everything):
+
+| filter | what it demands | kept | PF | vs chance |
+|---|---|---:|---:|---|
+| *(baseline)* | — | 100% | 1.67 | — |
+| `squeeze` | ATR in the bottom half of its 100-bar range | 71% | **1.77** | 64th pctile — noise |
+| `rs_top_half` | top half of 20d return vs the universe | 100% | 1.69 | no-op: a 20-bar-high breakout is *already* top half |
+| `vol_confirm` | breakout bar volume ≥ 1.5× its 20-bar average | 85% | 1.62 | noise |
+| `vix_calm` | VIX below its 50d EMA | 82% | 1.61 | noise |
+| `cheap_funding` | funding ≤ 30% APR | 85% | 1.59 | noise |
+| `btc_bull` | BTC above its EMA200 | 89% | 1.38 | **worse** (3rd pctile) |
+| `no_credit_stress` | HY spread below its 50d EMA | 89% | 1.32 | **worse** (1st pctile) |
+| `spx_bull` | S&P above its 200d | 97% | 1.26 | **worse** (0th pctile) |
+| `risk_on` | no credit stress *and* SPX bullish | 90% | 1.24 | **worse** (0th pctile) |
+| `no_dxy_headwind` | dollar below its 50d EMA | 60% | 1.22 | noise |
+| `not_extended` | ≤ 2 ATR above EMA20 at the signal | 67% | 1.14 | **worse** (2nd pctile) |
+
+**Nothing earned a place in the entry rule.** The best-looking one (`squeeze`, PF 1.77 and a much
+softer -12% max drawdown vs -18%) sits at the 65th percentile of random subsets — indistinguishable
+from luck, and it is *worse* out-of-sample than the baseline (OOS PF 2.34 vs 2.71). `rs_top_half`
+turned out to be a no-op — it kept all 126 trades, because a coin closing above its 20-bar high is
+already in the top half of 20-day returns by construction. Thresholds were
+fixed a priori (median splits, or a series against its own moving average) precisely so there was
+nothing to tune; with 11 filters tested you would expect ~0.5 of them above the 95th percentile by
+chance alone, and none got there.
+
+The interesting result is the failures. Gating on a **risk-on** backdrop is reliably *worse than
+random*, and splitting the baseline's own trades by backdrop shows why:
+
+| signal-day backdrop | trades | PF | win rate | share of total profit |
+|---|---:|---:|---:|---:|
+| credit stress (HY widening) | 27 | **3.74** | 52% | **63%** |
+| credit calm | 99 | 1.29 | 31% | 37% |
+| S&P below its 200d | 11 | 8.60 | 64% | 46% |
+| S&P above its 200d | 115 | 1.38 | 33% | 54% |
+
+Breakouts that fire while credit is deteriorating were a fifth of the trades and most of the money
+(permutation test p ≈ 0.03), spread over 10 quarters and 13 coins rather than one lucky cluster.
+They also survive losing their three biggest winners (PF 1.97), while the calm-credit trades go
+*negative* without theirs (PF 0.90). The plausible reading: a coin strong enough to break out into a
+hostile tape is showing real idiosyncratic strength, while breakouts in an everything-rallies tape
+are just beta and fail when the tide goes out.
+
+That is **not** wired in as a rule. It is a post-hoc hypothesis on 27 trades, found on the same
+sample that generated it, and the p-values ignore that 11 filters were tried first — invert the gate
+and you are fitting noise with a good story attached. So the backdrop ships as **context only**: a
+line on breakout alerts and a strip on the dashboard, changing no decision, there to be logged
+against outcomes until there is enough fresh data to say something honest. Set
+`scanner.macro_context: false` to turn it off.
+
 ### Regime analysis (`python -m hlg.regime`)
 
 Tags every day with a BTC regime (bull/bear vs EMA200, range/trending by 20d span vs ATR, breadth, drawdown) and

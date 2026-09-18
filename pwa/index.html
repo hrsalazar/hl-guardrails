@@ -37,6 +37,7 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
   <div class="card row" id="kpis"></div>
   <div class="card"><h3 style="margin:0 0 6px">Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></div>
   <div class="card"><h3 style="margin:0 0 6px">Positions</h3><div id="positions"></div></div>
+  <div class="card"><h3 style="margin:0 0 6px">Macro backdrop</h3><div id="macro" style="font-size:13px"></div></div>
   <div class="card"><h3 style="margin:0 0 6px">Scanner</h3><div id="scan"></div></div>
   <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
     <p class="mut">Copy this JSON into the repo secret <code>PUSH_SUBSCRIPTIONS</code> (as a list to add several devices). Actions will then push to this device even when the page is closed.</p>
@@ -75,6 +76,11 @@ async function render(){
   $('#alerts').innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.kind}">${a.new?'<span class="new">NEW </span>':''}${a.text.replace(/</g,'&lt;')}</div>`).join(''):'<div class="ok">All rules satisfied.</div>';
   $('#positions').innerHTML=d.positions.length?`<table><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Notional</th><th>uPnL</th><th>Lev</th><th>Liq</th></tr>`+
     d.positions.map(p=>`<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${Math.abs(p.szi)}</td><td>${p.entryPx}</td><td>$${fmt(p.positionValue)}</td><td class="${cls(p.unrealizedPnl)}">${fmt(p.unrealizedPnl)}</td><td>${p.leverage}x</td><td>${p.liquidationPx?fmt(p.liquidationPx,2):'-'}</td></tr>`).join('')+'</table>':'<span class="mut">flat</span>';
+  const m=d.macro;
+  $('#macro').innerHTML=m?`<span class="${m.hy_stress?'neg':'pos'}">${m.hy_stress?'credit stress':'credit calm'}</span>`
+    +` <span class="mut">HY ${fmt(m.hy,2)}</span> · <span class="mut">VIX ${fmt(m.vix,1)}</span>`
+    +` · <span class="${m.spx_bull?'pos':'neg'}">SPX ${m.spx_bull?'above':'below'} 200d</span>`
+    +` <span class="mut">— context only, not part of any rule (${m.as_of})</span>`:'<span class="mut">macro unavailable</span>';
   const TF_LABEL={'1d':'Daily','4h':'4-hour','1h':'Hourly'},TF_ORDER={'1d':0,'4h':1,'1h':2};
   const tfGroups=new Map();
   for(const r of d.scan){const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
