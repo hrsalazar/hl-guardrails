@@ -16,11 +16,13 @@ def load_config(path="config.yaml"):
     """config.yaml, overlaid with an optional gitignored config.local.yaml, and the account taken
     from $HLG_ACCOUNT when set. The repo is public, so the wallet address lives in a secret (CI) or
     the local overlay (your machine) rather than in the committed file."""
-    with open(path) as f:
-        cfg = yaml.safe_load(f)
+    # Bytes, not text: PyYAML then detects the encoding itself. The local overlay is hand-made, and
+    # on Windows that means a UTF-8 BOM (Notepad, PowerShell's -Encoding utf8) or UTF-16 (PowerShell's
+    # `>`), either of which breaks a text read in the locale's default codepage.
+    cfg = yaml.safe_load(Path(path).read_bytes())
     local = Path(path).with_name("config.local.yaml")
     if local.exists():
-        cfg.update(yaml.safe_load(local.read_text()) or {})
+        cfg.update(yaml.safe_load(local.read_bytes()) or {})
     # strip: a secret set by piping or pasting routinely carries a trailing newline, which once
     # turned a valid address into a rejected one and stopped the monitor
     cfg["account"] = (os.environ.get("HLG_ACCOUNT") or "").strip() or cfg.get("account")

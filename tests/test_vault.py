@@ -164,6 +164,17 @@ def test_account_from_a_gitignored_local_overlay(tmp_path, monkeypatch):
     assert common.require_account(common.load_config(str(tmp_path / "config.yaml"))) == "0x" + "cd" * 20
 
 
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16"])
+def test_local_overlay_survives_windows_encodings(tmp_path, monkeypatch, encoding):
+    """utf-8-sig = Notepad / PowerShell -Encoding utf8; utf-16 = PowerShell's `>` redirect. The
+    first one broke the overlay on this machine the day it was introduced."""
+    monkeypatch.delenv("HLG_ACCOUNT", raising=False)
+    (tmp_path / "config.yaml").write_text("account: null\nrules: {}\n")
+    (tmp_path / "config.local.yaml").write_bytes(
+        ("# local only\naccount: '0x" + "ef" * 20 + "'\n").encode(encoding))
+    assert common.require_account(common.load_config(str(tmp_path / "config.yaml"))) == "0x" + "ef" * 20
+
+
 def test_missing_account_stops_the_monitors_but_not_the_research_tools(tmp_path, monkeypatch):
     monkeypatch.delenv("HLG_ACCOUNT", raising=False)
     (tmp_path / "config.yaml").write_text("account: null\nbacktest: {start: '2024-01-01'}\n")

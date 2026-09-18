@@ -1,6 +1,7 @@
-# Account being monitored (public address). Always read-only -- this tool never places,
-# modifies, or cancels an order, and never needs a private key.
-account: "0x68b18d388994336f341b4997360bb45f9f8701c9"
+# Account being monitored. Read-only -- this tool never places, modifies, or cancels an order,
+# and never needs a private key. The address is deliberately NOT here: this repo is public.
+# CI reads the HLG_ACCOUNT secret; locally put `account: '0x...'` in config.local.yaml (gitignored).
+account: null
 
 poll_seconds: 60
 state_file: state.json
