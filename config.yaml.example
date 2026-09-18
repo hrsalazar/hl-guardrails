@@ -21,6 +21,9 @@ scanner:
   strategy: breakout   # breakout (backtested, long-only) | pullback (legacy, tested negative)
   timeframes: [1d, 4h]  # breakout runs independently on each (both backtested, see README "Timeframe")
   coins: [BTC, ETH, SOL, NEAR, HYPE, XRP]
+  # Macro/TradFi dashboard section, from HL's own tradfi perps (works from Actions, unlike FRED).
+  # Dead listings are filtered by hlg.market. Context only - gates nothing.
+  tradfi_coins: [xyz:SP500, xyz:GOLD, xyz:SILVER, xyz:CL, xyz:COPPER, xyz:NATGAS, xyz:EUR, xyz:JPY]
   interval_minutes: 30
   # 3-7d swing: daily trend (EMA20 vs EMA50) + 4h pullback (RSI) + proximity to 20d extreme
   rsi_long_max: 35
@@ -34,6 +37,13 @@ scanner:
   momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours
   macro_context: false           # FRED backdrop on alerts/dashboard - context only, gates nothing.
                                  # Off by default: FRED times out from GitHub Actions. Fine locally.
+
+# Flow section: recent liquidations from OKX (Hyperliquid publishes none). Recent events, not 24h
+# totals. Time-boxed and fail-soft; the dashboard fetches OKX itself if this returns nothing.
+flow:
+  enabled: true
+  liquidation_coins: [BTC, ETH, SOL]
+  budget_s: 10
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

@@ -20,10 +20,14 @@ main{padding:12px 16px;max-width:900px;margin:0 auto}
 .alert{border-left:4px solid var(--red);padding:8px 10px;margin:8px 0;background:#1d1417;border-radius:6px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
 .alert.scanner{border-color:var(--blu);background:#141a24}.alert .new{color:var(--yel);font-weight:600}
 table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;text-align:right;border-bottom:1px solid #22262f}td:first-child,th:first-child{text-align:left}
-.pos{color:var(--grn)}.neg{color:var(--red)}
+.pos{color:var(--grn)}.neg{color:var(--red)}.yel{color:var(--yel)}
 button{background:#262b36;color:var(--fg);border:1px solid #333;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}button:disabled{opacity:.5}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#262b36}
 .tfhead{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 4px}.tfhead:first-child{margin-top:0}
+.tabs{display:flex;gap:4px;margin:14px 0 0;flex-wrap:wrap}
+.tab{background:transparent;border:1px solid #262b36;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;color:var(--mut)}
+.tab[aria-selected="true"]{background:var(--card);color:var(--fg);font-weight:600;box-shadow:inset 0 2px 0 var(--blu)}
+.pane>.card:first-child{border-top-left-radius:0}
 .ok{color:var(--grn)}.lock{color:var(--red);font-weight:600}
 pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12px}
 </style>
@@ -34,11 +38,29 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
   <div class="row"><button id="notif">Enable notifications</button><button id="push" disabled>Enable push</button></div>
 </header>
 <main>
+  <!-- KPIs and Alerts live outside the tabs on purpose: they are the act-now layer and must never
+       be one tap away behind a tab you happen not to be on. -->
   <div class="card row" id="kpis"></div>
   <div class="card"><h3 style="margin:0 0 6px">Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></div>
-  <div class="card"><h3 style="margin:0 0 6px">Positions</h3><div id="positions"></div></div>
-  <div class="card" id="macrocard" hidden><h3 style="margin:0 0 6px">Macro backdrop</h3><div id="macro" style="font-size:13px"></div></div>
-  <div class="card"><h3 style="margin:0 0 6px">Scanner</h3><div id="scan"></div></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="tech" aria-selected="true">Technical</button>
+    <button class="tab" role="tab" data-tab="macro" aria-selected="false">Macro</button>
+    <button class="tab" role="tab" data-tab="flow" aria-selected="false">Flow</button>
+  </div>
+  <div class="pane" id="pane-tech">
+    <div class="card"><h3 style="margin:0 0 6px">Positions</h3><div id="positions"></div></div>
+    <div class="card"><h3 style="margin:0 0 6px">Scanner</h3><div id="scan"></div></div>
+  </div>
+  <div class="pane" id="pane-macro" hidden>
+    <div class="card"><h3 style="margin:0 0 6px">Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></div>
+    <div class="card" id="macrocard" hidden><h3 style="margin:0 0 6px">Macro backdrop</h3><div id="macro" style="font-size:13px"></div></div>
+  </div>
+  <div class="pane" id="pane-flow" hidden>
+    <div class="card"><h3 style="margin:0 0 6px">Liquidation risk <span class="mut" style="font-size:12px;font-weight:400">— your open positions</span></h3><div id="liqrisk"></div></div>
+    <div class="card"><h3 style="margin:0 0 6px">Volume &amp; open interest</h3><div id="market"></div></div>
+    <div class="card"><h3 style="margin:0 0 6px">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></div>
+  </div>
   <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
     <p class="mut">Copy this JSON into the repo secret <code>PUSH_SUBSCRIPTIONS</code> (as a list to add several devices). Actions will then push to this device even when the page is closed.</p>
     <pre id="sub"></pre><button id="copy">Copy</button></div>
@@ -76,12 +98,8 @@ async function render(){
   $('#alerts').innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.kind}">${a.new?'<span class="new">NEW </span>':''}${a.text.replace(/</g,'&lt;')}</div>`).join(''):'<div class="ok">All rules satisfied.</div>';
   $('#positions').innerHTML=d.positions.length?`<table><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Notional</th><th>uPnL</th><th>Lev</th><th>Liq</th></tr>`+
     d.positions.map(p=>`<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${Math.abs(p.szi)}</td><td>${p.entryPx}</td><td>$${fmt(p.positionValue)}</td><td class="${cls(p.unrealizedPnl)}">${fmt(p.unrealizedPnl)}</td><td>${p.leverage}x</td><td>${p.liquidationPx?fmt(p.liquidationPx,2):'-'}</td></tr>`).join('')+'</table>':'<span class="mut">flat</span>';
-  const m=d.macro;  // absent whenever scanner.macro_context is off (the hosted default: FRED blocks Actions runners)
-  $('#macrocard').hidden=!m;
-  if(m)$('#macro').innerHTML=`<span class="${m.hy_stress?'neg':'pos'}">${m.hy_stress?'credit stress':'credit calm'}</span>`
-    +` <span class="mut">HY ${fmt(m.hy,2)}</span> · <span class="mut">VIX ${fmt(m.vix,1)}</span>`
-    +` · <span class="${m.spx_bull?'pos':'neg'}">SPX ${m.spx_bull?'above':'below'} 200d</span>`
-    +` <span class="mut">— context only, not part of any rule (${m.as_of})</span>`;
+  renderMacro(d);
+  renderFlow(d);
   const TF_LABEL={'1d':'Daily','4h':'4-hour','1h':'Hourly'},TF_ORDER={'1d':0,'4h':1,'1h':2};
   const tfGroups=new Map();
   for(const r of d.scan){const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
@@ -101,6 +119,107 @@ async function render(){
   d.alerts.forEach(a=>lastKeys.add(a.key));
   localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)));
 }
+
+const usd=n=>n>=1e9?`$${fmt(n/1e9,1)}B`:n>=1e6?`$${fmt(n/1e6,1)}M`:n>=1e3?`$${fmt(n/1e3,0)}k`:`$${fmt(n)}`;
+const sig=p=>p<10?4:p<1000?2:0;
+
+function renderMacro(d){
+  const t=d.tradfi&&d.tradfi.rows||[];
+  // "N stale hidden" matters: HL lists xyz:DXY, xyz:VIX and friends at zero volume with a frozen
+  // mark, so a silently short table would otherwise look like missing data rather than filtering.
+  $('#tfcount').textContent=t.length?`${t.length} live${d.tradfi.dropped?` · ${d.tradfi.dropped} stale hidden`:''}`:'';
+  $('#tradfi').innerHTML=t.length?`<table><tr><th>Instrument</th><th>Price</th><th>24h</th><th>24h volume</th><th>Open interest</th></tr>`+
+    t.map(r=>`<tr><td>${r.coin.replace(/^xyz:/,'')}</td><td>${fmt(r.px,sig(r.px))}</td>`
+      +`<td class="${cls(r.chg24h_pct)}">${r.chg24h_pct==null?'—':(r.chg24h_pct>=0?'+':'')+fmt(r.chg24h_pct,2)+'%'}</td>`
+      +`<td>${usd(r.vlm24h)}</td><td>${usd(r.oi_usd)}</td></tr>`).join('')+'</table>'
+    :'<span class="mut">no live TradFi markets</span>';
+  const m=d.macro;  // absent whenever scanner.macro_context is off (the hosted default: FRED blocks Actions runners)
+  $('#macrocard').hidden=!m;
+  if(m)$('#macro').innerHTML=`<span class="${m.hy_stress?'neg':'pos'}">${m.hy_stress?'credit stress':'credit calm'}</span>`
+    +` <span class="mut">HY ${fmt(m.hy,2)}</span> · <span class="mut">VIX ${fmt(m.vix,1)}</span>`
+    +` · <span class="${m.spx_bull?'pos':'neg'}">SPX ${m.spx_bull?'above':'below'} 200d</span>`
+    +` <span class="mut">— context only, not part of any rule (${m.as_of})</span>`;
+}
+
+function renderFlow(d){
+  // Cross-margin positions have no per-coin liquidationPx (HL assesses liquidation on the whole
+  // account), so a per-position table would be a column of dashes. The account-level buffer is the
+  // number that actually matters: how far the whole book can move against you before maintenance
+  // margin is breached. Per-position rows still show a liq price when one exists (isolated margin).
+  const g=d.margin;
+  if(g&&d.positions.length){
+    const mv=g.adverse_move_pct, cl=mv==null?'mut':mv<5?'neg':mv<12?'yel':'pos';
+    $('#liqrisk').innerHTML=`<div class="row" style="margin-bottom:8px">`
+      +`<div><div class="mut">Maintenance buffer</div><div class="kpi ${cl}">${usd(g.buffer_usd)}</div></div>`
+      +`<div><div class="mut">of equity</div><div class="kpi">${g.buffer_pct==null?'—':fmt(g.buffer_pct,0)+'%'}</div></div>`
+      +`<div><div class="mut">Adverse move to wipe it</div><div class="kpi ${cl}">${mv==null?'—':fmt(mv,1)+'%'}</div></div>`
+      +`<div><div class="mut">Gross notional</div><div class="kpi">${usd(g.notional)}</div></div></div>`
+      +`<p class="mut" style="font-size:12px;margin:0 0 10px">Everything moving ${mv==null?'—':fmt(mv,1)+'%'} against you at once exhausts the maintenance margin. Positions are cross-margined, so liquidation is assessed on the account, not per coin.</p>`
+      +`<table><tr><th>Coin</th><th>Mark</th><th>Margin</th><th>Liq price</th><th>Lev</th></tr>`
+      +d.positions.map(p=>{
+        const cur=Math.abs(+p.szi)?Math.abs(+p.positionValue/+p.szi):+p.entryPx, liq=+p.liquidationPx;
+        return `<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${fmt(cur,sig(cur))}</td>`
+          +`<td class="mut">${p.margin_type||'—'}</td>`
+          +`<td>${liq?fmt(liq,sig(liq)):'<span class="mut">account-level</span>'}</td><td>${p.leverage}x</td></tr>`;
+      }).join('')+'</table>';
+  } else $('#liqrisk').innerHTML='<span class="mut">flat — nothing to liquidate</span>';
+
+  const mk=d.market||[];
+  $('#market').innerHTML=mk.length?`<table><tr><th>Coin</th><th>24h</th><th>24h volume</th><th>Open interest</th><th>Vol/OI</th><th>Premium</th></tr>`+
+    mk.map(r=>`<tr><td>${r.coin}</td>`
+      +`<td class="${cls(r.chg24h_pct)}">${r.chg24h_pct==null?'—':(r.chg24h_pct>=0?'+':'')+fmt(r.chg24h_pct,2)+'%'}</td>`
+      +`<td>${usd(r.vlm24h)}</td><td>${usd(r.oi_usd)}</td><td>${r.vol_oi==null?'—':fmt(r.vol_oi,2)}</td>`
+      +`<td class="${cls(-r.premium_bps)}">${fmt(r.premium_bps,1)}bp</td></tr>`).join('')+'</table>'
+    :'<span class="mut">no market data</span>';
+  renderLiq(d.liquidations);
+  if(!(d.liquidations&&d.liquidations.rows&&d.liquidations.rows.length)){
+    const coins=(d.market||[]).slice(0,3).map(r=>r.coin);
+    liveLiq(coins.length?coins:['BTC','ETH','SOL']).then(rows=>{if(rows.length)renderLiq({src:'live',rows})});
+  }
+}
+
+function renderLiq(l){
+  // src matters: "baked" is the CI snapshot inside alerts.json, "live" is this browser calling OKX
+  // directly. Different windows, so they are labelled rather than silently interchanged.
+  const rows=l&&l.rows||[];
+  $('#liqsrc').textContent=rows.length?(l.src==='live'?'live from OKX':'from the last run'):'';
+  $('#liq').innerHTML=rows.length?`<table><tr><th>Coin</th><th>Longs hit</th><th>Shorts hit</th><th>Pressure</th><th>Events</th></tr>`+
+    rows.map(r=>{
+      const who=r.skew>0.2?'<span class="neg">longs flushed</span>':r.skew<-0.2?'<span class="pos">shorts squeezed</span>':'<span class="mut">balanced</span>';
+      return `<tr><td>${r.coin}</td><td>${usd(r.long_usd)}</td><td>${usd(r.short_usd)}</td><td>${who}</td><td>${r.events}</td></tr>`;
+    }).join('')+'</table>'
+      +'<p class="mut" style="margin:6px 0 0;font-size:12px">Recent OKX liquidation events — not a 24h total, and OKX\'s book rather than Hyperliquid\'s (HL publishes none).</p>'
+    :'<span class="mut">no recent liquidations</span>';
+}
+
+// OKX sends Access-Control-Allow-Origin:*, so when the CI fetch came back empty (it may be blocked
+// from Actions runners the way FRED is) the page can just ask OKX itself.
+async function liveLiq(coins){
+  const out=[];
+  for(const c of coins){
+    try{
+      const r=await fetch(`https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&state=filled&uly=${c}-USD`);
+      if(!r.ok)continue;
+      const j=await r.json();
+      let long=0,short=0,n=0;
+      for(const b of j.data||[])for(const x of b.details||[]){
+        const usd=parseFloat(x.sz)*parseFloat(x.bkPx);
+        if(!isFinite(usd))continue;
+        n++; x.posSide==='long'?long+=usd:short+=usd;
+      }
+      if(n)out.push({coin:c,long_usd:long,short_usd:short,events:n,skew:(long-short)/(long+short||1)});
+    }catch(e){/* blocked or offline: the section just stays empty */}
+  }
+  return out;
+}
+
+function showTab(k){
+  for(const b of document.querySelectorAll('.tab'))b.setAttribute('aria-selected',String(b.dataset.tab===k));
+  for(const p of ['tech','macro','flow'])$('#pane-'+p).hidden=p!==k;
+  try{localStorage.setItem('hlgTab',k)}catch(e){}
+}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+showTab((()=>{try{return localStorage.getItem('hlgTab')||'tech'}catch(e){return 'tech'}})());
 $('#notif').onclick=async()=>{if(!hasNotif){alert('Notifications are not available in this browser. On iPhone: open in Safari, Share -> Add to Home Screen, then launch from the icon.');return}
   const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Notifications on':'Blocked';
   if(p==='granted'&&window.VAPID_PUBLIC_KEY)$('#push').disabled=false};

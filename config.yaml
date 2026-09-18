@@ -22,6 +22,10 @@ scanner:
   timeframes: [1d, 4h]  # breakout runs independently on each (both backtested, see README "Timeframe")
   coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]
   watch_coins: [xyz:CL, xyz:GOLD, xyz:XYZ100]   # tradfi perps, dashboard only - no alerts (short history, PF ~1.2)
+  # Macro/TradFi section of the dashboard. HL's own tradfi perps, so this works from Actions -
+  # unlike FRED below. Dead listings (xyz:DXY, xyz:VIX, xyz:CORN... all sit at 0 OI / 0 volume
+  # with a frozen mark) are filtered out by hlg.market, not listed here. Context only, gates nothing.
+  tradfi_coins: [xyz:SP500, xyz:GOLD, xyz:SILVER, xyz:CL, xyz:COPPER, xyz:NATGAS, xyz:EUR, xyz:JPY, xyz:MSTR, xyz:COIN]
   interval_minutes: 30
   stop_atr: 2.0
   trail_atr: 3.0
@@ -42,6 +46,15 @@ scanner:
   # OFF by default because FRED read-times-out from GitHub Actions runners, so the scheduled
   # monitor would burn 300s a run for nothing. Turn it on when running the scanner locally.
   macro_context: false
+
+# Flow section: recent liquidations from OKX (Hyperliquid publishes none - no endpoint exists).
+# These are RECENT events, not 24h totals, and they are OKX's book rather than HL's. One request
+# per coin, so the list stays short; the whole call is capped by budget_s and degrades to nothing
+# rather than delaying alerts. If it comes back empty the dashboard fetches OKX itself.
+flow:
+  enabled: true
+  liquidation_coins: [BTC, ETH, SOL]   # majors only: HYPE/PENDLE/ZEC are not listed on OKX
+  budget_s: 10
 
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

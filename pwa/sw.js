@@ -1,4 +1,4 @@
-const CACHE = "hlg-v2";
+const CACHE = "hlg-v3";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "config.js"];
 
 self.addEventListener("install", (e) => {
@@ -11,6 +11,9 @@ self.addEventListener("activate", (e) =>
 
 self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
+  // Third-party APIs (the OKX liquidation fallback) must never be cached: an opaque response
+  // re-served offline would show a stale liquidation snapshot as if it were current.
+  if (u.origin !== location.origin) return;
   if (u.pathname.endsWith(".json")) return; // always network for data
   // network-first so UI updates land immediately; cache is only an offline fallback
   e.respondWith(

@@ -53,6 +53,40 @@ No keys are needed in CI, since nothing this tool does ever requires one.
 Cron granularity is ~15 min (GitHub may delay further) — this is a monitoring cadence, not a
 real-time alert.
 
+### Dashboard sections
+
+Equity/PnL and the alert list sit at the top and are never behind a tab — they are the act-now
+layer. Everything else is grouped into three tabs (the last one you used is remembered):
+
+| Tab | Contents | Source |
+|---|---|---|
+| **Technical** | open positions; the breakout scanner, grouped by timeframe | Hyperliquid candles |
+| **Macro** | TradFi instruments — SP500, gold, silver, oil, copper, natgas, EUR/JPY, plus MSTR/COIN as crypto-equity proxies | HL's `xyz` TradFi perps (`scanner.tradfi_coins`) |
+| **Flow** | maintenance-margin buffer, 24h volume / open interest / turnover / mark-vs-oracle premium, recent liquidations | HL asset contexts + OKX |
+
+Three things worth knowing about the data, because each one is a trap:
+
+- **Volume and open interest were free all along.** `metaAndAssetCtxs` is fetched on every scan and
+  only `funding` was ever read; `openInterest`, `dayNtlVlm`, `prevDayPx`, `premium` and `impactPxs`
+  arrive in the same response. `hlg/market.py` turns them into rows — no extra network cost.
+- **Dead TradFi listings are filtered out.** Hyperliquid lists instruments nobody trades — `xyz:DXY`,
+  `xyz:VIX`, `xyz:CORN`, `xyz:WHEAT`, `xyz:URANIUM`, `xyz:NIFTY` all sit at zero open interest and
+  zero volume with a mark that never moves. DXY and VIX are exactly what a macro panel most wants,
+  which is how you end up publishing a frozen number as live data. Anything with under $1M of 24h
+  volume, under $250k of open interest, or an unchanged mark is dropped, and the count of what was
+  hidden is shown so an empty table is distinguishable from a broken one.
+- **Liquidations come from OKX, because Hyperliquid publishes none** — there is no liquidations
+  endpoint (`liquidations`, `recentLiquidations`, `openInterestHistory` all 422) and `recentTrades`
+  returns ten trades with no liquidation flag. These are therefore *recent events on OKX's book*,
+  not a 24h total and not Hyperliquid's own. OKX sends permissive CORS headers, so if the CI fetch
+  comes back empty the dashboard asks OKX directly from your browser; the card says which it used.
+
+**Maintenance buffer** is the liquidation number that matters. Per-position `liquidationPx` is
+`null` for cross-margined positions — which is the normal case — because Hyperliquid assesses
+liquidation on the whole account. So the Flow tab shows the account buffer
+(`accountValue − crossMaintenanceMarginUsed`) and, more usefully, the percentage move across gross
+notional that would exhaust it.
+
 ## Rules watched (config.yaml → `rules`)
 
 Every rule below only ever produces a warning (console + optional Telegram) — nothing is ever

@@ -150,17 +150,27 @@ def analyse(inf, coin, S, ctx, tf=None):
     return out
 
 
-def run_once(cfg, inf, notif, state):
-    S, R = cfg["scanner"], cfg["rules"]
+def ctx_map(inf, coins):
+    """Per-coin asset contexts for `coins`, pulling in any extra dex they name (a prefixed coin
+    like "xyz:CL" lives on the "xyz" dex, and its meta returns the name already prefixed, so the
+    keys line up with the config). Callers read `funding` from this; the same payload also carries
+    openInterest / dayNtlVlm / prevDayPx / premium / impactPxs, which hlg.market turns into the
+    dashboard's market-structure rows."""
     meta, ctxs = inf.meta_and_asset_ctxs()
     ctx = {u["name"]: c for u, c in zip(meta["universe"], ctxs)}
-    watch = S.get("watch_coins", [])
-    for dex in {c.split(":")[0] for c in watch if ":" in c}:
+    for dex in {c.split(":")[0] for c in coins if ":" in c}:
         try:
             m2, c2 = inf.post("/info", {"type": "metaAndAssetCtxs", "dex": dex})
             ctx.update({u["name"]: c for u, c in zip(m2["universe"], c2)})
         except Exception as e:  # noqa: BLE001
             log.error("dex %s ctx failed: %s", dex, e)
+    return ctx
+
+
+def run_once(cfg, inf, notif, state):
+    S, R = cfg["scanner"], cfg["rules"]
+    watch = S.get("watch_coins", [])
+    ctx = ctx_map(inf, list(watch) + list(S.get("tradfi_coins", [])))
     st = inf.user_state(cfg["account"])
     equity = fnum(st["marginSummary"]["accountValue"])
     risk_usd = equity * R["risk_per_trade_pct"] / 100

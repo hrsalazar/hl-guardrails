@@ -11,11 +11,12 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import requests
 
-from . import guardrails, scanner
+from . import guardrails, liquidations, market, scanner
 from .common import Notifier, State, fnum, info, load_config, log, setup_logging
 
 OUT = Path("site")
@@ -94,7 +95,7 @@ def main():
     st = inf.user_state(cfg["account"])
     positions = [
         {k: p["position"][k] for k in ("coin", "szi", "entryPx", "positionValue", "unrealizedPnl", "liquidationPx")}
-        | {"leverage": p["position"]["leverage"]["value"]}
+        | {"leverage": p["position"]["leverage"]["value"], "margin_type": p["position"]["leverage"].get("type")}
         for p in st["assetPositions"]
     ]
     alerts = [{"kind": "guardrail", "key": k, "text": t} for k, t in gn.collected.items()]
@@ -107,6 +108,28 @@ def main():
         for k, v in list(r.items()):
             if hasattr(v, "item"):
                 r[k] = v.item()
+
+    # Market structure and TradFi come off one extra asset-ctx call (~0.3s); liquidations are the
+    # only genuinely external hop here and are hard time-boxed. Each is logged with its own elapsed
+    # time so a repeat of the 300s FRED regression shows up in the run log, not as alert lag.
+    S, F = cfg["scanner"], cfg.get("flow") or {}
+    tradfi_coins = S.get("tradfi_coins") or []
+    t0 = time.monotonic()
+    ctx = scanner.ctx_map(inf, tradfi_coins)
+    market_rows = market.ctx_rows(ctx, list(S["coins"]))
+    tradfi_rows, tradfi_dropped = market.tradfi_rows(ctx, tradfi_coins)
+    log.info("market: %d coins, %d tradfi (%d stale hidden) in %.1fs",
+             len(market_rows), len(tradfi_rows), tradfi_dropped, time.monotonic() - t0)
+
+    liq = None
+    if F.get("enabled", True):
+        t1 = time.monotonic()
+        got = liquidations.fetch(F.get("liquidation_coins") or ["BTC", "ETH", "SOL"],
+                                 budget_s=F.get("budget_s", 10))
+        log.info("liquidations: %d coin(s) in %.1fs", len(got), time.monotonic() - t1)
+        # Absent rather than empty when the source gave nothing: the dashboard then fetches OKX
+        # itself, which works even if OKX is blocked from Actions the way FRED is.
+        liq = {"src": "baked", "rows": got} if got else None
     out = {
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "account": cfg["account"],
@@ -120,6 +143,10 @@ def main():
         "alerts": alerts,
         "scan": rows,
         "macro": scanner.macro_context(cfg["scanner"]),  # cached on disk by hlg.macro, so no second fetch
+        "market": market_rows,
+        "margin": market.margin_health(st),
+        "tradfi": {"rows": tradfi_rows, "dropped": tradfi_dropped},
+        "liquidations": liq,
         "rules": cfg["rules"],
     }
     (OUT / "alerts.json").write_text(json.dumps(out, indent=1))
