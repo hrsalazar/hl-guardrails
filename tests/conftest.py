@@ -43,6 +43,10 @@ def base_cfg():
             "min_rr": 2.0,
             "prefer_short_when_funding_positive": True,
             "funding_carry_alert_apr": 20,
+            # off by default in tests: scanner.run_once would otherwise fetch FRED over the network,
+            # which breaks the no-network rule above and made CI 250x slower than local. The enabled
+            # path is covered directly in test_macro.py with a stubbed fetch.
+            "macro_context": False,
         },
         "telegram": {"enabled": False},
     }
@@ -134,6 +138,18 @@ class FakeInfo:
         if t == "metaAndAssetCtxs":
             return self._meta_ctxs
         raise ValueError(f"FakeInfo: unhandled /info type {t!r}")
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Enforce the promise at the top of this file. A test that reaches the network is slow, flaky
+    and dependent on someone else's uptime -- one such slip took CI from 1s to 302s. Tests that
+    need a canned response patch the specific call (see test_macro.py); anything else fails loudly
+    here instead of quietly dialling out."""
+    def blocked(*a, **k):
+        raise AssertionError(f"test tried to reach the network: {a[:2]}")
+
+    monkeypatch.setattr("requests.sessions.Session.request", blocked)
 
 
 @pytest.fixture

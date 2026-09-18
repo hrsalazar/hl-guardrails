@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from hlg import backtest, macro
+from hlg import backtest, macro, scanner
 
 
 def _csv(series_id, rows):
@@ -98,6 +98,31 @@ def test_signal_applies_configured_filters():
              target=None, min_rr=0, max_days=21, trail_atr=3.0)
     assert backtest.signal(k, V) is not None                        # breakout fires without filters
     assert backtest.signal(k, {**V, "filters": ["vol_confirm"]}) is None  # ... and is vetoed with one
+
+
+def test_macro_context_disabled_makes_no_network_call(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("macro_context must not fetch when disabled")
+
+    monkeypatch.setattr(macro.requests, "get", boom)
+    assert scanner.macro_context({"macro_context": False}) is None
+
+
+def test_macro_context_labels_the_current_backdrop(monkeypatch):
+    idx = pd.date_range("2025-01-01", periods=300, freq="D", tz="UTC")
+    rising = pd.Series(np.linspace(3.0, 6.0, 300), index=idx)
+    monkeypatch.setattr(macro, "frame", lambda **k: pd.DataFrame(
+        {"hy": rising, "vix": rising, "spx": rising, "dxy": rising, "y10": rising}))
+    c = scanner.macro_context({"macro_context": True})
+    assert c["hy_stress"] is True and c["risk_on"] is False
+    assert "credit stress" in c["label"]
+
+
+def test_macro_context_survives_a_dead_data_source(monkeypatch):
+    """A FRED outage must degrade to "no context", never break a scan -- this runs against a live
+    account every 15 minutes."""
+    monkeypatch.setattr(macro, "frame", lambda **k: (_ for _ in ()).throw(RuntimeError("FRED down")))
+    assert scanner.macro_context({"macro_context": True}) is None
 
 
 def test_bootstrap_flags_a_random_subset_as_noise():
