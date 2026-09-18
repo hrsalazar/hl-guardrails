@@ -29,7 +29,9 @@ from .common import log
 FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; hl-guardrails/0.1)"}
 SERIES = {"hy": "BAMLH0A0HYM2", "vix": "VIXCLS", "spx": "SP500", "dxy": "DTWEXBGS", "y10": "DGS10"}
-CACHE_TTL_S = 12 * 3600
+CACHE_TTL_S = 24 * 3600  # these series print once a business day, so refetching sooner buys nothing
+                         # -- and the monitor workflow keys its Actions cache by UTC date to match,
+                         # so exactly one run a day pays FRED's ~60s-per-series latency.
 
 
 def fetch(name, series_id, start="2020-01-01", cache_dir="miner_cache"):
