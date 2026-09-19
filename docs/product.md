@@ -105,6 +105,7 @@ and B is only worth building once A shows demand.
 | Alerts | quiet hours; per-rule mute | S |
 | Market | more exchanges, or HL sub-accounts and vaults | M–L |
 | Trust | independent security review of the vault and PWA | external |
+| Risk | stop-hit odds for open positions (volatility model; Kronos as a candidate) - **parked**, see [proposals/kronos-stop-odds.md](proposals/kronos-stop-odds.md) | M |
 
 ## Pricing notes (to validate, not decided)
 
