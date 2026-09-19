@@ -20,13 +20,24 @@ rules:
   daily_loss_limit_pct: 3.0      # vs start-of-day value: whole account (spot incl.) when unified,
                                  # perps only on a classic account where spot is a separate wallet
   weekly_loss_limit_pct: 6.0
-  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]
+  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]   # or: auto (= today's scanner universe)
   no_add_underwater: true
 
 scanner:
   strategy: breakout   # breakout (backtested, long-only) | pullback (legacy, tested negative)
   timeframes: [1d, 4h]  # breakout runs independently on each (both backtested, see README "Timeframe")
-  coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]
+  coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]   # used when universe.mode = fixed
+  # Which coins to scan. auto = the top_n perps by 30-day median daily volume (listed >= min_age_days,
+  # OI >= min_oi_usd), rebuilt once per UTC day - the rule `python -m hlg.backtest --universe-study`
+  # tests (README "Universe"). In auto mode momentum watches every perp >= min_vol_usd, not only top_n.
+  universe:
+    mode: fixed
+    top_n: 30
+    min_vol_usd: 10000000
+    min_oi_usd: 5000000
+    min_age_days: 60
+    include: []      # always scanned, liquid or not
+    exclude: []      # never scanned
   watch_coins: [xyz:CL, xyz:GOLD, xyz:XYZ100]   # tradfi perps, dashboard only - no alerts (short history, PF ~1.2)
   # Macro/TradFi section of the dashboard. HL's own tradfi perps, so this works from Actions -
   # unlike FRED below. Dead listings (xyz:DXY, xyz:VIX, xyz:CORN... all sit at 0 OI / 0 volume
@@ -41,7 +52,7 @@ scanner:
   level_proximity_pct: 3.0       # price within X% of 20-day high/low
   min_rr: 2.0
   prefer_short_when_funding_positive: true
-  funding_carry_alert_apr: 20    # alert if |annualised funding| > this %
+  funding_carry_alert_apr: 20    # dashboard note if |annualised funding| > this % (never pushed)
   # fast heads-up for moves too quick for 1d/4h breakout levels to confirm (e.g. a sharp 1h spike) -
   # NOT a backtested setup (1h breakout PF 1.16 / -44% max DD on ~7mo of history - too weak to trade on,
   # see hlg.backtest --interval 1h --native), so this alerts with no stop/size/target, just a nudge to look.

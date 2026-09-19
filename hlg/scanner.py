@@ -19,7 +19,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import account
+from . import account, universe
 from .common import (
     Notifier,
     State,
@@ -32,10 +32,29 @@ from .common import (
 )
 
 
+BAR_MS = {"1d": 86_400_000, "4h": 4 * 3_600_000, "1h": 3_600_000}
+
+
+def post(inf, body, retries=4):
+    """inf.post with backoff on HTTP 429. Scanning ~30 coins shares a per-IP weight budget with every
+    other job on the same Actions runner IP, so a rate-limit is an expected event, not a crash."""
+    for i in range(retries):
+        try:
+            return inf.post("/info", body)
+        except Exception as e:  # noqa: BLE001 - the SDK raises ClientError; the fakes raise plain errors
+            if "429" not in str(e) and getattr(e, "status_code", None) != 429 or i == retries - 1:
+                raise
+            time.sleep(2 * 2 ** i)
+
+
+CANDLE_REQUESTS = [0]  # per process; run_once logs the delta so the request budget is visible
+
+
 def candles(inf, coin, interval, days):
+    CANDLE_REQUESTS[0] += 1
     now = int(time.time() * 1000)
-    c = inf.post("/info", {"type": "candleSnapshot", "req": {"coin": coin, "interval": interval,
-                                                             "startTime": now - days * 86400_000, "endTime": now}})
+    c = post(inf, {"type": "candleSnapshot", "req": {"coin": coin, "interval": interval,
+                                                     "startTime": now - days * 86400_000, "endTime": now}})
     df = pd.DataFrame(c)
     for k in "ohlcv":
         df[k] = df[k].astype(float)
@@ -59,36 +78,68 @@ def atr(df, n=14):
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
-def analyse_breakout(inf, coin, S, ctx, tf=None):
-    tf = tf or S.get("timeframe", "1d")  # 1d (backtested default) or 4h (faster, 20/50-bar windows on 4h bars)
-    d = candles(inf, coin, tf, 120 if tf == "1d" else 30)
-    if len(d) < 55:
-        return None
-    live, done = d.iloc[-1], d.iloc[:-1]  # last row is the open (incomplete) candle
+def bar_stats(d, tf):
+    """Everything the breakout rule needs that only changes when a bar closes. `d` still has the
+    live (incomplete) candle as its last row. Plain floats, so it can be cached in the JSON state."""
+    live, done = d.iloc[-1], d.iloc[:-1]
     k = done.iloc[-1]
-    e20, e50 = ema(done.c, 20).iloc[-1], ema(done.c, 50).iloc[-1]
-    a = atr(done).iloc[-1]
-    hi20 = done.h.iloc[-21:-1].max()  # 20-bar high BEFORE the last completed candle
-    hi20_live = done.h.iloc[-20:].max()  # level the live candle has to close above
-    r = rsi(done.c).iloc[-1]
-    funding_apr = fnum(ctx["funding"]) * 24 * 365 * 100
-    px = live.c
-    out = {"coin": coin, "px": px, "rsi4h": r, "trend": "UP" if e20 > e50 else "DOWN", "funding_apr": funding_apr,
-           "setup": None, "hi20": hi20_live, "atr": a, "tf": tf}
-    if e20 <= e50:
+    return {"tf": tf, "bar_t": int(k.t.timestamp() * 1000), "k_c": float(k.c),
+            "e20": float(ema(done.c, 20).iloc[-1]), "e50": float(ema(done.c, 50).iloc[-1]),
+            "atr": float(atr(done).iloc[-1]),
+            "hi20": float(done.h.iloc[-21:-1].max()),       # 20-bar high BEFORE the last completed candle
+            "hi20_live": float(done.h.iloc[-20:].max()),    # level the live candle has to close above
+            "rsi": float(rsi(done.c).iloc[-1]), "live_c": float(live.c)}
+
+
+def stats_fresh(st, now_ms):
+    """A cached bar_stats is good until the live bar it was taken during has closed."""
+    return isinstance(st, dict) and "bar_t" in st and now_ms < st["bar_t"] + 2 * BAR_MS.get(st.get("tf"), 86_400_000)
+
+
+def classify(st, px, S, coin, funding_apr):
+    """The breakout rule on cached bar stats and a live price."""
+    tf, a, k_c = st["tf"], st["atr"], st["k_c"]
+    out = {"coin": coin, "px": px, "rsi4h": st["rsi"], "trend": "UP" if st["e20"] > st["e50"] else "DOWN",
+           "funding_apr": funding_apr, "setup": None, "hi20": st["hi20_live"], "atr": a, "tf": tf}
+    if st["e20"] <= st["e50"]:
         out["rejected"] = "trend down"
         return out
-    if k.c > hi20:
-        stop = k.c - S["stop_atr"] * a
-        sig = str(k.t.date()) if tf == "1d" else k.t.strftime("%Y-%m-%d %H:%M")
-        out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k.c, signal_day=sig)
+    if k_c > st["hi20"]:
+        stop = k_c - S["stop_atr"] * a
+        k_t = pd.Timestamp(st["bar_t"], unit="ms", tz="UTC")
+        sig = str(k_t.date()) if tf == "1d" else k_t.strftime("%Y-%m-%d %H:%M")
+        # entry is the next bar's open; once that bar has closed too, the signal is spent
+        out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k_c, signal_day=sig, level=st["hi20"],
+                   valid_until=st["bar_t"] + 2 * BAR_MS.get(tf, 86_400_000))
         # entry is the open after the signal close; if price already ran > 1 ATR beyond it, don't chase
-        if px > k.c + a:
-            out["rejected"] = f"ran {((px / k.c) - 1) * 100:.1f}% since signal close, wait for next setup"
+        if px > k_c + a:
+            out["rejected"] = f"ran {((px / k_c) - 1) * 100:.1f}% since signal close, wait for next setup"
             out["setup"] = None
-    elif px > hi20_live:
-        out["rejected"] = f"forming: above 20-bar high {hi20_live:.5g}, needs {tf} close"
+    elif px > st["hi20_live"]:
+        out["rejected"] = f"forming: above 20-bar high {st['hi20_live']:.5g}, needs {tf} close"
+    elif a > 0 and st["hi20_live"] - px <= 0.5 * a:
+        # context for the dashboard's "near breakout" list; not a signal and never alerted
+        out["near_atr"] = (st["hi20_live"] - px) / a
     return out
+
+
+def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=None):
+    """cache: {"coin|tf": bar_stats} reused until the next bar closes, so a 15-minute run only pulls
+    candles when there is a new bar to evaluate. px: live price (allMids) -- otherwise the live
+    candle's close from the fetch."""
+    tf = tf or S.get("timeframe", "1d")  # 1d (backtested default) or 4h (faster, 20/50-bar windows on 4h bars)
+    now_ms = now_ms or int(time.time() * 1000)
+    key = f"{coin}|{tf}"
+    st = cache.get(key) if cache is not None else None
+    if not stats_fresh(st, now_ms):
+        d = candles(inf, coin, tf, 120 if tf == "1d" else 30)
+        if len(d) < 55:
+            return None
+        st = bar_stats(d, tf)
+        if cache is not None:
+            cache[key] = st
+    funding_apr = fnum(ctx.get("funding", 0)) * 24 * 365 * 100
+    return classify(st, px if px is not None else st["live_c"], S, coin, funding_apr)
 
 
 def macro_context(S):
@@ -129,9 +180,9 @@ def momentum_pct(inf, coin, S):
     return (now_px / ref_px - 1) * 100
 
 
-def analyse(inf, coin, S, ctx, tf=None):
+def analyse(inf, coin, S, ctx, tf=None, **kw):
     if S.get("strategy", "breakout") == "breakout":
-        return analyse_breakout(inf, coin, S, ctx, tf)
+        return analyse_breakout(inf, coin, S, ctx, tf, **kw)
     d = candles(inf, coin, "1d", 90)
     h4 = candles(inf, coin, "4h", 30)
     if len(d) < 55 or len(h4) < 30:
@@ -177,6 +228,86 @@ def ctx_map(inf, coins):
     return ctx
 
 
+def resolve_coins(inf, S, U, ctx, state, open_coins, cache):
+    """The coins to scan this run. fixed: scanner.coins. auto: today's liquidity universe, rebuilt
+    on the first run of each UTC day (hlg.universe) and stored in state; the 1d candles fetched to
+    rank it also seed the 1d bar-stats cache, so ranking costs no extra requests for scanned coins."""
+    if U["mode"] != "auto":
+        return list(S["coins"])
+    day = universe.today()
+    coins = universe.current(state, day, open_coins)
+    if coins is None:
+        liq, ages, t0, n = {}, {}, time.monotonic(), 0
+        for c in universe.prefilter(ctx, U):
+            try:
+                d = candles(inf, c, "1d", 120)
+            except Exception as e:  # noqa: BLE001
+                log.error("%s: universe candles failed: %s", c, e)
+                continue
+            n += 1
+            done = d.iloc[:-1]
+            liq[c] = universe.median_notional(done[["v", "c"]].to_dict("records"))
+            ages[c] = (d.t.iloc[-1] - d.t.iloc[0]).days
+            if cache is not None and len(d) >= 55:
+                cache[f"{c}|1d"] = bar_stats(d, "1d")
+        coins = universe.rank(liq, ages, U, open_coins) or list(S["coins"])
+        if state is not None:
+            state.set("universe", {"day": day, "coins": coins, "liq": {c: liq[c] for c in coins if liq.get(c)}})
+        log.info("universe: %d coins from %d candidates (%d requests) in %.1fs", len(coins), len(liq), n,
+                 time.monotonic() - t0, extra={"safe": True})
+    # a listing that died intraday drops out; a coin you hold never does
+    return [c for c in coins if c in ctx or c in open_coins]
+
+
+def momentum_from_snaps(snaps, mids, now_ms, window_h):
+    """% change per coin from the stored allMids snapshot closest to window_h ago, or {} if no
+    snapshot is within [window_h - 0.5h, window_h + 1h] (e.g. after a gap in runs)."""
+    H = 3_600_000
+    lo, hi, target = now_ms - (window_h + 1) * H, now_ms - (window_h - 0.5) * H, now_ms - window_h * H
+    near = [s for s in snaps if lo <= s[0] <= hi]
+    if not near:
+        return {}
+    _, then = min(near, key=lambda s: abs(s[0] - target))
+    return {c: (px / then[c] - 1) * 100 for c, px in mids.items() if then.get(c)}
+
+
+def momentum(inf, S, U, ctx, coins, mids, state, notif, now_ms):
+    """Heads-up for moves too fast for 1d/4h breakouts. With state, from allMids snapshots (one
+    request for every coin, stored each run); without it, from 1h candles per coin, as before.
+    In auto mode it watches every liquid perp, not only the scanned top_n, so a sudden move just
+    outside the list still alerts."""
+    window = S.get("momentum_window_hours", 4)
+    thr = S.get("momentum_alert_pct", 8)
+    watch_set = list(coins)
+    if U["mode"] == "auto":
+        watch_set += [c for c, x in ctx.items() if ":" not in c and c not in watch_set
+                      and fnum(x.get("dayNtlVlm") or 0) >= U["min_vol_usd"]]
+    if state is not None and mids:
+        snaps = [s for s in (state.get("mid_snaps") or []) if now_ms - s[0] <= (window + 1.5) * 3_600_000]
+        moves = momentum_from_snaps(snaps, {c: mids[c] for c in watch_set if c in mids}, now_ms, window)
+        snaps.append([now_ms, {c: mids[c] for c in watch_set if c in mids}])
+        state.set("mid_snaps", snaps)
+    else:
+        moves = {}
+        for c in watch_set:
+            try:
+                m = momentum_pct(inf, c, S)
+            except Exception as e:  # noqa: BLE001
+                log.error("%s momentum check failed: %s", c, e)
+                continue
+            if m is not None:
+                moves[c] = m
+    for coin, mom in moves.items():
+        if abs(mom) < thr:
+            continue
+        direction = "up" if mom > 0 else "down"
+        notif.send(
+            f"MOMENTUM {coin} {direction} {mom:+.1f}% in {window}h - no setup here (not backtested at this speed), just a heads-up to go look",
+            key=f"mom_{coin}_{int(abs(mom) // 5)}", cooldown_s=2 * 3600,
+            cat="heads_up", summary=f"MOMENTUM {coin} {mom:+.1f}% in {window}h", valid_for_ms=window * 3600_000, coin=coin,
+        )
+
+
 def run_once(cfg, inf, notif, state):
     S, R = cfg["scanner"], cfg["rules"]
     watch = S.get("watch_coins", [])
@@ -188,12 +319,25 @@ def run_once(cfg, inf, notif, state):
     tfs = S.get("timeframes") or [S.get("timeframe", "1d")]
     breakout_tfs = tfs if S.get("strategy", "breakout") == "breakout" else [None]  # pullback ignores tf, one pass
     mac = macro_context(S)
+    now_ms = int(time.time() * 1000)
+    req0 = CANDLE_REQUESTS[0]
+    # bar stats per coin|tf, reused until that bar closes (see analyse_breakout); lives in the
+    # encrypted state between runs. None (tests, one-off calls) = always fetch.
+    cache = dict(state.get("scan_cache") or {}) if state is not None else None
+    try:
+        mids = {k: float(v) for k, v in (inf.all_mids() or {}).items()}
+    except Exception as e:  # noqa: BLE001
+        log.error("allMids failed: %s", e)
+        mids = {}
+    U = universe.settings(S)
+    coins = resolve_coins(inf, S, U, ctx, state, open_coins, cache)
+    urank = {c: i + 1 for i, c in enumerate(coins)} if U["mode"] == "auto" else {}
     rows = []
-    for coin in list(S["coins"]) + list(watch):
+    for coin in coins + [w for w in watch if w not in coins]:
         c_ctx = ctx.get(coin, {"funding": 0})
         for tf in breakout_tfs:
             try:
-                a = analyse(inf, coin, S, c_ctx, tf)
+                a = analyse(inf, coin, S, c_ctx, tf, cache=cache, px=mids.get(coin), now_ms=now_ms)
             except Exception as e:  # noqa: BLE001
                 log.error("%s (%s) scan failed: %s", coin, tf or S.get("strategy", "breakout"), e)
                 continue
@@ -206,13 +350,19 @@ def run_once(cfg, inf, notif, state):
                     a["setup"] = None
                 rows.append(a)
                 continue
+            a["vlm24h"] = fnum(c_ctx.get("dayNtlVlm") or 0)
+            if coin in urank:
+                a["urank"] = urank[coin]
             rows.append(a)
             if a["setup"] and a.get("rr") is None:  # breakout strategy
                 dist = abs(a["px"] - a["stop"])
                 size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
                 note = f" (paying {a['funding_apr']:.0f}% APR funding)" if a["funding_apr"] > 15 else ""
-                if coin in open_coins:
+                held = coin in open_coins
+                if held:
                     note += " [already in a position - do NOT add]"
+                elif len(open_coins) >= R["max_positions"]:
+                    note += f" [{len(open_coins)} of {R['max_positions']} positions open: skip, or replace a weaker one]"
                 msg = (
                     f"BREAKOUT LONG {coin} @ {a['px']:.5g}{note}\n"
                     f"  {a['tf']} close {a['signal_close']:.5g} on {a['signal_day']} > 20-bar high | trend UP | {a['tf']} RSI {a['rsi4h']:.0f}\n"
@@ -222,7 +372,14 @@ def run_once(cfg, inf, notif, state):
                 )
                 if mac:
                     msg += f"\n  macro: {mac['label']} (HY {mac['hy']:.2f}, VIX {mac['vix']:.1f}) - context only, not part of the rule"
-                notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600)
+                # A breakout on a coin you already hold is not an entry (no adds), so it stays on the
+                # dashboard instead of buzzing the phone.
+                notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600,
+                           push=not held, cat="info" if held else "entry",
+                           summary=(f"{coin} {a['tf']} breakout - already held, don't add" if held else
+                                    f"BREAKOUT LONG {coin} {a['tf']} · size {size:.4g} (~{size * a['px']:,.0f} USD) · stop {a['stop']:.5g}"),
+                           valid_until=a["valid_until"], coin=coin, tf=a["tf"], level=a["level"],
+                           signal_close=a["signal_close"], atr=a["atr"])
             elif a["setup"]:
                 dist = abs(a["px"] - a["stop"])
                 size = risk_usd / dist
@@ -240,26 +397,28 @@ def run_once(cfg, inf, notif, state):
                     f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% of {equity:,.0f} {model['base_label']}\n"
                     f"  rules: limit entry (maker), stop placed BEFORE entry, no adds if red, close by day 7"
                 )
-                notif.send(msg, key=f"setup_{coin}_{a['setup']}", cooldown_s=12 * 3600)
+                notif.send(msg, key=f"setup_{coin}_{a['setup']}", cooldown_s=12 * 3600, push=coin not in open_coins,
+                           cat="info" if coin in open_coins else "entry", coin=coin)
         if coin in watch:
             continue
         funding_apr = fnum(c_ctx.get("funding", 0)) * 24 * 365 * 100
         if abs(funding_apr) > S["funding_carry_alert_apr"]:
-            side = "short perp / long spot" if funding_apr > 0 else "long perp / short spot"
-            notif.send(f"FUNDING CARRY {coin}: {funding_apr:+.0f}% APR -> {side}", key=f"fund_{coin}_{int(funding_apr // 10)}", cooldown_s=6 * 3600)
-        try:
-            mom = momentum_pct(inf, coin, S)
-        except Exception as e:  # noqa: BLE001
-            log.error("%s momentum check failed: %s", coin, e)
-            mom = None
-        mom_threshold = S.get("momentum_alert_pct", 8)
-        if mom is not None and abs(mom) >= mom_threshold:
-            window = S.get("momentum_window_hours", 4)
-            direction = "up" if mom > 0 else "down"
-            notif.send(
-                f"MOMENTUM {coin} {direction} {mom:+.1f}% in {window}h - no setup here (not backtested at this speed), just a heads-up to go look",
-                key=f"mom_{coin}_{int(abs(mom) // 5)}", cooldown_s=2 * 3600,
-            )
+            # Dashboard only: never backtested and not part of the breakout strategy. Only the
+            # positive-funding side is a hedge you can actually hold on HL (long spot, short perp);
+            # the mirror needs a spot short, which HL does not offer.
+            if funding_apr > 0:
+                txt = f"FUNDING {coin}: {funding_apr:+.0f}% APR - longs pay; carry = long spot + short perp"
+            else:
+                txt = f"FUNDING {coin}: {funding_apr:+.0f}% APR - shorts pay; no spot-short hedge on HL, context only"
+            notif.send(txt, key=f"fund_{coin}_{int(funding_apr // 10)}", cooldown_s=6 * 3600,
+                       push=False, cat="info", summary=f"Funding {coin} {funding_apr:+.0f}% APR", coin=coin)
+    momentum(inf, S, U, ctx, coins, mids, state, notif, now_ms)
+    if state is not None:
+        # keep only what is still in play, so the state file cannot grow without bound
+        keep = set(coins) | set(watch)
+        state.set("scan_cache", {k: v for k, v in cache.items() if k.split("|")[0] in keep})
+    log.info("scan: %d coins x %d timeframes, %d candle requests", len(coins), len(breakout_tfs),
+             CANDLE_REQUESTS[0] - req0, extra={"safe": True})
     tbl = " | ".join(
         f"{r['coin']} {r['px']:.5g} {r['trend']} rsi{r['rsi4h']:.0f} f{r['funding_apr']:+.0f}%"
         + (f" **{r['setup']}**" if r["setup"] else (f" ({r['rejected']})" if r.get("rejected") else ""))

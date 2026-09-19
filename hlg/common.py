@@ -59,17 +59,23 @@ class Notifier:
         self.chat = os.environ.get("TELEGRAM_CHAT_ID")
         self._last = {}
         self.collected = {}
+        self.meta = {}
 
-    def send(self, text, key=None, cooldown_s=3600):
-        """Send an alert; identical `key` is suppressed for cooldown_s. All alerts are kept in `collected`."""
-        self.collected[key or text] = text
+    def send(self, text, key=None, cooldown_s=3600, push=True, **meta):
+        """Send an alert; identical `key` is suppressed for cooldown_s. All alerts are kept in `collected`.
+
+        push=False keeps an alert on the dashboard only: no Telegram here, no Web Push in hlg.report.
+        Extra keyword arguments (cat, summary, valid_until, ...) ride along for hlg.alerts."""
+        k = key or text
+        self.collected[k] = text
+        self.meta[k] = {"push": push, **meta}
         now = time.time()
         if key and now - self._last.get(key, 0) < cooldown_s:
             return
         if key:
             self._last[key] = now
         log.warning("ALERT %s", text.replace("\n", " | "))
-        if self.enabled and self.token and self.chat:
+        if push and self.enabled and self.token and self.chat:
             try:
                 requests.post(
                     f"https://api.telegram.org/bot{self.token}/sendMessage",

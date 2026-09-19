@@ -78,7 +78,8 @@ def post(body, retries=10):
 
 def bars(coin, cache, interval="1d"):
     p = cache / f"bt_{interval}_{coin}.json"
-    if p.exists():
+    # a day-old cache would end before freshly fetched coins do, and look like a delisting
+    if p.exists() and time.time() - p.stat().st_mtime < 86400:
         d = json.loads(p.read_text())
     else:
         d, end = [], int(time.time() * 1000)
@@ -250,7 +251,10 @@ def run(V, data, fund, P):
     pending = {}  # coin -> (side, stop, tgt, signal_day)
     for d in days:
         # 1) fills for pending signals at today's open
-        for coin, (side, stop, tgt, sd) in list(pending.items()):
+        # Same-day signals compete for max_positions slots. Fill the most liquid first (trailing
+        # 30d median notional, as of the signal day): fixed in advance, and the order the live
+        # scanner lists them in. Dict order used to decide this, i.e. the config file's coin order.
+        for coin, (side, stop, tgt, sd) in sorted(pending.items(), key=lambda kv: -_prio(P, kv[0], kv[1][3])):
             del pending[coin]
             df = data[coin]
             if d not in df.index or coin in open_pos or len(open_pos) >= P["max_positions"]:
@@ -269,6 +273,19 @@ def run(V, data, fund, P):
         for coin, p in list(open_pos.items()):
             df = data[coin]
             if d not in df.index:
+                if coin in P.get("delisted", ()) and d > df.index[-1]:  # delisted: close at the last traded price
+                    k = df.iloc[-1]
+                    sgn = 1 if p["side"] == "L" else -1
+                    exit_px = k.c
+                    fee = p["sz"] * exit_px * P["taker_fee"]
+                    pnl = sgn * (exit_px - p["entry"]) * p["sz"]
+                    net = pnl - fee - p["fee"] + p["fund"]
+                    eq += pnl - fee + p["fund"]
+                    trades.append(dict(coin=coin, side=p["side"], entry=p["entry"], exit=exit_px, start=p["start"], end=df.index[-1],
+                                       days=(df.index[-1] - p["start"]).total_seconds() / 86400, why="delisted", gross=pnl,
+                                       fees=fee + p["fee"], fund=p["fund"], net=net, net_pct=net / (eq - net) * 100,
+                                       notional=p["sz"] * p["entry"]))
+                    del open_pos[coin]
                 continue
             k = df.loc[d]
             sgn = 1 if p["side"] == "L" else -1
@@ -306,7 +323,9 @@ def run(V, data, fund, P):
         peak = max(peak, mtm)
         dd = min(dd, mtm / peak - 1)
         curve.append((d, mtm))
-        for coin, df in data.items():
+        elig = P.get("elig_by_day")
+        for coin in (elig.get(d.floor("D"), ()) if elig is not None else data):
+            df = data[coin]
             if d not in df.index or coin in open_pos:
                 continue
             s = signal(df.loc[d], V)
@@ -358,6 +377,58 @@ def _pf_of(net):
     return min(g / max(l, 1e-9), 99)
 
 
+def _prio(P, coin, day):
+    m = P.get("liq_med")
+    if m is None:
+        return 0.0
+    try:
+        v = m.at[day.floor("D"), coin]
+    except KeyError:
+        return 0.0
+    return 0.0 if pd.isna(v) else float(v)
+
+
+# ----------------------------------------------------------------------------- universe
+def daily_notional(df):
+    """USD traded per UTC day, from the coin's own candles (base volume x close)."""
+    return (df.v * df.c).resample("1D").sum()
+
+
+def liquidity(data, window=30):
+    """Trailing median daily notional, day x coin, shifted a day: the value on day T only uses days
+    up to T-1, so ranking on it cannot see the day it is used on."""
+    vol = pd.DataFrame({c: daily_notional(df) for c, df in data.items()})
+    return vol, vol.rolling(window, min_periods=20).median().shift(1)
+
+
+def eligibility(data, U, window=30):
+    """Point-in-time universe: on each day, coins listed >= min_age_days, with a trailing median
+    daily notional >= min_vol_usd, and in the top_n by it. Delisted coins take part while they
+    traded -- dropping them would test only the survivors. Returns (mask day x coin, liquidity)."""
+    vol, med = liquidity(data, window)
+    first = pd.Series({c: df.index[0].floor("D") for c, df in data.items()})
+    age = pd.DataFrame({c: (vol.index - first[c]).days for c in vol.columns}, index=vol.index)
+    ok = (med >= U["min_vol_usd"]) & (age >= U["min_age_days"]) & vol.notna()
+    if U.get("survivors"):
+        # the biased control: today's top_n, applied to all of history
+        last = med.iloc[-1].where(vol.iloc[-5:].notna().all())
+        keep = set(last[last >= U["min_vol_usd"]].nlargest(U["top_n"]).index)
+        mask = vol.notna() & pd.DataFrame({c: c in keep for c in vol.columns}, index=vol.index)
+        return mask, med
+    rank = med.where(ok).rank(axis=1, ascending=False, method="first")
+    return rank <= U["top_n"], med
+
+
+def by_day(mask):
+    return {d: [c for c in mask.columns[row]] for d, row in zip(mask.index, mask.values)}
+
+
+def candidate_pool():
+    """Every perp on the main dex, delisted included."""
+    meta = post({"type": "meta"})
+    return [u["name"] for u in meta["universe"]], {u["name"] for u in meta["universe"] if u.get("isDelisted")}
+
+
 def halves(T, mid):
     """PF on each half of the sample, split by signal date. One shared portfolio path, not two
     independent sims, so this answers "did the edge persist" -- not "what would a fresh book have
@@ -371,6 +442,86 @@ def halves(T, mid):
     return out
 
 
+UNIVERSE_STUDY = {
+    # pre-registered before running: auto_top30 is the candidate, the rest are sensitivity/controls
+    "auto_top30": dict(top_n=30, min_vol_usd=10e6, min_age_days=60),
+    "auto_top15": dict(top_n=15, min_vol_usd=10e6, min_age_days=60),
+    "auto_top50": dict(top_n=50, min_vol_usd=10e6, min_age_days=60),
+    "auto_top30_survivors": dict(top_n=30, min_vol_usd=10e6, min_age_days=60, survivors=True),
+}
+
+
+def universe_study(P, iv):
+    """python -m hlg.backtest --universe-study [--interval 4h]
+
+    Does the breakout edge survive scanning the liquid market instead of a hand-picked list? Runs
+    breakout_long on the fixed list and on point-in-time liquidity universes over the whole HL perp
+    history, delisted coins included. Adoption rule, fixed before the first run: auto_top30 ships if
+    PF >= 1.4, max DD no worse than the fixed list's + 5pp, and second-half PF > 1.2."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    pool, delisted = candidate_pool()
+    log.info("candidate pool: %d perps (%d delisted)", len(pool), len(delisted))
+    data = {}
+    for c in pool:
+        try:
+            df = bars(c, cache, iv)
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s: bars failed (%s), skipped", c, e)
+            continue
+        if df is not None and len(df) >= 60:
+            data[c] = features(df, 1)
+    V = VARIANTS["breakout_long"]
+    start = pd.Timestamp(P["start"], tz="UTC")
+    fixed = [c for c in DEF["coins"] if c in data]
+    masks = {name: eligibility(data, U) for name, U in UNIVERSE_STUDY.items()}
+    liq_med = next(iter(masks.values()))[1]
+    ever = set(fixed)
+    for m, _ in masks.values():
+        ever |= set(m.columns[m[m.index >= start].any()])
+    start_ms = int(start.timestamp() * 1000)
+    fund = {}
+    for i, c in enumerate(sorted(ever)):
+        fund[c] = funding(c, start_ms, cache, iv)
+        if i % 10 == 0:
+            log.info("funding %d/%d", i + 1, len(ever))
+    fund = {c: fund.get(c, pd.Series(dtype=float)) for c in data}
+    runs = {"fixed": (fixed, None)} | {n: (sorted(ever), by_day(m.loc[m.index >= start - pd.Timedelta(days=1)])) for n, (m, _) in masks.items()}
+    rows, notes = {}, []
+    for name, (coins, elig) in runs.items():
+        sub = {c: data[c] for c in coins}
+        Q = {**P, "liq_med": liq_med, "elig_by_day": elig, "delisted": delisted}
+        T, C, dd = run(V, sub, {c: fund[c] for c in coins}, Q)
+        s = stats(T, C, dd, Q)
+        days = sorted(set().union(*[set(d.index) for d in sub.values()]))
+        days = [d for d in days if d >= start]
+        s |= halves(T, days[len(days) // 2])
+        months = max((days[-1] - days[0]).days / 30.44, 1)
+        s["signals_per_month"] = len(T) / months
+        s["profit_share_new_coins"] = (T[~T.coin.isin(DEF["coins"])].net.sum() / T.net.sum()) if len(T) and T.net.sum() else float("nan")
+        s["delisted_exits"] = int((T.why == "delisted").sum()) if len(T) else 0
+        if elig is not None:
+            m = masks[name][0]
+            per_year = m[m.index >= start].sum(axis=1).groupby(m[m.index >= start].index.year).mean().round(1).to_dict()
+            notes.append(f"- `{name}`: mean eligible coins per day by year {per_year}")
+        rows[name] = s
+        T.to_csv(out / f"universe_{iv}_{name}.csv", index=False)
+        log.info("%s: trades %s pf %.2f dd %.1f", name, s.get("trades"), s.get("pf", 0), s.get("max_dd_pct", 0))
+    S = pd.DataFrame(rows).T
+    cols = ["trades", "win_rate", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf",
+            "signals_per_month", "profit_share_new_coins", "delisted_exits"]
+    base, cand = rows["fixed"], rows.get("auto_top30", {})
+    passed = bool(cand.get("trades")) and cand["pf"] >= 1.4 and cand["max_dd_pct"] >= base["max_dd_pct"] - 5 and cand["OOS_pf"] > 1.2
+    rep = [f"# Universe study ({iv}, breakout_long, {P['start']} -> now)\n",
+           f"Pool: {len(data)} perps with history, {len(delisted)} delisted in meta. Fixed list: {', '.join(fixed)}. "
+           "Same-day signals fill most-liquid first in every run.\n",
+           S[[c for c in cols if c in S]].astype(float).round(2).to_markdown() + "\n",
+           "Eligibility per day:\n" + "\n".join(notes) + "\n",
+           f"Adoption rule (fixed before running): auto_top30 PF >= 1.4, max DD >= fixed - 5pp, OOS PF > 1.2 -> **{'PASS' if passed else 'FAIL'}**\n"]
+    (out / f"universe_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -381,6 +532,7 @@ def main():
     ap.add_argument("--native", action="store_true", help="use 20/50/14-bar windows on the chosen interval instead of day-equivalent windows")
     ap.add_argument("--filters", nargs="*", help=f"ad-hoc entry filters on the breakout rule: {', '.join(FILTERS)}")
     ap.add_argument("--no-macro", action="store_true", help="skip the FRED fetch (macro filters then never reject)")
+    ap.add_argument("--universe-study", action="store_true", help="breakout on fixed list vs point-in-time liquidity universes")
     a = ap.parse_args()
     cfg = load_config(a.config) if Path(a.config).exists() else {}
     P = {**DEF, **cfg.get("backtest", {})}
@@ -391,6 +543,8 @@ def main():
     if a.native:
         P["native"] = True
     iv = P["interval"]
+    if a.universe_study:
+        return universe_study(P, iv)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

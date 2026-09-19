@@ -25,7 +25,8 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import account, guardrails, liquidations, market, scanner, vault
+from . import account, guardrails, liquidations, market, scanner, universe, vault
+from . import alerts as lifecycle
 from .common import (
     Notifier,
     State,
@@ -129,11 +130,15 @@ def main():
     prev_state, prev, prev_hist = (load_prev(raw[n], n, vlt) for n in FILES)
 
     state_path = OUT / "state.json"
+    try:  # a leftover envelope from an earlier encrypted local run is not state: start clean
+        if state_path.exists() and vault.is_envelope(json.loads(state_path.read_text())):
+            state_path.unlink()
+    except ValueError:
+        state_path.unlink()
     if prev_state and not state_path.exists():
         state_path.write_text(json.dumps(prev_state))
     state = State(state_path)
     prev = prev or {}
-    prev_keys = {a["key"] for a in prev.get("alerts", [])}
 
     inf = info()
     gn, sn = Notifier(cfg), Notifier(cfg)
@@ -146,11 +151,11 @@ def main():
         | {"leverage": p["position"]["leverage"]["value"], "margin_type": p["position"]["leverage"].get("type")}
         for p in st["assetPositions"]
     ]
-    alerts = [{"kind": "guardrail", "key": k, "text": t} for k, t in gn.collected.items()]
-    alerts += [{"kind": "scanner", "key": k, "text": t} for k, t in sn.collected.items()]
-    new = [a for a in alerts if a["key"] not in prev_keys]
-    for a in alerts:
-        a["new"] = a["key"] not in prev_keys
+    now_ms = int(time.time() * 1000)
+    px_by_coin = {r["coin"]: r["px"] for r in rows if r.get("px") is not None}
+    alerts, ended = lifecycle.build([("guardrail", gn), ("scanner", sn)], prev, now_ms, px_by_coin)
+    # push = the alert's own flag (funding carry and already-held breakouts are dashboard-only)
+    new = [a for a in alerts if a["new"] and a["push"]]
 
     for r in rows:
         for k, v in list(r.items()):
@@ -164,7 +169,9 @@ def main():
     tradfi_coins = S.get("tradfi_coins") or []
     t0 = time.monotonic()
     ctx = scanner.ctx_map(inf, tradfi_coins)
-    market_rows = market.ctx_rows(ctx, list(S["coins"]))
+    # the coins actually scanned this run: scanner.coins, or today's liquidity universe (hlg.universe)
+    scanned = list(dict.fromkeys(r["coin"] for r in rows if not r.get("watch"))) or list(S["coins"])
+    market_rows = market.ctx_rows(ctx, scanned)
     tradfi_rows, tradfi_dropped = market.tradfi_rows(ctx, tradfi_coins)
     log.info("market: %d coins, %d tradfi (%d stale hidden) in %.1fs",
              len(market_rows), len(tradfi_rows), tradfi_dropped, time.monotonic() - t0, extra={"safe": True})
@@ -192,12 +199,15 @@ def main():
         "week_pnl": state.get("week_pnl"),
         "positions": positions,
         "alerts": alerts,
+        "ended": ended,  # signals that expired, ran away or failed in the last 24h (hlg.alerts)
         "scan": rows,
         "macro": scanner.macro_context(cfg["scanner"]),  # cached on disk by hlg.macro, so no second fetch
         "market": market_rows,
         "tradfi": {"rows": tradfi_rows, "dropped": tradfi_dropped},
         "liquidations": liq,
         "rules": cfg["rules"],
+        "universe": {"mode": universe.settings(S)["mode"], "coins": len(scanned),
+                     "day": (state.get("universe") or {}).get("day")},
     }
     hist = prev_hist if isinstance(prev_hist, list) else []
     hist.append({"t": out["generated"], "equity": out["equity"], "n_alerts": len(alerts), "new": [a["key"] for a in new]})

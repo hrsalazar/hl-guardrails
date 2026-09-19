@@ -34,7 +34,7 @@ scanner:
   level_proximity_pct: 3.0       # price within X% of 20-day high/low
   min_rr: 2.0
   prefer_short_when_funding_positive: true
-  funding_carry_alert_apr: 20    # alert if |annualised funding| > this %
+  funding_carry_alert_apr: 20    # dashboard note if |annualised funding| > this % (never pushed)
   # fast heads-up for moves too quick for 1d/4h breakout levels to confirm - NOT backtested, no stop/size/target
   momentum_window_hours: 4
   momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours

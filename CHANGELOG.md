@@ -2,6 +2,21 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-19 (later)
+
+- **Readable alert list:** grouped (positions, entries, heads-up, info, recently ended), one line
+  per alert with age and remaining entry window, tap to expand, clear per device. Signals that end
+  are shown for 24h as missed / failed / expired instead of vanishing.
+- **Focused push:** funding notes and breakouts on coins already held are dashboard-only.
+  Guardrail breaches, breakout entries and momentum are still pushed.
+- **Scanner request budget:** bar statistics are cached until the bar closes, live prices come from
+  one `allMids` call, and momentum uses stored price snapshots. A 15-minute run now makes no
+  candle requests unless a bar has closed (was ~28-35 per run).
+- **Liquidity universe** (`scanner.universe`, off by default): top N perps by 30-day median volume,
+  rebuilt daily; `allowed_coins: auto`. Dashboard: near-breakout list, volume and rank columns.
+- Backtest: `--universe-study` (point-in-time universe with delisted coins, most-liquid-first fills).
+- The Kronos stop-odds idea is parked in `docs/proposals/`.
+
 ## 2026-09-19
 
 - **Web Push is on**: alerts reach devices with the dashboard closed. Added a manual

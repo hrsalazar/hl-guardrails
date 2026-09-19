@@ -41,6 +41,8 @@ read back at the start of the next run.
 | `hlg/account.py` | the account model: detects unified vs classic, picks the equity base, computes HL's account ratio and leverage, and nets spot into perp exposure | HL |
 | `hlg/guardrails.py` | the risk rules: stops, sizing, leverage, exposure, hold time, averaging down, daily and weekly loss locks | HL |
 | `hlg/scanner.py` | the breakout setup on 1d and 4h, the momentum heads-up, funding carry, and the asset-context fetch (`ctx_map`) | HL |
+| `hlg/universe.py` | which coins are scanned: `scanner.coins`, or the top N perps by 30-day median volume, rebuilt once per UTC day | – |
+| `hlg/alerts.py` | alert lifecycle: first seen, valid until, live/missed/failed/expired, what gets pushed | – |
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
 | `hlg/liquidations.py` | recent liquidation events from OKX, time-boxed and fail-soft | OKX |
 | `hlg/macro.py` | FRED macro series for research and backtests (off in CI, see below) | FRED |
@@ -65,13 +67,19 @@ read back at the start of the next run.
    Plaintext (from before encryption) and the locked stub are handled too; see `load_prev`.
 3. **Guardrails.** Evaluate every rule against live positions, open orders and the account model.
    Day and week baselines and the loss lock persist in `state`.
-4. **Scanner.** Breakout signals per timeframe, momentum, and funding carry.
+4. **Scanner.** Resolve today's coin list (`hlg/universe.py`), then breakout signals per timeframe from
+   cached bar statistics and one `allMids` price snapshot, momentum from stored snapshots, and
+   funding notes.
 5. **Context.** One extra asset-context call gives market and TradFi rows. Liquidations are
    fetched with a hard budget.
-6. **Diff.** An alert is *new* if its key wasn't in the previous `alerts.json`.
+6. **Lifecycle** (`hlg/alerts.py`). An alert is *new* if its key wasn't live in the previous
+   `alerts.json`; `first_seen` carries over by key. Signals that stopped being live move to `ended`
+   as missed (ran more than 1 ATR past the signal close), failed (back below the breakout level)
+   or expired, and are kept for 24 hours.
 7. **Publish.** Write `alerts.json`, `history.json`, then `state.json` last, each sealed by the
    vault. With no passphrase in CI, the locked stub is written instead.
-8. **Push.** Web Push the new alerts to every subscription, plus a test message if the manual
+8. **Push.** Web Push the new alerts flagged `push` (guardrail breaches, breakout entries, momentum;
+   not funding notes or breakouts on coins already held) to every subscription, plus a test message if the manual
    `test_push` input was set. Push is skipped when the previous state couldn't be read, since every
    alert would look new.
 9. The workflow then copies `pwa/` into `site/`, stamps `config.js` with the public VAPID key, and
@@ -98,12 +106,19 @@ Decrypted `alerts.json`, the dashboard payload:
 | `acct` | the account model: mode, base, base label, ratio, leverage, maintenance margin, notional, spot holdings |
 | `day_pnl`, `week_pnl`, `day_start_equity`, `week_start_equity`, `locked_until` | loss-limit tracking |
 | `positions` | coin, size, entry, value, uPnL, liquidation price, leverage, margin type |
-| `alerts` | `{kind: guardrail/scanner, key, text, new}` |
-| `scan` | scanner rows, each tagged with its timeframe `tf` |
+| `alerts` | `{kind, cat: position/entry/heads_up/info, key, text, summary, push, new, first_seen, valid_until?, status, meta?}`; ordered by category |
+| `ended` | signals that left the live list in the last 24h, with `status` missed/failed/expired, `why` and `ended_at` |
+| `universe` | `{mode, coins, day}`: how the scanned list was chosen |
+| `scan` | scanner rows, each tagged with its timeframe `tf`, plus `vlm24h`, `urank` (auto universe) and `near_atr` (within 0.5 ATR of its trigger) |
 | `market`, `tradfi` | volume, OI, 24h change, premium and spread rows; `tradfi.dropped` counts hidden dead listings |
 | `liquidations` | `{src: "baked", rows}` or null (the dashboard then fetches OKX itself, labelled `live`) |
 | `macro` | FRED backdrop, or null |
 | `rules` | the rule thresholds in force |
+
+The encrypted `state.json` also carries the scanner's working memory between runs: `universe` (today's
+list), `scan_cache` (per coin and timeframe bar statistics, reused until that bar closes) and
+`mid_snaps` (all-mids snapshots for the momentum check). A 15-minute run therefore fetches candles
+only for bars that have closed since the last run.
 
 `history.json` is a list, capped at 2000 entries, of `{t, equity, n_alerts, new}`.
 

@@ -17,8 +17,6 @@ main{padding:12px 16px;max-width:900px;margin:0 auto}
 .card{background:var(--card);border-radius:10px;padding:12px 14px;margin:10px 0}
 .row{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .kpi{font-size:22px;font-weight:600}.mut{color:var(--mut)}
-.alert{border-left:4px solid var(--red);padding:8px 10px;margin:8px 0;background:#1d1417;border-radius:6px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
-.alert.scanner{border-color:var(--blu);background:#141a24}.alert .new{color:var(--yel);font-weight:600}
 table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;text-align:right;border-bottom:1px solid #22262f}td:first-child,th:first-child{text-align:left}
 .pos{color:var(--grn)}.neg{color:var(--red)}.yel{color:var(--yel)}
 button{background:#262b36;color:var(--fg);border:1px solid #333;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}button:disabled{opacity:.5}
@@ -30,6 +28,18 @@ button{background:#262b36;color:var(--fg);border:1px solid #333;border-radius:8p
 .pane>.card:first-child{border-top-left-radius:0}
 .ok{color:var(--grn)}.lock{color:var(--red);font-weight:600}
 pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12px}
+/* alert list: grouped, one line per alert, tap to expand */
+.grp{margin:10px 0 0}.grp:first-child{margin-top:0}
+.gh{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;user-select:none;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.gh .n{background:#262b36;color:var(--fg);border-radius:999px;padding:0 7px;font-size:12px;text-transform:none}
+.gh .sp{flex:1}.gh .car{width:1em;text-align:center}
+.gh button,.al button{padding:3px 9px;font-size:12px;text-transform:none;letter-spacing:0}
+.al{border-left:4px solid var(--blu);background:#141a24;border-radius:6px;margin:6px 0;padding:8px 10px}
+.al.position{border-color:var(--red);background:#1d1417}.al.heads_up{border-color:var(--yel)}.al.info,.al.ended{border-color:#3a4050;background:#15181e}
+.al .top{display:flex;gap:8px;align-items:flex-start}.al .sum{flex:1;font-size:13px;line-height:1.35;cursor:pointer;word-break:break-word}
+.al .sub{font-size:12px;color:var(--mut);margin-top:2px}.al .new{color:var(--yel);font-weight:600}
+.al pre{margin:8px 0 0;white-space:pre-wrap;font-size:12px}.al.quiet .sum{color:var(--mut)}
+.st{font-size:11px;padding:1px 6px;border-radius:999px;background:#262b36;margin-right:4px}.st.missed,.st.failed{color:var(--red)}.st.expired{color:var(--mut)}
 </style>
 </head>
 <body>
@@ -65,7 +75,9 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
   </div>
   <div class="pane" id="pane-tech">
     <div class="card"><h3 style="margin:0 0 6px">Positions</h3><div id="positions"></div></div>
-    <div class="card"><h3 style="margin:0 0 6px">Scanner</h3><div id="scan"></div></div>
+    <div class="card" id="nearcard" hidden><h3 style="margin:0 0 6px">Near breakout <span class="badge" id="nearcount"></span></h3>
+      <p class="mut" style="margin:0 0 8px;font-size:12px">Uptrend and within 0.5 ATR of the level the bar has to close above. A watch list, not a signal — nothing here alerts.</p><div id="near"></div></div>
+    <div class="card"><h3 style="margin:0 0 6px">Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></div>
   </div>
   <div class="pane" id="pane-macro" hidden>
     <div class="card"><h3 style="margin:0 0 6px">Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></div>
@@ -186,9 +198,7 @@ async function render(){
    <div><div class="mut">Week PnL</div><div class="kpi ${cls(weekPnl)}">${weekPnl>=0?'+':''}${fmt(weekPnl)}${pct(weekPnl,d.week_start_equity)}</div></div>
    <div><div class="mut">Positions</div><div class="kpi">${d.positions.length}<span class="mut">/${d.rules.max_positions}</span></div></div>
    <div><div class="mut">Status</div><div class="kpi ${locked?'lock':'ok'}">${locked?'LOCKED until '+new Date(d.locked_until).toUTCString().slice(5,22):'trading allowed'}</div></div>`;
-  const g=d.alerts.filter(a=>a.kind==='guardrail'),s=d.alerts.filter(a=>a.kind==='scanner');
-  $('#ncount').textContent=`${g.length} guardrail · ${s.length} scanner`;
-  $('#alerts').innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.kind}">${a.new?'<span class="new">NEW </span>':''}${a.text.replace(/</g,'&lt;')}</div>`).join(''):'<div class="ok">All rules satisfied.</div>';
+  renderAlerts(d);
   $('#positions').innerHTML=d.positions.length?`<table><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Notional</th><th>uPnL</th><th>Lev</th><th>Liq</th></tr>`+
     d.positions.map(p=>`<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${Math.abs(p.szi)}</td><td>${p.entryPx}</td><td>$${fmt(p.positionValue)}</td><td class="${cls(p.unrealizedPnl)}">${fmt(p.unrealizedPnl)}</td><td>${p.leverage}x</td><td>${p.liquidationPx?fmt(p.liquidationPx,2):'-'}</td></tr>`).join('')+'</table>':'<span class="mut">flat</span>';
   renderMacro(d);
@@ -197,13 +207,24 @@ async function render(){
   const tfGroups=new Map();
   for(const r of d.scan){const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
   const tfKeys=[...tfGroups.keys()].sort((a,b)=>(TF_ORDER[a]??99)-(TF_ORDER[b]??99)||a.localeCompare(b));
-  const scanRow=r=>`<tr${r.watch?' style="opacity:.6"':''}><td>${r.coin}${r.watch?' <small>watch</small>':''}</td><td>${fmt(r.px,r.px<10?4:r.px<1000?2:0)}</td><td>${r.trend}</td><td>${fmt(r.rsi4h)}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td>${r.setup?`<b>${r.setup}</b> stop ${fmt(r.stop,4)}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:' trailing'}`:(r.rejected||(r.hi20?`below 20d high ${fmt(r.hi20,4)}`:'—'))}</td></tr>`;
+  const scanRow=r=>`<tr${r.watch?' style="opacity:.6"':''}><td>${r.urank?`<small class="mut">${r.urank}</small> `:''}${r.coin}${r.watch?' <small>watch</small>':''}</td><td>${fmt(r.px,r.px<10?4:r.px<1000?2:0)}</td><td>${r.trend}</td><td>${fmt(r.rsi4h)}</td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td>${r.setup?`<b>${r.setup}</b> stop ${fmt(r.stop,4)}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:' trailing'}`:(r.rejected||(r.hi20?`below 20d high ${fmt(r.hi20,4)}`:'—'))}</td></tr>`;
+  // live setups first, then near-breakouts, then the rest by liquidity -- a 30-coin table is only
+  // readable if what matters is at the top
+  const scanOrder=r=>(r.setup?0:r.near_atr!=null?1:2)*1e15-(r.vlm24h||0);
   $('#scan').innerHTML=tfKeys.map(tf=>
-    `<div class="tfhead">${TF_LABEL[tf]||tf}</div><table><tr><th>Coin</th><th>Price</th><th>Trend</th><th>RSI</th><th>Funding APR</th><th>Setup</th></tr>`+
-    tfGroups.get(tf).map(scanRow).join('')+'</table>'
+    `<div class="tfhead">${TF_LABEL[tf]||tf}</div><div style="overflow-x:auto"><table><tr><th>Coin</th><th>Price</th><th>Trend</th><th>RSI</th><th>24h vol</th><th>Funding APR</th><th>Setup</th></tr>`+
+    [...tfGroups.get(tf)].sort((a,b)=>scanOrder(a)-scanOrder(b)).map(scanRow).join('')+'</table></div>'
   ).join('');
-  // local notifications for keys not seen on this device
-  const fresh=d.alerts.filter(a=>!lastKeys.has(a.key));
+  const U=d.universe||{};
+  $('#unilabel').textContent=U.mode==='auto'?`top ${U.coins} by volume · list of ${U.day||'today'}`:U.coins?`${U.coins} fixed coins`:'';
+  const near=d.scan.filter(r=>r.near_atr!=null&&!r.watch).sort((a,b)=>a.near_atr-b.near_atr);
+  $('#nearcard').hidden=!near.length;$('#nearcount').textContent=near.length||'';
+  $('#near').innerHTML=near.length?`<table><tr><th>Coin</th><th>TF</th><th>Price</th><th>Trigger</th><th>Distance</th><th>24h vol</th></tr>`+
+    near.map(r=>`<tr><td>${r.coin}</td><td>${r.tf}</td><td>${fmt(r.px,sig(r.px))}</td><td>${fmt(r.hi20,sig(r.hi20))}</td>`
+      +`<td>${fmt(r.near_atr,2)} ATR <small class="mut">(${fmt(100*(r.hi20/r.px-1),1)}%)</small></td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td></tr>`).join('')+'</table>':'';
+  // local notifications for keys not seen on this device -- same rule as Web Push: dashboard-only
+  // alerts (funding carry, breakouts on coins already held) never notify
+  const fresh=d.alerts.filter(a=>!lastKeys.has(a.key)&&a.push!==false);
   if(fresh.length&&hasNotif&&Notification.permission==='granted'){
     const reg=await navigator.serviceWorker?.getRegistration();
     const opts={body:fresh.map(a=>a.text.split('\n')[0]).join('\n').slice(0,300),icon:'icon-192.png',tag:'hlg'};
@@ -212,6 +233,61 @@ async function render(){
   d.alerts.forEach(a=>lastKeys.add(a.key));
   localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)));
 }
+
+// ---- alert list ---------------------------------------------------------------------------------
+// Grouped by what you would do about it, one line each, tap to expand. Clearing is per device
+// (localStorage) and only hides: a new signal on the same coin has a new key and shows again.
+// Guardrail breaches cannot be cleared, only collapsed -- they are live risk on open positions.
+const GROUPS=[['position','Your positions'],['entry','Entries'],['heads_up','Heads-up'],['info','Info'],['ended','Recently ended']];
+const store=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+let cleared=new Set(store('hlgCleared')||[]), collapsed=store('hlgCollapsed')||{info:true,ended:true}, openKeys=new Set(), lastAlerts=null;
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const ago=ms=>{const m=Math.max(0,(Date.now()-ms)/60000);return m<1?'just now':m<60?`${Math.round(m)}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`};
+const left=ms=>{const m=Math.floor((ms-Date.now())/60000);return m<=0?'window closing':m<60?`valid ${m}m`:`valid ${Math.floor(m/60)}h ${m%60}m`};
+function catOf(a){return a.cat||(a.kind==='guardrail'?'position':'entry')}  // payloads from before categories existed
+function renderAlerts(d){
+  lastAlerts=d;
+  const all=[...(d.alerts||[]),...(d.ended||[])];
+  const present=new Set(all.map(a=>a.key));
+  cleared=new Set([...cleared].filter(k=>present.has(k)));store('hlgCleared',[...cleared]);  // forget keys that are gone
+  const by={};for(const [c] of GROUPS)by[c]=[];
+  for(const a of d.alerts||[])(by[catOf(a)]||by.info).push(a);
+  by.ended=d.ended||[];
+  const vis=c=>by[c].filter(a=>c==='position'||!cleared.has(a.key));
+  const liveCount=vis('position').length+vis('entry').length;
+  $('#ncount').textContent=liveCount?`${liveCount} need attention`:'';
+  const row=(a,c)=>{
+    const open=openKeys.has(a.key), quiet=a.push===false;
+    const sub=[a.new?'<span class="new">NEW</span>':'',a.first_seen?ago(a.first_seen):'',
+      c==='ended'?`<span class="st ${a.status}">${a.status}</span> ${esc(a.why||'')}`:(a.valid_until?left(a.valid_until):''),
+      quiet&&c!=='ended'?'dashboard only':''].filter(Boolean).join(' · ');
+    return `<div class="al ${c}${quiet?' quiet':''}" data-key="${esc(a.key)}"><div class="top">`
+      +`<div class="sum" data-act="toggle">${esc(a.summary||a.text.split('\n')[0])}${sub?`<div class="sub">${sub}</div>`:''}</div>`
+      +(c==='position'?'':`<button data-act="clear" aria-label="clear">✕</button>`)+`</div>`
+      +(open?`<pre>${esc(a.text)}</pre>`:'')+`</div>`;
+  };
+  const html=GROUPS.map(([c,label])=>{
+    const items=vis(c);if(!items.length)return '';
+    const col=!!collapsed[c];
+    return `<div class="grp" data-cat="${c}"><div class="gh" data-act="collapse"><span class="car">${col?'▸':'▾'}</span>${label} <span class="n">${items.length}</span><span class="sp"></span>`
+      +(c==='position'?'':`<button data-act="clearall">Clear all</button>`)+`</div>`
+      +(col?'':items.map(a=>row(a,c)).join(''))+`</div>`;
+  }).join('');
+  const hidden=all.filter(a=>cleared.has(a.key)).length;
+  $('#alerts').innerHTML=(html||'<div class="ok">All rules satisfied. No live signals.</div>')
+    +(hidden?`<div class="mut" style="font-size:12px;margin-top:8px">${hidden} cleared on this device · <a href="#" data-act="restore">show again</a></div>`:'');
+}
+$('#alerts').addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]');if(!t||!lastAlerts)return;
+  const act=t.dataset.act, al=t.closest('.al'), grp=t.closest('.grp');
+  if(act==='toggle'&&al){const k=al.dataset.key;openKeys.has(k)?openKeys.delete(k):openKeys.add(k)}
+  else if(act==='clear'&&al){e.stopPropagation();cleared.add(al.dataset.key)}
+  else if(act==='clearall'&&grp){e.stopPropagation();for(const x of grp.querySelectorAll('.al'))cleared.add(x.dataset.key)}
+  else if(act==='collapse'&&grp){collapsed[grp.dataset.cat]=!collapsed[grp.dataset.cat];store('hlgCollapsed',collapsed)}
+  else if(act==='restore'){e.preventDefault();cleared.clear()}
+  store('hlgCleared',[...cleared]);
+  renderAlerts(lastAlerts);
+});
 
 const usd=n=>n>=1e9?`$${fmt(n/1e9,1)}B`:n>=1e6?`$${fmt(n/1e6,1)}M`:n>=1e3?`$${fmt(n/1e3,0)}k`:`$${fmt(n)}`;
 const sig=p=>p<10?4:p<1000?2:0;

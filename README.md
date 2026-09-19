@@ -54,6 +54,10 @@ Run both as services with `./run.sh` (tmux) or the systemd units in `deploy/`.
    shows on the lock screen. Failures log the HTTP status only (the endpoint is a capability URL); a
    404/410 means the device's subscription expired - re-subscribe and update the secret. To check a
    device, run the workflow manually with **"Also send a test notification"** ticked.
+
+   **What is pushed:** guardrail breaches, new breakout entries and momentum spikes. **Dashboard
+   only:** funding notes (never backtested, and not part of the strategy) and breakouts on a coin you
+   already hold (not an entry: no adds).
 Alerts used to be appended to a GitHub Issue as well. On a public repo that made every position
 readable by anyone, logged in or not, so that channel was removed.
 
@@ -162,6 +166,15 @@ Three things worth knowing about the data, because each one is a trap:
   returns ten trades with no liquidation flag. These are therefore *recent events on OKX's book*,
   not a 24h total and not Hyperliquid's own. OKX sends permissive CORS headers, so if the CI fetch
   comes back empty the dashboard asks OKX directly from your browser; the card says which it used.
+
+**The alert list** is grouped by what you would do about it: *Your positions* (guardrail breaches),
+*Entries* (live breakouts, with how long the entry window has left), *Heads-up* (momentum), *Info*
+(funding, already-held breakouts; collapsed) and *Recently ended*. Each alert is one line; tap to
+expand the full text. A signal that stops being live is not just dropped: it moves to *Recently
+ended* for 24 hours as **missed** (price ran more than 1 ATR past the signal close), **failed** (closed
+back below the breakout level) or **expired** (the entry window passed). ✕ and *Clear all* hide
+alerts on that device only; a new signal on the same coin has a new key and shows again.
+Guardrail breaches can be collapsed but not cleared: they are live risk on open positions.
 
 **Liquidation risk is account-level.** Per-position `liquidationPx` is `null` for cross-margined
 positions — the normal case — because Hyperliquid assesses liquidation on the whole account. The

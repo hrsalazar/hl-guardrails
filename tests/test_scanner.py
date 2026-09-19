@@ -119,7 +119,7 @@ class _NullNotifier:
     def __init__(self):
         self.collected = {}
 
-    def send(self, text, key=None, cooldown_s=3600):
+    def send(self, text, key=None, cooldown_s=3600, push=True, **meta):
         self.collected[key or text] = text
 
 

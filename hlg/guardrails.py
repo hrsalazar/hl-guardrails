@@ -221,6 +221,13 @@ def run_once(cfg, inf, notif, state):
     prev = state.get("positions", {})
     snap = {}
     risk_usd = equity * R["risk_per_trade_pct"] / 100
+    # allowed_coins: auto = the scanner's liquidity universe for today (hlg.universe), so a coin the
+    # scanner can alert on is never also flagged as not allowed. Before the first universe exists,
+    # fall back to scanner.coins.
+    allowed = R["allowed_coins"]
+    if allowed == "auto":
+        u = state.get("universe") if state is not None else None
+        allowed = (u or {}).get("coins") or cfg.get("scanner", {}).get("coins", [])
     for p in positions:
         coin, sz = p["coin"], fnum(p["szi"])
         entry, upnl = fnum(p["entryPx"]), fnum(p["unrealizedPnl"])
@@ -230,8 +237,9 @@ def run_once(cfg, inf, notif, state):
         side = "LONG" if sz > 0 else "SHORT"
         tag = f"{coin} {side} {abs(sz)} @ {entry} (uPnL {upnl:+.0f})"
 
-        if coin not in R["allowed_coins"]:
-            breach(f"{tag}: {coin} not in allowed list {R['allowed_coins']}", f"coin_{coin}")
+        if coin not in allowed:
+            what = "today's liquid universe (allowed_coins: auto)" if R["allowed_coins"] == "auto" else f"allowed list {R['allowed_coins']}"
+            breach(f"{tag}: {coin} not in {what}", f"coin_{coin}")
         if lev > R["max_leverage"]:
             breach(f"{tag}: leverage {lev}x > max {R['max_leverage']}x. Lower it.", f"lev_{coin}")
 
