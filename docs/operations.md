@@ -75,7 +75,12 @@ For each phone or computer:
 
 - **Dashboard header:** the timestamp turns amber after 20 minutes and red after 40. Red means
   runs have stopped; check the scheduler.
-- **Notifications** fire only for alerts that weren't in the previous run.
+- **Notifications** fire only for alerts that weren't in the previous run, and only for guardrail
+  breaches, breakout entries and momentum. Funding notes and breakouts on coins you already hold
+  stay on the dashboard.
+- **The alert list** groups by your positions, entries, heads-up, info and recently ended. Tap a
+  line to expand it; ✕ or *Clear all* hides alerts on that device (position warnings cannot be
+  cleared). A signal that passed shows for 24h as missed, failed or expired.
 - **Loss lock:** after a daily or weekly limit is hit, the tool keeps advising "be flat" until the
   next UTC day or ISO week.
 - **Changing rules:** edit `config.yaml` and push. The push itself triggers a run.
