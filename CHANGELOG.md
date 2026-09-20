@@ -12,8 +12,11 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 - **Scanner request budget:** bar statistics are cached until the bar closes, live prices come from
   one `allMids` call, and momentum uses stored price snapshots. A 15-minute run now makes no
   candle requests unless a bar has closed (was ~28-35 per run).
-- **Liquidity universe** (`scanner.universe`, off by default): top N perps by 30-day median volume,
-  rebuilt daily; `allowed_coins: auto`. Dashboard: near-breakout list, volume and rank columns.
+- **Liquidity universe** (`scanner.universe`) built and backtested, then **left off**: scanning the
+  top 30 perps by volume tested worse than the curated list on both 1d (PF 1.37 vs 1.75) and 4h
+  (1.08 vs 1.36), and the coins it adds lost money. README "Universe". `mode: auto` and
+  `allowed_coins: auto` are available for anyone who wants them.
+- Dashboard: near-breakout watch list, 24h volume column.
 - Backtest: `--universe-study` (point-in-time universe with delisted coins, most-liquid-first fills).
 - The Kronos stop-odds idea is parked in `docs/proposals/`.
 

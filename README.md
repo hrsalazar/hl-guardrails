@@ -334,6 +334,54 @@ history (Hyperliquid caps `candleSnapshot` at ~5000 bars, so 1h has much less ru
 and too short a sample to trade on, so `1h` is not offered as a `scanner.timeframes` option - see Momentum below for
 how fast moves are surfaced instead.
 
+### Universe: scan the liquid market instead of a hand-picked list? — tested, rejected
+
+The obvious improvement is to scan whatever trades most rather than a list chosen by hand: today
+UNI, XMR, LIT, ARB, ENA and TAO each trade more than DOGE, LINK or PENDLE. `hlg/universe.py` does
+that (`scanner.universe.mode: auto`: the top N perps by 30-day median daily volume, listed 60+ days,
+OI >= $5M, rebuilt once per UTC day), and `python -m hlg.backtest --universe-study` tests it before
+it is allowed to change what gets alerted:
+
+- **point-in-time:** on each day a coin qualifies only on volume data up to the day before;
+- **delisted coins included** (HL still serves their candles), so the test is not run on survivors;
+- same-day signals fill **most-liquid first** in every run, fixed in advance;
+- adoption rule written down before the first run: `auto_top30` PF >= 1.4, max drawdown no worse than
+  the fixed list's + 5pp, second-half PF > 1.2.
+
+`breakout_long`, 1d, 2023-06 → 2026-09, 231 perps (56 delisted):
+
+| universe | trades | PF | total | max DD | 2nd-half PF | signals/month |
+|---|---:|---:|---:|---:|---:|---:|
+| fixed 15-coin list | 124 | 1.75 | +80% | -18% | 2.71 | 3.1 |
+| **auto top 30 (candidate)** | 101 | **1.37** | +36% | -13% | 1.50 | 2.6 |
+| auto top 15 | 99 | 1.22 | +24% | -16% | 1.30 | 2.5 |
+| auto top 50 | 101 | 1.37 | +36% | -13% | 1.50 | 2.6 |
+| today's top 30 applied to all history (biased control) | 149 | 1.56 | +87% | -17% | 1.76 | 3.8 |
+
+(The fixed list's 1.75 vs 1.67 in the Backtest table above is only the fill order: that table fills
+same-day signals in config order, this one most-liquid-first.)
+
+**Result: FAIL (PF 1.37 < 1.4) — `mode` stays `fixed`.** Three things the numbers say:
+
+1. **The coins it adds lose money.** Inside the auto universe, trades in coins outside the curated
+   list made PF 0.89 (36 trades); trades in coins on the list made PF 1.70 (65 trades). Liquidity alone
+   does not pick coins where 20-day breakouts follow through.
+2. **Survivorship bias is worth about 0.2 PF.** Using today's top 30 for all of history reports PF 1.56;
+   picking them as they were at the time gives 1.37.
+3. **The fixed list's 1.75 is flattered the same way.** It was chosen in 2026, knowing which coins
+   survived and trended. The honest forward expectation for the breakout rule sits somewhere between
+   the point-in-time universe and the curated list, not at the curated list's number.
+
+**4h says the same, louder.** Same study on 4h bars (222 perps; 12 were skipped after a local network
+outage mid-fetch): fixed list PF 1.36 over 400 trades, `auto_top30` PF **1.08** over 379, with the same
+-33% drawdown and profit from the added coins strongly negative. More coins here mostly means more
+trades at a thinner edge.
+
+Also visible: at a $10M/day bar only ~2 coins qualified per day in 2023 and ~10 in 2024 (HL volume was
+small then), so top 30 and top 50 are identical — the cap never binds. `mode: auto` and
+`allowed_coins: auto` remain available for anyone who wants to run it anyway, and the dashboard's
+near-breakout list and volume column work in either mode.
+
 ### Momentum heads-up
 
 Separately from the breakout rule, the scanner flags plain price momentum: if a coin moves more than
