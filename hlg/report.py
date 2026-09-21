@@ -25,7 +25,7 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import account, guardrails, liquidations, market, scanner, universe, vault
+from . import account, guardrails, journal, liquidations, market, scanner, universe, vault
 from . import alerts as lifecycle
 from .common import (
     Notifier,
@@ -206,6 +206,9 @@ def main():
         "tradfi": {"rows": tradfi_rows, "dropped": tradfi_dropped},
         "liquidations": liq,
         "rules": cfg["rules"],
+        # live record of every breakout signal under the strategy's rules (hlg.journal)
+        "journal": {"summary": journal.summary(state.get("journal") or []),
+                    "recent": list(reversed((state.get("journal") or [])[-30:]))},
         "universe": {"mode": universe.settings(S)["mode"], "coins": len(scanned),
                      "day": (state.get("universe") or {}).get("day")},
     }

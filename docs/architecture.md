@@ -42,6 +42,7 @@ read back at the start of the next run.
 | `hlg/guardrails.py` | the risk rules: stops, sizing, leverage, exposure, hold time, averaging down, daily and weekly loss locks | HL |
 | `hlg/scanner.py` | the breakout setup on 1d and 4h, the momentum heads-up, funding carry, and the asset-context fetch (`ctx_map`) | HL |
 | `hlg/universe.py` | which coins are scanned: `scanner.coins`, or the top N perps by 30-day median volume, rebuilt once per UTC day | – |
+| `hlg/journal.py` | live signal journal: each breakout signal followed under the strategy's rules, result in R | – |
 | `hlg/alerts.py` | alert lifecycle: first seen, valid until, live/missed/failed/expired, what gets pushed | – |
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
 | `hlg/liquidations.py` | recent liquidation events from OKX, time-boxed and fail-soft | OKX |
@@ -117,7 +118,7 @@ Decrypted `alerts.json`, the dashboard payload:
 
 The encrypted `state.json` also carries the scanner's working memory between runs: `universe` (today's
 list), `scan_cache` (per coin and timeframe bar statistics, reused until that bar closes) and
-`mid_snaps` (all-mids snapshots for the momentum check). A 15-minute run therefore fetches candles
+`mid_snaps` (all-mids snapshots for the momentum check) and `journal` (followed signals). A 15-minute run therefore fetches candles
 only for bars that have closed since the last run.
 
 `history.json` is a list, capped at 2000 entries, of `{t, equity, n_alerts, new}`.
@@ -149,7 +150,7 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 161 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 169 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config

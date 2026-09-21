@@ -19,7 +19,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import account, universe
+from . import account, journal, universe
 from .common import (
     Notifier,
     State,
@@ -88,7 +88,17 @@ def bar_stats(d, tf):
             "atr": float(atr(done).iloc[-1]),
             "hi20": float(done.h.iloc[-21:-1].max()),       # 20-bar high BEFORE the last completed candle
             "hi20_live": float(done.h.iloc[-20:].max()),    # level the live candle has to close above
-            "rsi": float(rsi(done.c).iloc[-1]), "live_c": float(live.c)}
+            "rsi": float(rsi(done.c).iloc[-1]), "live_c": float(live.c),
+            "close_loc": float((k.c - k.l) / (k.h - k.l)) if k.h > k.l else 0.5}
+
+
+def completed_bars(d, n=60):
+    """The last n completed bars with their ATR, as plain dicts for the signal journal."""
+    done = d.iloc[:-1].copy()
+    done["atr"] = atr(done)
+    done = done.iloc[-n:]
+    return [{"t": int(r.t.timestamp() * 1000), "o": float(r.o), "h": float(r.h), "l": float(r.l), "c": float(r.c),
+             "atr": float(r.atr)} for r in done.itertuples()]
 
 
 def stats_fresh(st, now_ms):
@@ -110,7 +120,8 @@ def classify(st, px, S, coin, funding_apr):
         sig = str(k_t.date()) if tf == "1d" else k_t.strftime("%Y-%m-%d %H:%M")
         # entry is the next bar's open; once that bar has closed too, the signal is spent
         out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k_c, signal_day=sig, level=st["hi20"],
-                   valid_until=st["bar_t"] + 2 * BAR_MS.get(tf, 86_400_000))
+                   valid_until=st["bar_t"] + 2 * BAR_MS.get(tf, 86_400_000), sig_t=st["bar_t"],
+                   close_loc=st.get("close_loc"))
         # entry is the open after the signal close; if price already ran > 1 ATR beyond it, don't chase
         if px > k_c + a:
             out["rejected"] = f"ran {((px / k_c) - 1) * 100:.1f}% since signal close, wait for next setup"
@@ -123,7 +134,7 @@ def classify(st, px, S, coin, funding_apr):
     return out
 
 
-def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=None):
+def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=None, bars_out=None):
     """cache: {"coin|tf": bar_stats} reused until the next bar closes, so a 15-minute run only pulls
     candles when there is a new bar to evaluate. px: live price (allMids) -- otherwise the live
     candle's close from the fetch."""
@@ -138,6 +149,8 @@ def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=Non
         st = bar_stats(d, tf)
         if cache is not None:
             cache[key] = st
+        if bars_out is not None:  # fresh bars for the signal journal (only when a bar has closed)
+            bars_out[key] = completed_bars(d)
     funding_apr = fnum(ctx.get("funding", 0)) * 24 * 365 * 100
     return classify(st, px if px is not None else st["live_c"], S, coin, funding_apr)
 
@@ -332,12 +345,12 @@ def run_once(cfg, inf, notif, state):
     U = universe.settings(S)
     coins = resolve_coins(inf, S, U, ctx, state, open_coins, cache)
     urank = {c: i + 1 for i, c in enumerate(coins)} if U["mode"] == "auto" else {}
-    rows = []
+    rows, bars_out = [], {}
     for coin in coins + [w for w in watch if w not in coins]:
         c_ctx = ctx.get(coin, {"funding": 0})
         for tf in breakout_tfs:
             try:
-                a = analyse(inf, coin, S, c_ctx, tf, cache=cache, px=mids.get(coin), now_ms=now_ms)
+                a = analyse(inf, coin, S, c_ctx, tf, cache=cache, px=mids.get(coin), now_ms=now_ms, bars_out=bars_out)
             except Exception as e:  # noqa: BLE001
                 log.error("%s (%s) scan failed: %s", coin, tf or S.get("strategy", "breakout"), e)
                 continue
@@ -413,6 +426,17 @@ def run_once(cfg, inf, notif, state):
             notif.send(txt, key=f"fund_{coin}_{int(funding_apr // 10)}", cooldown_s=6 * 3600,
                        push=False, cat="info", summary=f"Funding {coin} {funding_apr:+.0f}% APR", coin=coin)
     momentum(inf, S, U, ctx, coins, mids, state, notif, now_ms)
+    if state is not None:
+        # follow every breakout signal under the strategy's rules, taken or not (hlg.journal)
+        jr = list(state.get("journal") or [])
+        for r in rows:
+            if r.get("signal_close") is not None and not r.get("watch"):
+                journal.add(jr, r, f"setup_{r['coin']}_LONG_{r['signal_day']}|{r['tf']}", now_ms, S)
+        for e in jr:
+            b = bars_out.get(f"{e['coin']}|{e['tf']}")
+            if b and e["status"] in ("pending", "open"):
+                journal.update(e, b, S, R["max_hold_days"])
+        state.set("journal", journal.prune(jr, now_ms))
     if state is not None:
         # keep only what is still in play, so the state file cannot grow without bound
         keep = set(coins) | set(watch)

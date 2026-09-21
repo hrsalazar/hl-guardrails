@@ -141,6 +141,9 @@ def features(df, k=1):
     df["atr_pctile"] = (df.atr / df.c).rolling(100 * k).rank(pct=True)  # where vol sits vs its own recent range
     df["ext_atr"] = (df.c - df.ema20) / df.atr                        # how stretched above the mean, in ATR
     df["ret20"] = df.c.pct_change(20 * k)                             # for the cross-sectional rank
+    rng = (df.h - df.l).replace(0, np.nan)
+    df["close_loc"] = (df.c - df.l) / rng                              # 1 = closed at the high, 0 = at the low
+    df["brk_atr"] = (df.c - df.hi20) / df.atr                          # how far past the level it closed
     return df
 
 
@@ -187,6 +190,9 @@ FILTERS = {
     "cheap_funding": lambda k: _pass(getattr(k, "funding_apr", None), lambda v: v <= 30),
     "btc_bull": lambda k: _pass(getattr(k, "btc_bull", None), bool),
     "rs_top_half": lambda k: _pass(getattr(k, "rs_rank", None), lambda v: v >= 0.5),
+    # breakout-bar quality (entry study): no long upper wick / not already stretched past the level
+    "strong_close": lambda k: _pass(getattr(k, "close_loc", None), lambda v: v >= 0.5),
+    "near_level": lambda k: _pass(getattr(k, "brk_atr", None), lambda v: v <= 1.0),
     # macro / tradfi backdrop (hlg.macro)
     "no_credit_stress": lambda k: _pass(getattr(k, "hy_stress", None), lambda v: not v),
     "vix_calm": lambda k: _pass(getattr(k, "vix_calm", None), bool),
@@ -248,27 +254,50 @@ def run(V, data, fund, P):
     days = [d for d in days if d >= pd.Timestamp(P["start"], tz="UTC")]
     eq, peak, dd = P["equity0"], P["equity0"], 0.0
     open_pos, trades, curve = {}, [], []
-    pending = {}  # coin -> (side, stop, tgt, signal_day)
+    # coin -> {side, stop, tgt, sd, mode, level, atr, leg_lo, leg_hi, bars}. mode: "open" = fill at the
+    # next open (the rule as backtested); "confirm" = only after the next bar also closes above the
+    # level; "fib" = limit order at a retrace of the breakout leg (entry study, README "Entries").
+    pending = {}
+    entry = V.get("entry", "open")
     for d in days:
         # 1) fills for pending signals at today's open
         # Same-day signals compete for max_positions slots. Fill the most liquid first (trailing
         # 30d median notional, as of the signal day): fixed in advance, and the order the live
         # scanner lists them in. Dict order used to decide this, i.e. the config file's coin order.
-        for coin, (side, stop, tgt, sd) in sorted(pending.items(), key=lambda kv: -_prio(P, kv[0], kv[1][3])):
-            del pending[coin]
+        for coin, q in sorted(pending.items(), key=lambda kv: -_prio(P, kv[0], kv[1]["sd"])):
             df = data[coin]
-            if d not in df.index or coin in open_pos or len(open_pos) >= P["max_positions"]:
+            if d not in df.index:
                 continue
-            o = df.loc[d].o
-            dist = abs(o - stop)
+            k = df.loc[d]
+            if q["mode"] == "await":      # confirm: waiting for this bar's close (step 3)
+                continue
+            if q["mode"] == "fib":
+                q["bars"] += 1
+                if q["bars"] > V.get("fib_valid", 5):
+                    del pending[coin]
+                    continue
+                # level from the leg as known before this bar: no peeking at today's high
+                lim = q["leg_hi"] - V["fib"] * (q["leg_hi"] - q["leg_lo"])
+                q["leg_hi"] = max(q["leg_hi"], k.h)
+                if k.l > lim:
+                    continue
+                px, intrabar = min(k.o, lim), True
+            else:
+                px, intrabar = k.o, False
+            del pending[coin]
+            if coin in open_pos or len(open_pos) >= P["max_positions"]:
+                continue
+            stop = q["stop"] if entry == "open" else px - V["stop_atr"] * q["atr"]
+            dist = abs(px - stop)
             if dist <= 0:
                 continue
             sz = eq * P["risk_pct"] / 100 / dist
-            sz = min(sz, eq * P["max_lev"] / o)
-            fee = sz * o * P["maker_fee"]
+            sz = min(sz, eq * P["max_lev"] / px)
+            fee = sz * px * P["maker_fee"]
             eq -= fee
-            open_pos[coin] = dict(coin=coin, side=side, entry=o, sz=sz, stop=stop, tgt=tgt, start=d, fee=fee, fund=0.0,
-                                  best=o, sig_day=sd)
+            open_pos[coin] = dict(coin=coin, side=q["side"], entry=px, sz=sz, stop=stop, tgt=q["tgt"], start=d, fee=fee,
+                                  fund=0.0, best=px, sig_day=q["sd"], level=q["level"], bars=0,
+                                  intrabar_day=d if intrabar else None)
         # 2) manage open positions on today's bar
         for coin, p in list(open_pos.items()):
             df = data[coin]
@@ -302,9 +331,12 @@ def run(V, data, fund, P):
                     exit_px, why = max(k.o, p["stop"]), "stop"
                 elif p["tgt"] and k.l <= p["tgt"]:
                     exit_px, why = min(k.o, p["tgt"]), "target"
+            p["bars"] = p.get("bars", 0) + 1
+            if exit_px is None and V.get("fail_exit_bars") and p["bars"] <= V["fail_exit_bars"] and k.c < p["level"]:
+                exit_px, why = k.c, "failed"  # closed back below the breakout level: out now, not at the 2 ATR stop
             if exit_px is None and (d - p["start"]) >= pd.Timedelta(days=V["max_days"]):
                 exit_px, why = k.c, "time"
-            if exit_px is None and V["trail_atr"]:
+            if exit_px is None and V["trail_atr"] and p.get("intrabar_day") != d:  # today's high may predate the fill
                 p["best"] = max(p["best"], k.h) if sgn > 0 else min(p["best"], k.l)
                 new_stop = p["best"] - sgn * V["trail_atr"] * k.atr
                 p["stop"] = max(p["stop"], new_stop) if sgn > 0 else min(p["stop"], new_stop)
@@ -323,14 +355,26 @@ def run(V, data, fund, P):
         peak = max(peak, mtm)
         dd = min(dd, mtm / peak - 1)
         curve.append((d, mtm))
+        # confirm: the bar after the breakout has closed -- keep the entry only if it held the level
+        for coin, q in list(pending.items()):
+            if q["mode"] == "await" and d in data[coin].index and d > q["sd"]:
+                if data[coin].loc[d].c > q["level"]:
+                    q["mode"] = "open"
+                else:
+                    del pending[coin]
         elig = P.get("elig_by_day")
         for coin in (elig.get(d.floor("D"), ()) if elig is not None else data):
             df = data[coin]
             if d not in df.index or coin in open_pos:
                 continue
-            s = signal(df.loc[d], V)
+            if coin in pending and pending[coin]["mode"] in ("fib", "await"):
+                continue  # a retrace order or a confirmation is already working
+            k = df.loc[d]
+            s = signal(k, V)
             if s:
-                pending[coin] = (*s, d)
+                side, stop, tgt = s
+                pending[coin] = dict(side=side, stop=stop, tgt=tgt, sd=d, level=k.hi20, atr=k.atr, leg_lo=k.lo20,
+                                     leg_hi=k.h, bars=0, mode={"open": "open", "confirm": "await", "fib": "fib"}[entry])
     T = pd.DataFrame(trades)
     C = pd.Series(dict(curve))
     return T, C, dd
@@ -522,6 +566,82 @@ def universe_study(P, iv):
     print("\n".join(rep))
 
 
+ENTRY_STUDY = {
+    # pre-registered before running (README "Entries"); every variant is breakout_long plus one change
+    "base": {},
+    "fail_exit2": {"fail_exit_bars": 2},
+    "confirm": {"entry": "confirm"},
+    "fib382": {"entry": "fib", "fib": 0.382, "fib_valid": 5},
+    "fib50": {"entry": "fib", "fib": 0.5, "fib_valid": 5},
+    "strong_close": {"filters": ["strong_close"]},
+    "near_level": {"filters": ["near_level"]},
+}
+
+
+def entry_study(P, iv):
+    """python -m hlg.backtest --entry-study [--interval 4h]
+
+    Can failed breakouts be avoided or made cheaper? Rule fixed before running: an entry/exit variant
+    passes if PF >= base + 0.10, max DD no worse than base - 2pp, and PF in each half >= the base's in
+    that half; a filter must additionally sit above the 95th percentile of randomly dropping the
+    same number of base trades."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    start = pd.Timestamp(P["start"], tz="UTC")
+    data, fund = {}, {}
+    for c in DEF["coins"]:
+        df = bars(c, cache, iv)
+        if df is None or len(df) < 80:
+            continue
+        data[c] = features(df, 1)
+        fund[c] = funding(c, int(start.timestamp() * 1000), cache, iv)
+    _, liq_med = liquidity(data)
+    Q = {**P, "liq_med": liq_med}
+    days = sorted(set().union(*[set(d.index) for d in data.values()]))
+    days = [d for d in days if d >= start]
+    mid = days[len(days) // 2]
+    rows, trades = {}, {}
+    for name, extra in ENTRY_STUDY.items():
+        V = {**VARIANTS["breakout_long"], **extra}
+        T, C, dd = run(V, data, fund, Q)
+        s = stats(T, C, dd, Q) | halves(T, mid)
+        s["failed_exits"] = int((T.why == "failed").sum()) if len(T) else 0
+        rows[name], trades[name] = s, T
+        T.to_csv(out / f"entry_{iv}_{name}.csv", index=False)
+        log.info("%s: trades %s pf %.2f dd %.1f", name, s.get("trades"), s.get("pf", 0), s.get("max_dd_pct", 0))
+    b = rows["base"]
+    base_net = trades["base"].net.values
+    verdict = {}
+    for name, s in rows.items():
+        if name == "base":
+            continue
+        ok = (s["pf"] >= b["pf"] + 0.10 and s["max_dd_pct"] >= b["max_dd_pct"] - 2
+              and s["IS_pf"] >= b["IS_pf"] and s["OOS_pf"] >= b["OOS_pf"])
+        pct = None
+        if ENTRY_STUDY[name].get("filters"):
+            pct = bootstrap_pf(base_net, s["trades"], s["pf"]) if s["trades"] < len(base_net) else float("nan")
+            ok = ok and pct is not None and pct > 95
+        verdict[name] = ("PASS" if ok else "fail") + (f" (random-subset pctile {pct:.0f})" if pct is not None else "")
+    # the cost side of waiting for a retrace: base winners the variant never traded
+    big = trades["base"].nlargest(max(1, len(trades["base"]) // 5), "net") if len(trades["base"]) else trades["base"]
+    missed = {}
+    for name in ("confirm", "fib382", "fib50"):
+        T = trades[name]
+        have = set(zip(T.coin, T.start.dt.floor("D"))) if len(T) else set()
+        # a variant trade on the same coin within 6 days of the base entry counts as "caught it"
+        caught = sum(any(c == bc and 0 <= (t - bs.floor("D")).days <= 6 for c, t in have) for bc, bs in zip(big.coin, big.start))
+        missed[name] = f"{len(big) - caught}/{len(big)}"
+    S = pd.DataFrame(rows).T
+    cols = ["trades", "win_rate", "pf", "total_return_pct", "max_dd_pct", "avg_loss_pct", "avg_win_pct", "IS_pf", "OOS_pf", "failed_exits"]
+    rep = [f"# Entry study ({iv}, breakout_long on the fixed list, {P['start']} -> now)\n",
+           S[[c for c in cols if c in S]].astype(float).round(2).to_markdown() + "\n",
+           "Verdicts (rule fixed before running): " + "; ".join(f"`{k}` {v}" for k, v in verdict.items()) + "\n",
+           "Top-20% base winners the retrace/confirm variants never entered: "
+           + ", ".join(f"`{k}` {v}" for k, v in missed.items()) + "\n"]
+    (out / f"entry_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -533,6 +653,7 @@ def main():
     ap.add_argument("--filters", nargs="*", help=f"ad-hoc entry filters on the breakout rule: {', '.join(FILTERS)}")
     ap.add_argument("--no-macro", action="store_true", help="skip the FRED fetch (macro filters then never reject)")
     ap.add_argument("--universe-study", action="store_true", help="breakout on fixed list vs point-in-time liquidity universes")
+    ap.add_argument("--entry-study", action="store_true", help="failed-breakout study: fast exit, confirmation, fib retrace entries, bar-quality filters")
     a = ap.parse_args()
     cfg = load_config(a.config) if Path(a.config).exists() else {}
     P = {**DEF, **cfg.get("backtest", {})}
@@ -545,6 +666,8 @@ def main():
     iv = P["interval"]
     if a.universe_study:
         return universe_study(P, iv)
+    if a.entry_study:
+        return entry_study(P, iv)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

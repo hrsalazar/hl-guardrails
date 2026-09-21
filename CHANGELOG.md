@@ -2,6 +2,14 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-21
+
+- **Entry study** (`--entry-study`): fast failure exit, confirmation entry, 0.382 / 0.5 fib retrace
+  entries, and two breakout-bar quality filters, on 1d and 4h. None passed the pre-set bar. Retrace
+  entries missed most of the biggest winners (fib 0.382: 21 of 24 on 1d). README "Entries".
+- **Signal journal:** every breakout signal is followed under the strategy's own rules, taken or not,
+  with its result in R, early-failure flag and close location. Dashboard card in the Technical tab.
+
 ## 2026-09-19 (later)
 
 - **Readable alert list:** grouped (positions, entries, heads-up, info, recently ended), one line

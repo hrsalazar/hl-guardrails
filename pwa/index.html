@@ -78,6 +78,8 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
     <div class="card" id="nearcard" hidden><h3 style="margin:0 0 6px">Near breakout <span class="badge" id="nearcount"></span></h3>
       <p class="mut" style="margin:0 0 8px;font-size:12px">Uptrend and within 0.5 ATR of the level the bar has to close above. A watch list, not a signal — nothing here alerts.</p><div id="near"></div></div>
     <div class="card"><h3 style="margin:0 0 6px">Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></div>
+    <div class="card"><h3 style="margin:0 0 6px">Signal journal <span class="badge" id="jcount"></span></h3>
+      <p class="mut" style="margin:0 0 8px;font-size:12px">Every breakout signal, followed under the strategy's rules whether or not you took it: entry at the next open, 2×ATR stop, 3×ATR trail, 21-day time stop. R = multiples of the initial risk.</p><div id="journal"></div></div>
   </div>
   <div class="pane" id="pane-macro" hidden>
     <div class="card"><h3 style="margin:0 0 6px">Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></div>
@@ -215,6 +217,7 @@ async function render(){
     `<div class="tfhead">${TF_LABEL[tf]||tf}</div><div style="overflow-x:auto"><table><tr><th>Coin</th><th>Price</th><th>Trend</th><th>RSI</th><th>24h vol</th><th>Funding APR</th><th>Setup</th></tr>`+
     [...tfGroups.get(tf)].sort((a,b)=>scanOrder(a)-scanOrder(b)).map(scanRow).join('')+'</table></div>'
   ).join('');
+  renderJournal(d.journal);
   const U=d.universe||{};
   $('#unilabel').textContent=U.mode==='auto'?`top ${U.coins} by volume · list of ${U.day||'today'}`:U.coins?`${U.coins} fixed coins`:'';
   const near=d.scan.filter(r=>r.near_atr!=null&&!r.watch).sort((a,b)=>a.near_atr-b.near_atr);
@@ -288,6 +291,23 @@ $('#alerts').addEventListener('click',e=>{
   store('hlgCleared',[...cleared]);
   renderAlerts(lastAlerts);
 });
+
+function renderJournal(j){
+  const s=j&&j.summary||{}, rec=j&&j.recent||[];
+  const R=r=>r==null?'—':`<span class="${cls(r)}">${r>=0?'+':''}${fmt(r,2)}R</span>`;
+  $('#jcount').textContent=rec.length?`${s.open||0} open · ${s.closed||0} closed`:'';
+  // Few closed trades say little: a 36%-win-rate system has long losing streaks by design. The
+  // numbers become worth reading after ~30 closed signals.
+  const head=s.closed?`<div class="row" style="margin-bottom:8px;font-size:13px">`
+    +`<div>Win rate <b>${fmt(100*s.win_rate)}%</b></div><div>Avg ${R(s.avg_r)}</div><div>PF <b>${s.pf==null?'—':fmt(s.pf,2)}</b></div>`
+    +`<div>Failed early <b>${s.failed_early}</b> <small class="mut">(${s.failed_early_recovered} recovered)</small></div></div>`
+    +(s.closed<30?`<p class="mut" style="font-size:12px;margin:0 0 8px">${s.closed} closed so far — too few to judge; wait for ~30.</p>`:''):'';
+  $('#journal').innerHTML=rec.length?head+`<div style="overflow-x:auto"><table><tr><th>Signal</th><th>Status</th><th>R</th><th>Best</th><th>Early fail</th><th>Close loc</th></tr>`+
+    rec.map(e=>`<tr><td>${e.coin} ${e.tf} <small class="mut">${e.signal_day}</small></td><td>${e.status}</td><td>${R(e.r)}</td>`
+      +`<td>${e.max_r?R(e.max_r):'—'}</td><td>${e.failed_early?'<span class="neg">yes</span>':'no'}</td>`
+      +`<td>${e.close_loc==null?'—':fmt(e.close_loc,2)}</td></tr>`).join('')+'</table></div>'
+    :'<span class="mut">No breakout signals recorded yet. Each new one is followed from here on.</span>';
+}
 
 const usd=n=>n>=1e9?`$${fmt(n/1e9,1)}B`:n>=1e6?`$${fmt(n/1e6,1)}M`:n>=1e3?`$${fmt(n/1e3,0)}k`:`$${fmt(n)}`;
 const sig=p=>p<10?4:p<1000?2:0;

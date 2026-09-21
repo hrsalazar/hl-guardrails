@@ -382,6 +382,43 @@ small then), so top 30 and top 50 are identical — the cap never binds. `mode: 
 `allowed_coins: auto` remain available for anyone who wants to run it anyway, and the dashboard's
 near-breakout list and volume column work in either mode.
 
+### Entries: can failed breakouts be avoided? — tested, nothing adopted yet
+
+About 60% of breakout trades lose; the system pays through the ~20% that run for weeks. So the test
+is not "fewer failures" but "more profit", and every idea was checked against that.
+`python -m hlg.backtest --entry-study [--interval 4h]`, fixed coin list, 2023-06 → now. Rule written
+down first: PF at least +0.10 over the current rule, max drawdown no more than 2pp worse, at least as
+good in both halves; a filter must also beat randomly dropping the same number of trades (>95th pct).
+
+| variant | what changes | 1d PF | 4h PF | verdict |
+|---|---|---:|---:|---|
+| current rule | enter next open, 2 ATR stop, 3 ATR trail, 21d | 1.75 | 1.40 | — |
+| `fail_exit2` | exit if a close falls back below the level in the first 2 bars | 1.42 | 1.40 | fail |
+| `confirm` | enter only if the next bar also closes above the level | 1.39 | 1.40 | fail |
+| `fib382` | limit at the 0.382 retrace of the leg (20-bar low → high), 5 bars | 1.27 | 0.92 | fail |
+| `fib50` | same at 0.5 | 1.18 | 1.37 | fail |
+| `strong_close` | breakout bar closed in the upper half of its range | 1.60 | 1.47 | fail (4h: 99th pct, but +0.07 and 1d worse) |
+| `near_level` | breakout bar closed ≤ 1 ATR past the level | 1.76 | 1.43 | fail (50th / 81st pct) |
+
+What the numbers say:
+
+- **Waiting for a retrace misses exactly the trades that pay.** Of the top-20% winners of the current
+  rule, `fib382` never entered 21/24 (1d) and 60/80 (4h); `fib50` 23/24 and 72/80. Retraces to 0.382
+  or 0.5 do happen often — that is what you notice on the chart — but they happen mostly on the
+  breakouts that were going to be ordinary, while the strongest ones leave without looking back.
+  On 4h the 0.382 entry loses money outright (PF 0.92, -60% drawdown).
+- **Cutting failures early makes losses smaller but more numerous.** `fail_exit2` shrinks the average
+  loss from -1.07% to -0.77% of equity, but many "failed" breakouts dip under the level and then run;
+  exiting them hands that back.
+- **`strong_close` (no long upper wick) is the one live idea.** On 4h it beats random at the 99th
+  percentile, but it misses the +0.10 margin and makes 1d worse. An effect that flips sign between
+  timeframes is not something to trade on yet — it is something to measure going forward.
+
+That is what the **signal journal** is for (Technical tab): every breakout signal from now on is
+followed under the rule's own mechanics, taken or not, and records its result in R, whether it
+failed early (and whether it recovered), and the breakout bar's close location. After ~30 closed
+signals that is fresh, out-of-sample evidence on exactly these questions.
+
 ### Momentum heads-up
 
 Separately from the breakout rule, the scanner flags plain price momentum: if a coin moves more than
