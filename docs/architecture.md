@@ -42,6 +42,7 @@ read back at the start of the next run.
 | `hlg/guardrails.py` | the risk rules: stops, sizing, leverage, exposure, hold time, averaging down, daily and weekly loss locks | HL |
 | `hlg/scanner.py` | the breakout setup on 1d and 4h, the momentum heads-up, funding carry, and the asset-context fetch (`ctx_map`) | HL |
 | `hlg/universe.py` | which coins are scanned: `scanner.coins`, or the top N perps by 30-day median volume, rebuilt once per UTC day | – |
+| `hlg/liqmap.py` | liquidation clusters per coin from the public positions of ~560 large and active HL accounts; refreshed every 4h after the push | HL, HL leaderboard |
 | `hlg/journal.py` | live signal journal: each breakout signal followed under the strategy's rules, result in R | – |
 | `hlg/alerts.py` | alert lifecycle: first seen, valid until, live/missed/failed/expired, what gets pushed | – |
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
@@ -110,6 +111,7 @@ Decrypted `alerts.json`, the dashboard payload:
 | `alerts` | `{kind, cat: position/entry/heads_up/info, key, text, summary, push, new, first_seen, valid_until?, status, meta?}`; ordered by category |
 | `ended` | signals that left the live list in the last 24h, with `status` missed/failed/expired, `why` and `ended_at` |
 | `universe` | `{mode, coins, day}`: how the scanned list was chosen |
+| `liqmap` | `{t, accounts, positions, coins: {coin: {px, coverage, clusters, near}}}`: liquidation clusters, distances against the current price |
 | `scan` | scanner rows, each tagged with its timeframe `tf`, plus `vlm24h`, `urank` (auto universe) and `near_atr` (within 0.5 ATR of its trigger) |
 | `market`, `tradfi` | volume, OI, 24h change, premium and spread rows; `tradfi.dropped` counts hidden dead listings |
 | `liquidations` | `{src: "baked", rows}` or null (the dashboard then fetches OKX itself, labelled `live`) |
@@ -118,7 +120,7 @@ Decrypted `alerts.json`, the dashboard payload:
 
 The encrypted `state.json` also carries the scanner's working memory between runs: `universe` (today's
 list), `scan_cache` (per coin and timeframe bar statistics, reused until that bar closes) and
-`mid_snaps` (all-mids snapshots for the momentum check) and `journal` (followed signals). A 15-minute run therefore fetches candles
+`mid_snaps` (all-mids snapshots for the momentum check) `journal` (followed signals), and `liqmap` / `liqmap_accounts` (the latest clusters and the day's account list). A 15-minute run therefore fetches candles
 only for bars that have closed since the last run.
 
 `history.json` is a list, capped at 2000 entries, of `{t, equity, n_alerts, new}`.
@@ -129,6 +131,7 @@ only for bars that have closed since the last run.
 |---|---|---|
 | Hyperliquid `/info` | positions, orders, spot, portfolio PnL series, candles, asset contexts, `userAbstraction` | public, no key; ~5000-candle cap per interval |
 | Hyperliquid `xyz` dex | TradFi perps (indices, metals, energy, FX, equities) | many listings are dead; liquidity-filtered |
+| Hyperliquid leaderboard | the account list for the liquidation map | ~40 MB, fetched once a day |
 | OKX public API | recent liquidation events, BTC/ETH/SOL | HL publishes no liquidation data; CORS-open, so the browser can fall back |
 | FRED | macro series for research | unreachable from Actions runners, so `macro_context: false` |
 
@@ -150,7 +153,7 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 169 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 176 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config

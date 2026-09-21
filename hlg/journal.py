@@ -29,6 +29,7 @@ def add(journal, row, key, now_ms, S):
         "key": key, "coin": row["coin"], "tf": row["tf"], "signal_day": row["signal_day"],
         "sig_t": row.get("sig_t"), "added": now_ms, "close": row["signal_close"], "level": row["level"],
         "atr": row["atr"], "risk": risk, "close_loc": row.get("close_loc"),
+        "liq": row.get("liq"),  # HL liquidation clusters near the price at signal time (hlg.liqmap)
         "entry": None, "stop": row["signal_close"] - risk, "best": None, "bars": 0,
         "status": "pending", "r": None, "max_r": 0.0, "failed_early": False, "last_t": row.get("sig_t"),
     })

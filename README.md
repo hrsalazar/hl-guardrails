@@ -176,6 +176,25 @@ back below the breakout level) or **expired** (the entry window passed). ✕ and
 alerts on that device only; a new signal on the same coin has a new key and shows again.
 Guardrail breaches can be collapsed but not cleared: they are live risk on open positions.
 
+**Liquidation levels (Flow tab)** show where Hyperliquid positions would be force-closed: short
+liquidations above the price (forced buying if price gets there), long liquidations below (forced
+selling). Aggregators such as CoinGlass *estimate* this for the big exchanges from open interest and
+assumed leverage ($699/month for the API tier that has it). Hyperliquid is on-chain, so
+`hlg/liqmap.py` reads the real `liquidationPx` of every open position of ~560 accounts: the 200
+largest by value plus the 400 most active by weekly volume. Selecting by size alone was measured
+and rejected: big accounts mostly run low leverage, so 400 of them put $10M within 5% of BTC and
+nothing near ETH, where the active traders put $131M / $85M either side of BTC and $40M / $122M
+around ETH. Coverage is shown as a share of each coin's open interest (typically 20-55%). Most of the
+near-price leverage sits on the majors; for many alts there is nothing within 5%.
+
+It refreshes every 4 hours, after alerts are published and pushed (~25-30s), so it never delays a
+notification. Breakout alerts carry one context line ("shorts liq $4.2M within +5% (largest $1.9M at
++3.1%)"), and the signal journal stores it with each signal. That is the test: clusters are often
+read as magnets that price is drawn to, and the journal will show whether breakouts heading into a
+short-liquidation cluster actually did better. Until then it changes no rule. Only per-coin
+aggregates are kept; the account list is held in the encrypted state and no address is stored
+with its positions.
+
 **Liquidation risk is account-level.** Per-position `liquidationPx` is `null` for cross-margined
 positions — the normal case — because Hyperliquid assesses liquidation on the whole account. The
 Flow tab shows the collateral, the maintenance margin and HL's own ratio instead. It deliberately

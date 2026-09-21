@@ -73,6 +73,18 @@ flow:
   liquidation_coins: [BTC, ETH, SOL]   # majors only: HYPE/PENDLE/ZEC are not listed on OKX
   budget_s: 10
 
+# Liquidation levels from the largest Hyperliquid accounts' public positions (hlg.liqmap): real
+# liquidation prices, not an estimate. Context only - gates nothing; the signal journal records it
+# at every breakout so the "clusters are magnets" idea can be tested. Refreshed every few hours after
+# alerts are pushed (~25s for ~560 accounts), so it never delays a notification.
+liqmap:
+  enabled: true
+  accounts_by_value: 200   # largest leaderboard accounts (mostly low leverage: liquidation far away)
+  accounts_by_volume: 400  # most active by weekly volume - where the near-price leverage is (list refreshed daily)
+  refresh_hours: 4
+  band_pct: 1.0          # cluster width, % of price
+  range_pct: 15          # ignore liquidation prices further than this from the price
+
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars
 

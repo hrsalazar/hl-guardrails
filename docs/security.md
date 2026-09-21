@@ -21,6 +21,10 @@ document says what protects them, what doesn't, and why.
 - **The lock screen.** Push notifications show alert text on the device.
 - **Someone who has your passphrase or an unlocked device.**
 
+**Third-party data held:** the liquidation map keeps a list of ~560 public leaderboard addresses in
+the encrypted state (to know whose positions to read) and only per-coin aggregates of their
+positions. No address is stored or published alongside its positions.
+
 ## Controls
 
 ### 1. Encryption of published data (`hlg/vault.py`, `pwa/index.html`)

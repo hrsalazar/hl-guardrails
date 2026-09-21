@@ -19,7 +19,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import account, journal, universe
+from . import account, journal, liqmap, universe
 from .common import (
     Notifier,
     State,
@@ -364,6 +364,9 @@ def run_once(cfg, inf, notif, state):
                 rows.append(a)
                 continue
             a["vlm24h"] = fnum(c_ctx.get("dayNtlVlm") or 0)
+            lm = ((state.get("liqmap") or {}).get("coins") or {}).get(coin) if state is not None else None
+            if lm and a.get("signal_close") is not None:
+                a["liq"] = liqmap.near(lm, a["px"])
             if coin in urank:
                 a["urank"] = urank[coin]
             rows.append(a)
@@ -385,6 +388,8 @@ def run_once(cfg, inf, notif, state):
                 )
                 if mac:
                     msg += f"\n  macro: {mac['label']} (HY {mac['hy']:.2f}, VIX {mac['vix']:.1f}) - context only, not part of the rule"
+                if a.get("liq"):
+                    msg += f"\n  HL liq levels: {liqmap.describe(a['liq'])} - context only"
                 # A breakout on a coin you already hold is not an entry (no adds), so it stays on the
                 # dashboard instead of buzzing the phone.
                 notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600,

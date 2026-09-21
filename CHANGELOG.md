@@ -4,6 +4,9 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-21
 
+- **Liquidation levels from Hyperliquid positions** (`hlg/liqmap.py`): real liquidation prices of
+  ~560 large and active accounts, clustered per coin; Flow-tab card, one context line on breakout
+  alerts, recorded in the signal journal. Refreshed every 4h after alerts are pushed.
 - **Entry study** (`--entry-study`): fast failure exit, confirmation entry, 0.382 / 0.5 fib retrace
   entries, and two breakout-bar quality filters, on 1d and 4h. None passed the pre-set bar. Retrace
   entries missed most of the biggest winners (fib 0.382: 21 of 24 on 1d). README "Entries".

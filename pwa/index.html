@@ -88,6 +88,8 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
   <div class="pane" id="pane-flow" hidden>
     <div class="card"><h3 style="margin:0 0 6px">Liquidation risk <span class="mut" style="font-size:12px;font-weight:400">— your open positions</span></h3><div id="liqrisk"></div></div>
     <div class="card"><h3 style="margin:0 0 6px">Volume &amp; open interest</h3><div id="market"></div></div>
+    <div class="card" id="lmcard" hidden><h3 style="margin:0 0 6px">Liquidation levels <span class="badge" id="lmage"></span></h3>
+      <p class="mut" style="margin:0 0 8px;font-size:12px">Where the largest and most active Hyperliquid accounts would be force-closed, from their public positions — not an estimate. Shorts liquidate above the price (forced buying), longs below (forced selling). Clusters are often read as magnets; that is a hypothesis the signal journal is recording, not a rule.</p><div id="lm"></div></div>
     <div class="card"><h3 style="margin:0 0 6px">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></div>
   </div>
   </div>
@@ -363,11 +365,30 @@ function renderFlow(d){
       +`<td>${usd(r.vlm24h)}</td><td>${usd(r.oi_usd)}</td><td>${r.vol_oi==null?'—':fmt(r.vol_oi,2)}</td>`
       +`<td class="${cls(-r.premium_bps)}">${fmt(r.premium_bps,1)}bp</td></tr>`).join('')+'</table>'
     :'<span class="mut">no market data</span>';
+  renderLiqMap(d.liqmap);
   renderLiq(d.liquidations);
   if(!(d.liquidations&&d.liquidations.rows&&d.liquidations.rows.length)){
     const coins=(d.market||[]).slice(0,3).map(r=>r.coin);
     liveLiq(coins.length?coins:['BTC','ETH','SOL']).then(rows=>{if(rows.length)renderLiq({src:'live',rows})});
   }
+}
+
+function renderLiqMap(m){
+  const cs=m&&m.coins?Object.entries(m.coins):[];
+  $('#lmcard').hidden=!cs.length;
+  if(!cs.length)return;
+  const h=(Date.now()-m.t)/3600000;
+  $('#lmage').textContent=`${m.accounts} accounts · ${h<1?'<1':fmt(h)}h ago`;
+  const side=s=>s&&s.usd>0?`${usd(s.usd)}<br><small class="mut">largest ${usd(s.top_usd)} at ${s.top_pct>=0?'+':''}${fmt(s.top_pct,1)}%</small>`:'<span class="mut">—</span>';
+  // most liquidation fuel within 5% first: that is where a move would be accelerated soonest
+  cs.sort((a,b)=>((b[1].near?.above?.usd||0)+(b[1].near?.below?.usd||0))-((a[1].near?.above?.usd||0)+(a[1].near?.below?.usd||0)));
+  const tot=e=>(e.near?.above?.usd||0)+(e.near?.below?.usd||0);
+  const some=cs.filter(([,e])=>tot(e)>0), none=cs.filter(([,e])=>!tot(e)).map(([c])=>c);
+  $('#lm').innerHTML=(some.length?`<div style="overflow-x:auto"><table><tr><th>Coin</th><th>Shorts liq ≤5% above</th><th>Longs liq ≤5% below</th><th>Covers</th></tr>`+
+    some.map(([c,e])=>`<tr><td>${c}<br><small class="mut">${fmt(e.px,sig(e.px))}</small></td><td class="pos">${side(e.near&&e.near.above)}</td>`
+      +`<td class="neg">${side(e.near&&e.near.below)}</td><td class="mut">${e.coverage==null?'—':fmt(100*e.coverage)+'% of OI'}</td></tr>`).join('')+'</table></div>'
+    :'<span class="mut">No liquidation clusters within 5% of price.</span>')
+    +(none.length?`<p class="mut" style="font-size:12px;margin:8px 0 0">Nothing within 5%: ${none.join(', ')}. The big active HL traders run most of their leverage on the majors.</p>`:'');
 }
 
 function renderLiq(l){

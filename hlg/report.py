@@ -25,7 +25,7 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import account, guardrails, journal, liquidations, market, scanner, universe, vault
+from . import account, guardrails, journal, liqmap, liquidations, market, scanner, universe, vault
 from . import alerts as lifecycle
 from .common import (
     Notifier,
@@ -79,6 +79,19 @@ def publish(name, obj, vlt, in_ci):
     else:
         body = obj
     (OUT / name).write_text(json.dumps(body, indent=None if vlt else 1))
+
+
+def liqmap_payload(m, px_now):
+    """The dashboard's view of the stored map: clusters with distances against the current price."""
+    if not isinstance(m, dict) or not m.get("coins"):
+        return None
+    coins = {}
+    for c, e in m["coins"].items():
+        px = px_now.get(c) or e["px"]
+        coins[c] = {"px": px, "coverage": e.get("coverage"),
+                    "clusters": [dict(k, pct=(k["px"] / px - 1) * 100) for k in e["clusters"]],
+                    "near": liqmap.near(e, px)}
+    return {"t": m["t"], "accounts": m.get("accounts"), "positions": m.get("positions"), "coins": coins}
 
 
 def web_push(new_alerts, cfg):
@@ -211,6 +224,7 @@ def main():
                     "recent": list(reversed((state.get("journal") or [])[-30:]))},
         "universe": {"mode": universe.settings(S)["mode"], "coins": len(scanned),
                      "day": (state.get("universe") or {}).get("day")},
+        "liqmap": liqmap_payload(state.get("liqmap"), {r["coin"]: r["px"] for r in market_rows if r.get("px")}),
     }
     hist = prev_hist if isinstance(prev_hist, list) else []
     hist.append({"t": out["generated"], "equity": out["equity"], "n_alerts": len(alerts), "new": [a["key"] for a in new]})
@@ -229,6 +243,24 @@ def main():
                 web_push([{"key": "test", "text": "Test notification: background alerts reach this device."}], cfg)
         except Exception as e:  # noqa: BLE001
             log.error("push error: %s", e)
+    # Liquidation levels from the largest HL accounts (hlg.liqmap): ~25s, so only every few hours,
+    # and only after alerts are published and pushed -- a refresh can never delay a notification.
+    L = liqmap.settings(cfg)
+    if L["enabled"] and liqmap.stale(state, now_ms, L["refresh_hours"]):
+        try:
+            coins = sorted(set(scanned) | {p["coin"] for p in positions})
+            mids = {r["coin"]: r["px"] for r in market_rows if r.get("px")}
+            for c in coins:
+                if c not in mids and ctx.get(c, {}).get("markPx"):
+                    mids[c] = float(ctx[c]["markPx"])
+            oi = {c: float(ctx[c].get("openInterest") or 0) * mids[c] for c in coins if c in ctx and c in mids}
+            m = liqmap.refresh(state, mids, coins, oi, L, now_ms, universe.today())
+            if m is not None:
+                out["liqmap"] = liqmap_payload(m, mids)
+                publish("alerts.json", out, vlt, in_ci)
+                publish("state.json", state.d, vlt, in_ci)
+        except Exception as e:  # noqa: BLE001 - context data; never fails the run
+            log.error("liqmap failed: %s", e)
     log.info("run ok: published %s in %.1fs", "encrypted" if vlt else ("locked stub" if in_ci else "plaintext (local)"),
              time.monotonic() - started, extra={"safe": True})
     return 0
