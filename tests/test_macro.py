@@ -28,6 +28,28 @@ def test_fetch_parses_fred_csv_and_drops_holiday_dots(tmp_path, monkeypatch):
     assert str(s.index[0].date()) == "2026-01-02"
 
 
+def test_a_wider_start_is_not_served_from_a_narrower_start_s_cache(tmp_path, monkeypatch):
+    """A request for more history must not silently get back a previous, narrower fetch's cached
+    file within the TTL -- the cache key has to include `start`, not just the series id."""
+    calls = []
+
+    class R:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            pass
+
+    def get(url, params, headers, timeout):
+        calls.append(params["cosd"])
+        return R(_csv("VIXCLS", [(params["cosd"], "1.0")]))
+
+    monkeypatch.setattr(macro.requests, "get", get)
+    macro.fetch("vix", "VIXCLS", start="2026-01-01", cache_dir=str(tmp_path))
+    macro.fetch("vix", "VIXCLS", start="2015-01-01", cache_dir=str(tmp_path))  # a much wider request, same TTL window
+    assert calls == ["2026-01-01", "2015-01-01"]  # the second call must hit the network, not a stale narrow cache
+
+
 def test_frame_forward_fills_weekends_then_shifts_a_day(tmp_path, monkeypatch):
     # Fri 2026-01-02 then Mon 2026-01-05: the weekend must inherit Friday, and everything shifts +1d
     rows = [("2026-01-02", "10"), ("2026-01-05", "20")]

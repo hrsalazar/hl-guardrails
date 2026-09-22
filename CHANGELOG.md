@@ -2,6 +2,20 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-22 (night)
+
+- **Dollar index (DXY) vs crypto returns: tested alongside stablecoins** (`--dxy-study`). Unlike
+  stablecoin supply, not uniform: 7d/30d correlation is near zero (BTC's 30d quintile table is
+  flat), but 90d turns moderately negative for both BTC (−0.23) and the basket (−0.16) - the
+  direction the "dollar strength is a crypto headwind" claim predicts. Doesn't help the live rule
+  either way: `no_dxy_headwind`, re-run at the same bar as the stablecoin filters, sits at the 5th
+  percentile of random subsetting with in-sample PF collapsing to 0.47. README "Stablecoins".
+- Fixed a real caching bug found while building that study: `hlg/macro.py`'s FRED cache was keyed
+  only by series id, not by the requested `start` date, so a narrower fetch cached earlier in a
+  session was silently served back to a later, wider request within the 24h TTL - quietly halving
+  this study's first run to ~1,150 observations instead of ~2,200. Also affects any other caller
+  requesting a wider window than a previous run's cache; fixed, with a regression test.
+
 ## 2026-09-22 (evening)
 
 - **Shorting: tested, not adopted.** `breakout_short`/`breakout_both` (already in `VARIANTS`, never

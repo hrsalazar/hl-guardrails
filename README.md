@@ -592,6 +592,31 @@ signal. That's post-hoc and untested; it isn't a reason to invert the filter and
 either, for the same overfitting reason the macro "credit stress" finding above was left as
 context only.
 
+**Does the dollar index change the answer?** `python -m hlg.backtest --dxy-study` runs the same
+two-part test for the other "risk-off parking" framing — dollar strength, not stablecoin supply —
+using `hlg.macro`'s FRED broad dollar index (DTWEXBGS), full history (2015 → now, matched to BTC's
+own cached range, same ~2,200 observations as the stablecoin test above):
+
+| series | 7d corr | 30d corr | 90d corr |
+|---|---:|---:|---:|
+| BTC | +0.005 | +0.012 | **−0.231** |
+| basket | −0.020 | +0.032 | **−0.158** |
+
+Unlike stablecoins, this is **not** uniform: 7d and 30d are both essentially zero (BTC's 30d
+quintile table is flat and non-monotonic — Q1 +7.1%, Q3 +1.8%, Q5 +6.7% — no usable pattern), but
+at 90 days the correlation turns moderately negative for both series, in the direction the
+"dollar strength is a crypto headwind" claim predicts. So the answer does change by which "USD"
+question is asked: stablecoin *supply* shows no support for the inverse-correlation story at any
+horizon tested; dollar *strength* shows a real, if modest, long-horizon one.
+
+It still doesn't help the live rule. `no_dxy_headwind` (dollar below its own 50-day trend) already
+existed as a filter — the compact table above called it "noise" without a number; re-run here
+alongside the stablecoin work, it sits at the **5th percentile** of randomly dropping the same
+number of trades, with in-sample PF collapsing to 0.47 and a worse drawdown (−25% vs −18%) despite
+fewer trades. Borderline-to-worse-than-random, not the edge the 90-day correlation might suggest —
+consistent with this project's other finding that gating entries on a calm-backdrop condition
+tends to remove the rule's best trades along with the bad ones, not just the bad ones.
+
 ### Regime analysis (`python -m hlg.regime`)
 
 Tags every day with a BTC regime (bull/bear vs EMA200, range/trending by 20d span vs ATR, breadth, drawdown) and

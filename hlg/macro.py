@@ -36,7 +36,8 @@ CACHE_TTL_S = 24 * 3600  # these series print once a business day, so refetching
 
 def fetch(name, series_id, start="2020-01-01", cache_dir="miner_cache"):
     """One FRED series as a float Series indexed by observation date (NaN on holidays)."""
-    p = Path(cache_dir) / f"macro_{series_id}.csv"
+    # keyed by start too: a narrower fetch cached first must not be silently reused for a wider one
+    p = Path(cache_dir) / f"macro_{series_id}_{start}.csv"
     if p.exists() and time.time() - p.stat().st_mtime < CACHE_TTL_S:
         raw = p.read_text()
     else:

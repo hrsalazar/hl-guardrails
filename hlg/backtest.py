@@ -648,64 +648,47 @@ def entry_study(P, iv):
     print("\n".join(rep))
 
 
-def stbl_study(P, iv):
-    """python -m hlg.backtest --stbl-study
-
-    Tests the "stablecoin dominance and crypto move inversely" claim two ways.
-
-    Part 1: the hypothesis as stated -- does stablecoin market-cap growth predict forward BTC (and
-    a crypto-basket) returns, on the *full* available history (BTC's cached range, 2020-08 -> now:
-    much more data than the 2023-06 backtest window, since this is a pure data question, not tied
-    to the live trading rule). stbl_chg is already shifted a day (hlg.stablecoin), so this reads
-    only what was known at T; the forward return is deliberately forward-looking -- that is the
-    thing being tested. Correlation plus a quintile breakdown (mean forward return by quintile of
-    signal-day stbl_chg): a quintile table shows a non-monotonic or flat relationship a single
-    correlation number can hide.
-
-    Part 2: does it help the live entry rule? Same 2023-06 -> now window and adoption bar as
-    --entry-study (fixed before running): PF >= base + 0.10, max DD no worse than base - 2pp, PF
-    in each half >= the base's, and (since both candidates are subsets of the baseline's own
-    signals) above the 95th percentile of randomly dropping the same number of trades."""
-    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
-    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
-    stbl_f = stablecoin.features(stablecoin.frame(cache_dir=str(cache)))
-    if stbl_f.empty:
-        log.error("stbl_study: no stablecoin data, aborting")
-        return
-    rep = [f"# Stablecoins vs crypto returns ({stbl_f.index[0].date()} -> {stbl_f.index[-1].date()})\n"]
-
-    # ---- Part 1: correlation with forward returns, full BTC history, not capped to the backtest window
+def _full_history(P, iv, cache):
+    """Every DEF coin's full cached history (not capped to P["start"]) plus an equal-weight,
+    NaN-before-listing basket built from it -- shared by every backdrop-vs-forward-returns study,
+    so BTC/basket construction can't quietly drift between them."""
     full_data = {}
     for c in DEF["coins"]:
         df = bars(c, cache, iv)
         if df is not None and len(df) >= 200:
             full_data[c] = df
     ret1d = pd.DataFrame({c: d.c.pct_change() for c, d in full_data.items()})
-    basket = (1 + ret1d).cumprod()  # equal-weight, NaN before a coin's own listing (excluded, not zero-filled)
-    windows = [7, 30, 90]
-    corr_rows = []
-    quint_rows = []
-    for name, level in (("BTC", full_data["BTC"].c), ("basket (equal-weight, all coins)", basket.mean(axis=1, skipna=True))):
+    basket = (1 + ret1d).cumprod().mean(axis=1, skipna=True)
+    return full_data, basket
+
+
+def _corr_and_quintiles(rep, chg, chg_name, full_data, basket, windows=(7, 30, 90), quintile_at=30):
+    """Appends a correlation table (chg vs forward return, several horizons) and, at
+    `quintile_at`, a quintile breakdown per series -- a single correlation number can hide a
+    non-monotonic or flat relationship a quintile table won't."""
+    corr_rows, quint_rows = [], []
+    for name, level in (("BTC", full_data["BTC"].c), ("basket (equal-weight, all coins)", basket)):
         for n in windows:
             fwd = level.shift(-n) / level - 1
-            x = stbl_f.stbl_chg.reindex(fwd.index)
+            x = chg.reindex(fwd.index)
             both = pd.concat([x, fwd], axis=1, keys=["x", "fwd"]).dropna()
             if len(both) < 30:
                 continue
-            corr = both.x.corr(both.fwd)
-            corr_rows.append(dict(series=name, fwd_days=n, n=len(both), corr=round(corr, 3)))
-            if n == 30:  # one quintile table per series, at the 30d horizon (matches stbl_chg's own window)
-                q = pd.qcut(both.x, 5, labels=["Q1 shrinking most", "Q2", "Q3", "Q4", "Q5 growing most"])
+            corr_rows.append(dict(series=name, fwd_days=n, n=len(both), corr=round(both.x.corr(both.fwd), 3)))
+            if n == quintile_at:
+                q = pd.qcut(both.x, 5, labels=["Q1 lowest", "Q2", "Q3", "Q4", "Q5 highest"])
                 g = both.groupby(q, observed=True).fwd
                 quint_rows.append((name, pd.DataFrame({"n": g.size(), "mean_fwd_pct": (g.mean() * 100).round(2),
-                                                        "win_rate": (g.apply(lambda s: (s > 0).mean())).round(2)})))
-    rep.append("## Correlation with forward returns\n\nstbl_chg (signal-day, already 1d-lagged) vs forward return; "
-               "negative = the hypothesis's predicted direction (stablecoins growing -> lower forward returns).\n\n"
+                                                        "win_rate": g.apply(lambda s: (s > 0).mean()).round(2)})))
+    rep.append(f"## Correlation with forward returns\n\n{chg_name} (signal-day, already 1d-lagged) vs forward return.\n\n"
                + pd.DataFrame(corr_rows).to_markdown(index=False) + "\n")
     for name, q in quint_rows:
-        rep.append(f"### {name}, by 30d-stbl_chg quintile on the signal day\n\n" + q.to_markdown() + "\n")
+        rep.append(f"### {name}, by {quintile_at}d-{chg_name} quintile on the signal day\n\n" + q.to_markdown() + "\n")
 
-    # ---- Part 2: does it help the live entry rule (same window/bar as --entry-study)
+
+def _entry_filter_test(rep, P, iv, cache, filters, context_kw, tag):
+    """Part 2 of a backdrop study: does gating breakout_long on `filters` help, at the same
+    adoption bar --entry-study uses. Shared so every backdrop study is held to one bar."""
     start = pd.Timestamp(P["start"], tz="UTC")
     data, fund = {}, {}
     for c in DEF["coins"]:
@@ -714,12 +697,12 @@ def stbl_study(P, iv):
             continue
         data[c] = features(df, 1)
         fund[c] = funding(c, int(start.timestamp() * 1000), cache, iv)
-    context(data, fund, stbl_f=stbl_f)
+    context(data, fund, **context_kw)
     days = sorted(set().union(*[set(d.index) for d in data.values()]))
     days = [d for d in days if d >= start]
     mid = days[len(days) // 2]
     rows, trades = {}, {}
-    for name in ("base", "no_stbl_growth", "stbl_outflow"):
+    for name in ("base", *filters):
         V = VARIANTS["breakout_long"] if name == "base" else {**VARIANTS["breakout_long"], "filters": [name]}
         T, C, dd = run(V, data, fund, P)
         s = stats(T, C, dd, P) | (halves(T, mid) if len(T) else {})
@@ -728,7 +711,7 @@ def stbl_study(P, iv):
     b = rows["base"]
     base_net = trades["base"].net.values
     verdict = {}
-    for name in ("no_stbl_growth", "stbl_outflow"):
+    for name in filters:
         s = rows[name]
         if not s.get("trades"):
             verdict[name] = "fail (no trades)"
@@ -743,7 +726,64 @@ def stbl_study(P, iv):
     rep.append(f"\n## Entry-filter test ({P['start']} -> now, same bar as --entry-study)\n\n"
                + S[[c for c in cols if c in S]].astype(float).round(2).to_markdown() + "\n")
     rep.append("Verdicts (rule fixed before running): " + "; ".join(f"`{k}` {v}" for k, v in verdict.items()) + "\n")
+
+
+def stbl_study(P, iv):
+    """python -m hlg.backtest --stbl-study
+
+    Tests the "stablecoin dominance and crypto move inversely" claim two ways.
+
+    Part 1: the hypothesis as stated -- does stablecoin market-cap growth predict forward BTC (and
+    a crypto-basket) returns, on the *full* available history (BTC's cached range, 2020-08 -> now:
+    much more data than the 2023-06 backtest window, since this is a pure data question, not tied
+    to the live trading rule). stbl_chg is already shifted a day (hlg.stablecoin), so this reads
+    only what was known at T; the forward return is deliberately forward-looking -- that is the
+    thing being tested.
+
+    Part 2: does it help the live entry rule? Same 2023-06 -> now window and adoption bar as
+    --entry-study (fixed before running): PF >= base + 0.10, max DD no worse than base - 2pp, PF
+    in each half >= the base's, and (since both candidates are subsets of the baseline's own
+    signals) above the 95th percentile of randomly dropping the same number of trades."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    stbl_f = stablecoin.features(stablecoin.frame(cache_dir=str(cache)))
+    if stbl_f.empty:
+        log.error("stbl_study: no stablecoin data, aborting")
+        return
+    rep = [f"# Stablecoins vs crypto returns ({stbl_f.index[0].date()} -> {stbl_f.index[-1].date()})\n"]
+    full_data, basket = _full_history(P, iv, cache)
+    _corr_and_quintiles(rep, stbl_f.stbl_chg, "stbl_chg", full_data, basket)
+    _entry_filter_test(rep, P, iv, cache, ("no_stbl_growth", "stbl_outflow"), dict(stbl_f=stbl_f), "stbl")
     (out / "stbl_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+
+
+def dxy_study(P, iv):
+    """python -m hlg.backtest --dxy-study
+
+    The same two-part test as --stbl-study, for the dollar-strength version of the "risk-off
+    parking" claim: does the broad trade-weighted dollar index (DTWEXBGS, via hlg.macro/FRED)
+    predict forward BTC/basket returns, and does gating breakout_long on it help? `no_dxy_headwind`
+    already existed as an entry filter (README "Macro"); this adds Part 1 -- the direct
+    correlation the filter test alone can't show -- and re-runs Part 2 for a like-for-like report
+    alongside --stbl-study, at the same adoption bar."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    # Part 1 wants the longest overlap with BTC's own cached history (FRED's DXY series runs back
+    # decades, unlike DefiLlama's stablecoin series it is not the limiting factor) -- fetched
+    # separately from Part 2's macro_f, which must stay anchored to P["start"] to match the backtest
+    # window exactly. Using P["start"] for both here would quietly halve Part 1's sample for no reason.
+    macro_long = macro.features(macro.frame(start="2015-01-01", cache_dir=str(cache)))
+    if macro_long.empty or macro_long.dxy.dropna().empty:
+        log.error("dxy_study: no DXY data, aborting")
+        return
+    dxy_chg = macro_long.dxy.pct_change(30) * 100
+    rep = [f"# Dollar index (DXY) vs crypto returns ({macro_long.index[0].date()} -> {macro_long.index[-1].date()})\n"]
+    full_data, basket = _full_history(P, iv, cache)
+    _corr_and_quintiles(rep, dxy_chg, "dxy_chg", full_data, basket)
+    macro_f = macro.features(macro.frame(start=P["start"], cache_dir=str(cache)))
+    _entry_filter_test(rep, P, iv, cache, ("no_dxy_headwind",), dict(macro_f=macro_f), "dxy")
+    (out / "dxy_study.md").write_text("\n".join(rep), encoding="utf-8")
     print("\n".join(rep))
 
 
@@ -759,6 +799,7 @@ def main():
     ap.add_argument("--no-macro", action="store_true", help="skip the FRED fetch (macro filters then never reject)")
     ap.add_argument("--no-stbl", action="store_true", help="skip the DefiLlama fetch (stablecoin filters then never reject)")
     ap.add_argument("--stbl-study", action="store_true", help="stablecoin-mcap vs forward returns correlation, plus the two backdrop filters")
+    ap.add_argument("--dxy-study", action="store_true", help="dollar-index vs forward returns correlation, plus the no_dxy_headwind filter")
     ap.add_argument("--universe-study", action="store_true", help="breakout on fixed list vs point-in-time liquidity universes")
     ap.add_argument("--entry-study", action="store_true", help="failed-breakout study: fast exit, confirmation, fib retrace entries, bar-quality filters")
     a = ap.parse_args()
@@ -777,6 +818,8 @@ def main():
         return entry_study(P, iv)
     if a.stbl_study:
         return stbl_study(P, iv)
+    if a.dxy_study:
+        return dxy_study(P, iv)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
