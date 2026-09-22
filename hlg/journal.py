@@ -81,6 +81,9 @@ def summary(journal):
     wins, losses = sum(r for r in rs if r > 0), -sum(r for r in rs if r < 0)
     fe = [e for e in done if e["failed_early"]]
     return {
+        # closed results in exit order, for the dashboard's cumulative-R chart
+        "curve": [{"t": e.get("exit_t"), "r": e["r"], "coin": e["coin"], "tf": e["tf"]}
+                  for e in sorted(done, key=lambda e: e.get("exit_t") or 0)],
         "closed": len(done), "open": sum(e["status"] == "open" for e in journal),
         "win_rate": sum(r > 0 for r in rs) / len(rs), "avg_r": sum(rs) / len(rs),
         "pf": wins / losses if losses else None,

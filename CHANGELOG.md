@@ -2,6 +2,14 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-22
+
+- **Dashboard redesign with charts:** equity curve with loss-lock lines, risk gauges (loss limits,
+  leverage, account ratio), a price ladder per position, a candle chart on expanded breakout alerts,
+  a liquidation map per coin, and cumulative R for the signal journal. Hand-written SVG with hover
+  tooltips; palette validated for colour-blind separation; dark and light themes.
+- History keeps every run for 3 days, hourly to 90 days, daily after, and records portfolio value.
+
 ## 2026-09-21
 
 - **Liquidation levels from Hyperliquid positions** (`hlg/liqmap.py`): real liquidation prices of

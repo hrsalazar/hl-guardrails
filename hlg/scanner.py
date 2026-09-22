@@ -89,7 +89,10 @@ def bar_stats(d, tf):
             "hi20": float(done.h.iloc[-21:-1].max()),       # 20-bar high BEFORE the last completed candle
             "hi20_live": float(done.h.iloc[-20:].max()),    # level the live candle has to close above
             "rsi": float(rsi(done.c).iloc[-1]), "live_c": float(live.c),
-            "close_loc": float((k.c - k.l) / (k.h - k.l)) if k.h > k.l else 0.5}
+            "close_loc": float((k.c - k.l) / (k.h - k.l)) if k.h > k.l else 0.5,
+            # the last 40 completed bars, compact, for the dashboard's signal chart
+            "spark": [[int(r.t.timestamp() * 1000)] + [float(f"{x:.6g}") for x in (r.o, r.h, r.l, r.c)]
+                      for r in done.iloc[-40:].itertuples()]}
 
 
 def completed_bars(d, n=60):
@@ -121,7 +124,7 @@ def classify(st, px, S, coin, funding_apr):
         # entry is the next bar's open; once that bar has closed too, the signal is spent
         out.update(setup="LONG", stop=stop, target=None, rr=None, signal_close=k_c, signal_day=sig, level=st["hi20"],
                    valid_until=st["bar_t"] + 2 * BAR_MS.get(tf, 86_400_000), sig_t=st["bar_t"],
-                   close_loc=st.get("close_loc"))
+                   close_loc=st.get("close_loc"), bars=st.get("spark"))
         # entry is the open after the signal close; if price already ran > 1 ATR beyond it, don't chase
         if px > k_c + a:
             out["rejected"] = f"ran {((px / k_c) - 1) * 100:.1f}% since signal close, wait for next setup"

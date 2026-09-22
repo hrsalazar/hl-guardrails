@@ -141,6 +141,8 @@ old is worse than no guardrail.
 
 ### Dashboard sections
 
+The top of the page is the act-now layer: portfolio value with today / this week, an **equity curve** (24h / 7d / 30d / all, from `history.json`, which keeps every run for 3 days, hourly to 90 days, daily after) with the loss-lock level drawn in, and **risk gauges** for the daily and weekly loss limits, account leverage and account ratio - each with an icon and a word, never colour alone. Positions show a **price ladder** (liquidation, stop, entry, mark; a missing stop is called out), an expanded breakout alert shows its **last 40 candles** with the breakout level and stop, the journal draws **cumulative R**, and the Flow tab has a **liquidation map** per coin. Charts are hand-written SVG (no library, nothing loaded from anywhere else), 2px lines and hairline grids, colours validated for colour-blind separation and contrast; dark by default, light when the OS is light.
+
 Equity/PnL and the alert list sit at the top and are never behind a tab — they are the act-now
 layer. Everything else is grouped into three tabs (the last one you used is remembered):
 

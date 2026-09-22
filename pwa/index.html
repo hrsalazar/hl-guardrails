@@ -2,71 +2,202 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0f1115">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c11" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
 <title>HL Guardrails</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
-:root{--bg:#0f1115;--card:#171a21;--fg:#e6e6e6;--mut:#8b93a7;--red:#ff5c5c;--grn:#3ddc84;--yel:#ffd166;--blu:#5aa9ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #222}
-h1{font-size:17px;margin:0}small{color:var(--mut)}
-main{padding:12px 16px;max-width:900px;margin:0 auto}
-.card{background:var(--card);border-radius:10px;padding:12px 14px;margin:10px 0}
-.row{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.kpi{font-size:22px;font-weight:600}.mut{color:var(--mut)}
-table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;text-align:right;border-bottom:1px solid #22262f}td:first-child,th:first-child{text-align:left}
-.pos{color:var(--grn)}.neg{color:var(--red)}.yel{color:var(--yel)}
-button{background:#262b36;color:var(--fg);border:1px solid #333;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}button:disabled{opacity:.5}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#262b36}
-.tfhead{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 4px}.tfhead:first-child{margin-top:0}
-.tabs{display:flex;gap:4px;margin:14px 0 0;flex-wrap:wrap}
-.tab{background:transparent;border:1px solid #262b36;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;color:var(--mut)}
-.tab[aria-selected="true"]{background:var(--card);color:var(--fg);font-weight:600;box-shadow:inset 0 2px 0 var(--blu)}
-.pane>.card:first-child{border-top-left-radius:0}
-.ok{color:var(--grn)}.lock{color:var(--red);font-weight:600}
-pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12px}
-/* alert list: grouped, one line per alert, tap to expand */
-.grp{margin:10px 0 0}.grp:first-child{margin-top:0}
-.gh{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;user-select:none;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-.gh .n{background:#262b36;color:var(--fg);border-radius:999px;padding:0 7px;font-size:12px;text-transform:none}
-.gh .sp{flex:1}.gh .car{width:1em;text-align:center}
-.gh button,.al button{padding:3px 9px;font-size:12px;text-transform:none;letter-spacing:0}
-.al{border-left:4px solid var(--blu);background:#141a24;border-radius:6px;margin:6px 0;padding:8px 10px}
-.al.position{border-color:var(--red);background:#1d1417}.al.heads_up{border-color:var(--yel)}.al.info,.al.ended{border-color:#3a4050;background:#15181e}
-.al .top{display:flex;gap:8px;align-items:flex-start}.al .sum{flex:1;font-size:13px;line-height:1.35;cursor:pointer;word-break:break-word}
-.al .sub{font-size:12px;color:var(--mut);margin-top:2px}.al .new{color:var(--yel);font-weight:600}
-.al pre{margin:8px 0 0;white-space:pre-wrap;font-size:12px}.al.quiet .sum{color:var(--mut)}
-.st{font-size:11px;padding:1px 6px;border-radius:999px;background:#262b36;margin-right:4px}.st.missed,.st.failed{color:var(--red)}.st.expired{color:var(--mut)}
+/* ---- tokens --------------------------------------------------------------------------------------
+   Dark is the primary look; light follows the OS. Chart colours are validated (dataviz method):
+   blue/red pass colour-blind separation and contrast on both surfaces. Status colours (good /
+   warn / crit) never carry meaning alone -- every gauge also shows an icon and a word. */
+:root{
+  color-scheme:dark;
+  --bg:#0a0c11; --glow1:rgba(57,135,229,.18); --glow2:rgba(144,133,233,.12);
+  --surface:#12151c; --surface-2:#181c25; --surface-3:#212632;
+  --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+  --text:#eef1f6; --text-2:#b8c0cf; --muted:#7d8699;
+  --grid:#222733; --axis:#343b49;
+  --blue:#3987e5; --blue-wash:rgba(57,135,229,.13); --red:#e66767; --red-wash:rgba(230,103,103,.12);
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --pos:#2fbf5b; --neg:#ff7a7a;
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 12px 32px -12px rgba(0,0,0,.6);
+  --r:16px;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    color-scheme:light;
+    --bg:#f3f4f7; --glow1:rgba(42,120,214,.10); --glow2:rgba(74,58,167,.07);
+    --surface:#ffffff; --surface-2:#f6f7f9; --surface-3:#eceef2;
+    --line:rgba(11,11,11,.08); --line-2:rgba(11,11,11,.14);
+    --text:#0b0b0b; --text-2:#46454a; --muted:#6f6d68;
+    --grid:#e8e8e3; --axis:#c3c2b7;
+    --blue:#2a78d6; --blue-wash:rgba(42,120,214,.10); --red:#e34948; --red-wash:rgba(227,73,72,.09);
+    --pos:#006300; --neg:#c42f2f;
+    --shadow:0 1px 2px rgba(11,11,11,.04), 0 10px 28px -14px rgba(11,11,11,.18);
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:radial-gradient(900px 480px at 12% -8%,var(--glow1),transparent 70%),radial-gradient(800px 420px at 100% 0%,var(--glow2),transparent 65%),var(--bg);
+  background-attachment:fixed}
+a{color:var(--blue)}
+small,.mut{color:var(--muted)}
+.num,table td,table th{font-variant-numeric:tabular-nums}
+
+/* header */
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));
+  background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.brand svg{flex:none}
+.brand h1{font-size:16px;font-weight:650;margin:0;letter-spacing:.01em;white-space:nowrap}
+.brand .sub{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--good);box-shadow:0 0 0 3px color-mix(in srgb,var(--good) 25%,transparent)}
+.dot.yel{background:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 25%,transparent)}
+.dot.neg{background:var(--crit);box-shadow:0 0 0 3px color-mix(in srgb,var(--crit) 25%,transparent)}
+.hbtns{display:flex;gap:6px;flex:none}
+button{font:inherit;font-size:13px;color:var(--text);background:var(--surface-2);border:1px solid var(--line-2);border-radius:999px;padding:7px 12px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:var(--surface-3)}button:disabled{opacity:.45;cursor:default}
+button.ghost{background:transparent}
+
+main{padding:14px 16px 40px;max-width:980px;margin:0 auto}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0;box-shadow:var(--shadow)}
+.card h3{margin:0;font-size:13px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card .desc{font-size:12.5px;color:var(--muted);margin:6px 0 12px}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:500;background:var(--surface-3);color:var(--text-2);text-transform:none;letter-spacing:0}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.yel{color:var(--warn)}.ok{color:var(--pos)}
+
+/* hero */
+.hero{padding:18px 18px 10px}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.hero .label{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.hero .big{font-size:clamp(34px,8vw,46px);font-weight:650;letter-spacing:-.02em;line-height:1.1;margin:2px 0 6px}
+.hero .collat{font-size:13px;color:var(--muted)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.chip{display:inline-flex;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:13px}
+.chip b{font-weight:600}
+.state{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid var(--line-2);background:var(--surface-2)}
+.state.lock{border-color:color-mix(in srgb,var(--crit) 55%,transparent);background:color-mix(in srgb,var(--crit) 14%,var(--surface))}
+.seg{display:inline-flex;padding:3px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);gap:2px}
+.seg button{border:0;background:transparent;padding:4px 11px;font-size:12px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface-3);color:var(--text);font-weight:600}
+.chart{position:relative;margin-top:10px}
+.chart svg{display:block;width:100%;overflow:visible}
+.chart-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:14px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--text-2)}
+.legend i{display:inline-block;width:14px;height:2px;border-radius:2px;vertical-align:middle;margin-right:5px;background:var(--blue)}
+
+/* gauges */
+.gauges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:760px){.gauges{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.gauge{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 14px;box-shadow:var(--shadow);min-width:0}
+.gauge .gl{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
+.gauge .gv{font-size:22px;font-weight:650;margin:3px 0 8px;letter-spacing:-.01em;white-space:nowrap}
+.meter{position:relative;height:8px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.meter>span{position:absolute;left:0;top:0;bottom:0;border-radius:999px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.meter>em{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text-2);opacity:.5}
+.gs{font-size:11.5px;color:var(--text-2);margin-top:7px;display:flex;align-items:center;gap:5px}
+.gs .ic{font-weight:700}
+.st-good .ic{color:var(--good)}.st-warn .ic{color:var(--warn)}.st-crit .ic{color:var(--crit)}
+
+/* alerts */
+.grp{margin:12px 0 0}.grp:first-child{margin-top:4px}
+.gh{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;user-select:none;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.gh .n{background:var(--surface-3);color:var(--text);border-radius:999px;padding:0 8px;font-size:11.5px;text-transform:none}
+.gh .sp{flex:1}.gh .car{width:1em;text-align:center;transition:transform .15s}
+.gh button,.al button{padding:3px 10px;font-size:12px;text-transform:none;letter-spacing:0}
+.al{position:relative;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;margin:6px 0;padding:10px 12px 10px 16px;overflow:hidden}
+.al::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--blue)}
+.al.position::before{background:var(--crit)}.al.heads_up::before{background:var(--warn)}.al.info::before,.al.ended::before{background:var(--axis)}
+.al .top{display:flex;gap:10px;align-items:flex-start}.al .sum{flex:1;font-size:13.5px;line-height:1.4;cursor:pointer;word-break:break-word}
+.al .sub{font-size:12px;color:var(--muted);margin-top:3px}.al .new{color:var(--warn);font-weight:700}
+.al pre{margin:10px 0 0;white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid var(--line);padding:10px;border-radius:10px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace}
+.al.quiet .sum{color:var(--text-2)}
+.st{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--surface-3);margin-right:4px}.st.missed,.st.failed{color:var(--neg)}.st.expired{color:var(--muted)}
+
+/* tabs */
+.tabs{display:flex;gap:4px;margin:20px 0 4px;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:999px;width:max-content;max-width:100%;overflow-x:auto}
+.tab{border:0;background:transparent;border-radius:999px;padding:8px 18px;font-size:13.5px;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--surface-3);color:var(--text);font-weight:600;box-shadow:0 1px 0 var(--line-2) inset}
+
+/* tables */
+.tw{overflow-x:auto;margin:0 -4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-weight:500;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em}
+td,th{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+td:first-child,th:first-child{text-align:left}
+tr:last-child td{border-bottom:0}
+.tfhead{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}.tfhead:first-of-type{margin-top:8px}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--surface-3)}
+.pill.long{color:var(--pos)}.pill.short{color:var(--neg)}
+
+/* position cards */
+.pcard{border:1px solid var(--line);background:var(--surface-2);border-radius:14px;padding:12px 14px;margin:10px 0}
+.pcard .ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pcard .coin{font-size:16px;font-weight:650}
+.pcard .meta{font-size:12.5px;color:var(--muted)}
+.warnchip{display:inline-flex;gap:5px;align-items:center;font-size:12px;font-weight:600;color:var(--warn);padding:2px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
+
+/* coin chips for the liquidation chart */
+.coins{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}
+.coins button{padding:4px 11px;font-size:12.5px}
+.coins button[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+
+/* tooltip */
+#tip{position:fixed;z-index:50;pointer-events:none;background:var(--surface-3);color:var(--text);border:1px solid var(--line-2);border-radius:10px;padding:7px 10px;font-size:12px;line-height:1.35;box-shadow:0 10px 24px -8px rgba(0,0,0,.5);opacity:0;transition:opacity .12s;max-width:240px}
+#tip b{font-weight:650}
+
+.gate{max-width:440px;margin:10vh auto 0}
+.gate input{width:100%;font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--line-2);border-radius:12px;padding:11px 13px;margin:12px 0 10px;outline:none}
+.gate input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-wash)}
+.gate button{width:100%;padding:11px;background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+.foot{font-size:12px;color:var(--muted);text-align:center;margin-top:24px}
+pre#sub{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(--bg);padding:10px;border-radius:10px;border:1px solid var(--line)}
+.empty{color:var(--muted);font-size:13px;padding:6px 0}
+.fade-in{animation:fi .35s ease both}@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-  <div><h1>HL Guardrails</h1><small id="gen">loading…</small></div>
-  <div class="row"><button id="notif">Enable notifications</button><button id="push" disabled>Enable push</button><button id="lock" hidden>Lock</button></div>
+  <div class="brand">
+    <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#4a3aa7"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lg)"/><path d="M32 12 L50 18 V31 C50 42 42 49 32 53 C22 49 14 42 14 31 V18 Z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/><path d="M24 32 l6 6 l11 -12" stroke="#fff" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div style="min-width:0"><h1>HL Guardrails</h1><div class="sub"><span class="dot" id="fresh" hidden></span><span id="gen">loading…</span></div></div>
+  </div>
+  <div class="hbtns"><button id="notif" class="ghost" title="Browser notifications while this page is open">Alerts</button><button id="push" class="ghost" disabled title="Background push to this device">Push</button><button id="lock" class="ghost" hidden title="Forget the key on this device">Lock</button></div>
 </header>
 <main>
   <!-- The published data is AES-256-GCM ciphertext (hlg/vault.py). Nothing below #app exists in
        readable form until this browser decrypts it, so hiding #app is presentation, not the
        security boundary -- the encryption is. -->
-  <form class="card" id="gate" hidden autocomplete="on">
-    <h3 style="margin:0 0 6px">Locked</h3>
-    <p class="mut" id="gatemsg" style="margin:0 0 10px">Enter the dashboard passphrase. It is checked by decrypting the data in this browser — it is never sent anywhere.</p>
+  <form class="card gate" id="gate" hidden autocomplete="on">
+    <h3>Locked</h3>
+    <p class="desc" id="gatemsg">Enter the dashboard passphrase. It is checked by decrypting the data in this browser — it is never sent anywhere.</p>
     <input type="text" name="username" autocomplete="username" value="hl-guardrails" hidden>
-    <div class="row" style="justify-content:flex-start">
-      <input id="pass" type="password" name="password" autocomplete="current-password" placeholder="passphrase" required
-        style="flex:1;min-width:180px;background:#0b0d11;color:var(--fg);border:1px solid #333;border-radius:8px;padding:8px 10px;font-size:14px">
-      <button id="unlockbtn" type="submit">Unlock</button>
-    </div>
-    <p id="unlockmsg" class="neg" style="margin:8px 0 0;font-size:13px"></p>
+    <input id="pass" type="password" name="password" autocomplete="current-password" placeholder="Passphrase" required>
+    <button id="unlockbtn" type="submit">Unlock</button>
+    <p id="unlockmsg" class="neg" style="margin:10px 0 0;font-size:13px"></p>
   </form>
   <div id="app" hidden>
-  <!-- KPIs and Alerts live outside the tabs on purpose: they are the act-now layer and must never
-       be one tap away behind a tab you happen not to be on. -->
-  <div class="card row" id="kpis"></div>
-  <div class="card"><h3 style="margin:0 0 6px">Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></div>
+  <!-- Hero, gauges and alerts live outside the tabs on purpose: they are the act-now layer and must
+       never be one tap away behind a tab you happen not to be on. -->
+  <section class="card hero fade-in">
+    <div class="hero-top">
+      <div><div class="label" id="hlabel">Portfolio</div><div class="big num" id="hval">—</div><div class="collat" id="hcollat"></div>
+        <div class="chips" id="hchips"></div></div>
+      <div class="state" id="hstate"></div>
+    </div>
+    <div class="chart-head"><div class="legend" id="eqlegend"></div>
+      <div class="seg" id="eqrange"><button data-r="1">24h</button><button data-r="7">7d</button><button data-r="30">30d</button><button data-r="0">All</button></div></div>
+    <div class="chart" id="eqchart"></div>
+  </section>
+  <section class="gauges" id="gauges"></section>
+  <section class="card"><h3>Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></section>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="tech" aria-selected="true">Technical</button>
@@ -74,40 +205,45 @@ pre{overflow:auto;background:#0b0d11;padding:8px;border-radius:6px;font-size:12p
     <button class="tab" role="tab" data-tab="flow" aria-selected="false">Flow</button>
   </div>
   <div class="pane" id="pane-tech">
-    <div class="card"><h3 style="margin:0 0 6px">Positions</h3><div id="positions"></div></div>
-    <div class="card" id="nearcard" hidden><h3 style="margin:0 0 6px">Near breakout <span class="badge" id="nearcount"></span></h3>
-      <p class="mut" style="margin:0 0 8px;font-size:12px">Uptrend and within 0.5 ATR of the level the bar has to close above. A watch list, not a signal — nothing here alerts.</p><div id="near"></div></div>
-    <div class="card"><h3 style="margin:0 0 6px">Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></div>
-    <div class="card"><h3 style="margin:0 0 6px">Signal journal <span class="badge" id="jcount"></span></h3>
-      <p class="mut" style="margin:0 0 8px;font-size:12px">Every breakout signal, followed under the strategy's rules whether or not you took it: entry at the next open, 2×ATR stop, 3×ATR trail, 21-day time stop. R = multiples of the initial risk.</p><div id="journal"></div></div>
+    <section class="card"><h3>Positions <span class="badge" id="poscount"></span></h3><div id="positions"></div></section>
+    <section class="card" id="nearcard" hidden><h3>Near breakout <span class="badge" id="nearcount"></span></h3>
+      <p class="desc">Uptrend and within 0.5 ATR of the level the bar has to close above. A watch list, not a signal — nothing here alerts.</p><div id="near"></div></section>
+    <section class="card"><h3>Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></section>
+    <section class="card"><h3>Signal journal <span class="badge" id="jcount"></span></h3>
+      <p class="desc">Every breakout signal, followed under the strategy's rules whether or not you took it: entry at the next open, 2×ATR stop, 3×ATR trail, 21-day time stop. R = multiples of the initial risk.</p><div id="journal"></div></section>
   </div>
   <div class="pane" id="pane-macro" hidden>
-    <div class="card"><h3 style="margin:0 0 6px">Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></div>
-    <div class="card" id="macrocard" hidden><h3 style="margin:0 0 6px">Macro backdrop</h3><div id="macro" style="font-size:13px"></div></div>
+    <section class="card"><h3>Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></section>
+    <section class="card" id="macrocard" hidden><h3>Macro backdrop</h3><div id="macro" style="font-size:13px;margin-top:8px"></div></section>
   </div>
   <div class="pane" id="pane-flow" hidden>
-    <div class="card"><h3 style="margin:0 0 6px">Liquidation risk <span class="mut" style="font-size:12px;font-weight:400">— your open positions</span></h3><div id="liqrisk"></div></div>
-    <div class="card"><h3 style="margin:0 0 6px">Volume &amp; open interest</h3><div id="market"></div></div>
-    <div class="card" id="lmcard" hidden><h3 style="margin:0 0 6px">Liquidation levels <span class="badge" id="lmage"></span></h3>
-      <p class="mut" style="margin:0 0 8px;font-size:12px">Where the largest and most active Hyperliquid accounts would be force-closed, from their public positions — not an estimate. Shorts liquidate above the price (forced buying), longs below (forced selling). Clusters are often read as magnets; that is a hypothesis the signal journal is recording, not a rule.</p><div id="lm"></div></div>
-    <div class="card"><h3 style="margin:0 0 6px">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></div>
+    <section class="card"><h3>Liquidation risk <span class="badge">your account</span></h3><div id="liqrisk"></div></section>
+    <section class="card" id="lmcard" hidden><h3>Liquidation levels <span class="badge" id="lmage"></span></h3>
+      <p class="desc">Where the largest and most active Hyperliquid accounts would be force-closed, from their public positions — not an estimate. Shorts liquidate above the price (forced buying), longs below (forced selling). Clusters are often read as magnets; that is a hypothesis the signal journal is recording, not a rule.</p>
+      <div class="coins" id="lmcoins"></div><div class="chart" id="lmchart"></div><div id="lm" style="margin-top:14px"></div></section>
+    <section class="card"><h3>Volume &amp; open interest</h3><div id="market"></div></section>
+    <section class="card"><h3>Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></section>
   </div>
   </div>
-  <div class="card" id="pushbox" hidden><h3 style="margin:0 0 6px">Push subscription</h3>
-    <p class="mut">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
+  <section class="card" id="pushbox" hidden><h3>Push subscription</h3>
+    <p class="desc">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
       <a id="secretslink" href="#" target="_blank" rel="noopener">the repo's Actions secrets</a>,
       and save it as <code>PUSH_SUBSCRIPTIONS</code>. For several devices, put their entries in one list: <code>[{...},{...}]</code>.</p>
-    <pre id="sub" style="white-space:pre-wrap;word-break:break-all"></pre><button id="copy">Copy</button></div>
-  <p class="mut">Refreshed whenever the monitor workflow runs — see the timestamp above, which turns amber then red as it ages. Alert mode only — nothing here places orders.</p>
+    <pre id="sub"></pre><button id="copy">Copy</button></section>
+  <p class="foot">Refreshed whenever the monitor runs — the dot in the header turns amber, then red, as data ages. Advisory only — nothing here places orders.</p>
 </main>
+<div id="tip" role="tooltip"></div>
 <script src="config.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 const cls=n=>n>=0?'pos':'neg';
+const sgn=n=>n>=0?'+':'−';
 const hasNotif=typeof Notification!=='undefined';
-const pct=(n,b)=>b?` <small class="mut">(${n>=0?'+':''}${fmt(100*n/b,1)}%)</small>`:'';
-let lastKeys=new Set(JSON.parse(localStorage.getItem('seenKeys')||'[]'));
+const usd=n=>{const a=Math.abs(n),s=n<0?'−':'';return a>=1e9?`${s}$${fmt(a/1e9,1)}B`:a>=1e6?`${s}$${fmt(a/1e6,1)}M`:a>=1e4?`${s}$${fmt(a/1e3,0)}k`:`${s}$${fmt(a)}`};
+const sig=p=>p<1?5:p<10?4:p<1000?2:0;
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let lastKeys=new Set((()=>{try{return JSON.parse(localStorage.getItem('seenKeys')||'[]')}catch(e){return []}})());
 
 // ---- decryption: must stay byte-compatible with hlg/vault.py --------------------------------
 // AES-256-GCM, key = PBKDF2-SHA256(passphrase, salt, iter), 96-bit IV, AAD = file name.
@@ -138,7 +274,7 @@ async function saveKey(key,salt){memKey={key,salt};try{await idbDo('readwrite',s
 async function forgetKey(){memKey=null;try{await idbDo('readwrite',s=>s.delete('k'))}catch(e){}}
 
 function gate(msg){
-  $('#app').hidden=true;$('#lock').hidden=true;$('#gate').hidden=false;
+  $('#app').hidden=true;$('#lock').hidden=true;$('#gate').hidden=false;$('#fresh').hidden=true;
   $('#gen').textContent='locked';
   if(msg)$('#gatemsg').textContent=msg;
 }
@@ -146,7 +282,7 @@ $('#gate').onsubmit=async e=>{
   e.preventDefault();
   const pass=$('#pass').value;
   if(!pass||!pending)return;
-  $('#unlockbtn').disabled=true;$('#unlockmsg').className='mut';$('#unlockmsg').textContent='deriving key…';
+  $('#unlockbtn').disabled=true;$('#unlockmsg').className='mut';$('#unlockmsg').textContent='Deriving key…';
   try{
     const key=await deriveKey(pass,pending);
     await unseal(pending,key,'alerts.json');  // prove the passphrase before remembering anything
@@ -160,73 +296,41 @@ $('#gate').onsubmit=async e=>{
 };
 $('#lock').onclick=async()=>{await forgetKey();location.reload()};
 
+let D=null, HIST=[];  // last decrypted payloads, kept for re-rendering charts on resize / range change
 async function load(){
   try{await render()}catch(e){$('#gen').textContent='error: '+(e&&e.message||e)}
+}
+async function fetchJson(name,key){
+  const r=await fetch(name+'?t='+Date.now(),{cache:'no-store'});
+  if(!r.ok)return null;
+  const j=await r.json();
+  return j&&j.ct?(key?await unseal(j,key,name):null):j;
 }
 async function render(){
   const r=await fetch('alerts.json?t='+Date.now(),{cache:'no-store'});
   if(!r.ok){$('#gen').textContent='no data yet — first Actions run pending';return}
-  let d=await r.json();
+  let d=await r.json(), key=null;
   if(d.locked){gate('Nothing is published yet: the monitor refuses to publish account data until the DASHBOARD_PASSPHRASE secret is set.');$('#pass').disabled=true;return}
   const encrypted=!!d.ct;
   if(encrypted){
-    const key=await savedKey(d.salt);
+    key=await savedKey(d.salt);
     if(!key){pending=d;gate();return}
     try{d=await unseal(d,key,'alerts.json')}
     catch(e){await forgetKey();pending=d;gate('The saved key no longer opens the data — the passphrase has probably changed.');return}
   }
+  try{HIST=(await fetchJson('history.json',key))||[]}catch(e){HIST=[]}
+  D=d;
   $('#gate').hidden=true;$('#app').hidden=false;
   $('#lock').hidden=!encrypted;  // a local plaintext preview has nothing to lock
   // Staleness is shown rather than assumed. GitHub's scheduler does not honour short crons (see
   // monitor.yml), so "when was this actually last refreshed" is the thing worth surfacing -- a
   // guardrail you believe is live but is four hours old is worse than no guardrail.
   const age=(Date.now()-Date.parse(d.generated))/60000;
-  const stale=age>40?'neg':age>20?'yel':'mut';
-  $('#gen').innerHTML=`${d.account.slice(0,6)}…${d.account.slice(-4)} · <span class="${stale}">updated ${age<1?'just now':fmt(age)+' min ago'}</span>`
-    +(age>40?' <span class="neg">— stale</span>':'');
-  const locked=d.locked_until&&d.locked_until>Date.now();
-  const dayPnl=d.day_pnl!=null?d.day_pnl:(d.day_start_equity?d.equity-d.day_start_equity:0);
-  const weekPnl=d.week_pnl!=null?d.week_pnl:(d.week_start_equity?d.equity-d.week_start_equity:0);
-  // Same figures HL shows under "Unified Account Summary": ratio = maintenance / USDC, leverage =
-  // notional / USDC. On a classic account the base is perp equity and the labels say so.
-  const A=d.acct||{}, uni=!!A.unified, maxLev=d.rules.max_gross_exposure_x;
-  const levCls=A.leverage==null?'':A.leverage>maxLev?'neg':A.leverage>maxLev*0.66?'yel':'pos';
-  const ratCls=A.ratio_pct==null?'':A.ratio_pct>=50?'neg':A.ratio_pct>=25?'yel':'pos';
-  $('#kpis').innerHTML=`
-   <div><div class="mut">${uni?'Portfolio':'Perp equity'}</div><div class="kpi">$${fmt(uni&&A.portfolio_value?A.portfolio_value:d.equity)}</div>
-     ${uni?`<small class="mut">$${fmt(A.base)} USDC collateral</small>`:''}</div>
-   <div><div class="mut">${uni?'Unified account ratio':'Margin ratio'}</div><div class="kpi ${ratCls}">${A.ratio_pct==null?'—':fmt(A.ratio_pct,2)+'%'}</div></div>
-   <div><div class="mut">${uni?'Unified account leverage':'Account leverage'}</div><div class="kpi ${levCls}">${A.leverage==null?'—':fmt(A.leverage,2)+'x'}</div>
-     <small class="mut">cap ${maxLev}x</small></div>
-   <div><div class="mut">Day PnL <small>(UTC)</small></div><div class="kpi ${cls(dayPnl)}">${dayPnl>=0?'+':''}${fmt(dayPnl)}${pct(dayPnl,d.day_start_equity)}</div></div>
-   <div><div class="mut">Week PnL</div><div class="kpi ${cls(weekPnl)}">${weekPnl>=0?'+':''}${fmt(weekPnl)}${pct(weekPnl,d.week_start_equity)}</div></div>
-   <div><div class="mut">Positions</div><div class="kpi">${d.positions.length}<span class="mut">/${d.rules.max_positions}</span></div></div>
-   <div><div class="mut">Status</div><div class="kpi ${locked?'lock':'ok'}">${locked?'LOCKED until '+new Date(d.locked_until).toUTCString().slice(5,22):'trading allowed'}</div></div>`;
-  renderAlerts(d);
-  $('#positions').innerHTML=d.positions.length?`<table><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Notional</th><th>uPnL</th><th>Lev</th><th>Liq</th></tr>`+
-    d.positions.map(p=>`<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${Math.abs(p.szi)}</td><td>${p.entryPx}</td><td>$${fmt(p.positionValue)}</td><td class="${cls(p.unrealizedPnl)}">${fmt(p.unrealizedPnl)}</td><td>${p.leverage}x</td><td>${p.liquidationPx?fmt(p.liquidationPx,2):'-'}</td></tr>`).join('')+'</table>':'<span class="mut">flat</span>';
-  renderMacro(d);
-  renderFlow(d);
-  const TF_LABEL={'1d':'Daily','4h':'4-hour','1h':'Hourly'},TF_ORDER={'1d':0,'4h':1,'1h':2};
-  const tfGroups=new Map();
-  for(const r of d.scan){const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
-  const tfKeys=[...tfGroups.keys()].sort((a,b)=>(TF_ORDER[a]??99)-(TF_ORDER[b]??99)||a.localeCompare(b));
-  const scanRow=r=>`<tr${r.watch?' style="opacity:.6"':''}><td>${r.urank?`<small class="mut">${r.urank}</small> `:''}${r.coin}${r.watch?' <small>watch</small>':''}</td><td>${fmt(r.px,r.px<10?4:r.px<1000?2:0)}</td><td>${r.trend}</td><td>${fmt(r.rsi4h)}</td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td>${r.setup?`<b>${r.setup}</b> stop ${fmt(r.stop,4)}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:' trailing'}`:(r.rejected||(r.hi20?`below 20d high ${fmt(r.hi20,4)}`:'—'))}</td></tr>`;
-  // live setups first, then near-breakouts, then the rest by liquidity -- a 30-coin table is only
-  // readable if what matters is at the top
-  const scanOrder=r=>(r.setup?0:r.near_atr!=null?1:2)*1e15-(r.vlm24h||0);
-  $('#scan').innerHTML=tfKeys.map(tf=>
-    `<div class="tfhead">${TF_LABEL[tf]||tf}</div><div style="overflow-x:auto"><table><tr><th>Coin</th><th>Price</th><th>Trend</th><th>RSI</th><th>24h vol</th><th>Funding APR</th><th>Setup</th></tr>`+
-    [...tfGroups.get(tf)].sort((a,b)=>scanOrder(a)-scanOrder(b)).map(scanRow).join('')+'</table></div>'
-  ).join('');
-  renderJournal(d.journal);
-  const U=d.universe||{};
-  $('#unilabel').textContent=U.mode==='auto'?`top ${U.coins} by volume · list of ${U.day||'today'}`:U.coins?`${U.coins} fixed coins`:'';
-  const near=d.scan.filter(r=>r.near_atr!=null&&!r.watch).sort((a,b)=>a.near_atr-b.near_atr);
-  $('#nearcard').hidden=!near.length;$('#nearcount').textContent=near.length||'';
-  $('#near').innerHTML=near.length?`<table><tr><th>Coin</th><th>TF</th><th>Price</th><th>Trigger</th><th>Distance</th><th>24h vol</th></tr>`+
-    near.map(r=>`<tr><td>${r.coin}</td><td>${r.tf}</td><td>${fmt(r.px,sig(r.px))}</td><td>${fmt(r.hi20,sig(r.hi20))}</td>`
-      +`<td>${fmt(r.near_atr,2)} ATR <small class="mut">(${fmt(100*(r.hi20/r.px-1),1)}%)</small></td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td></tr>`).join('')+'</table>':'';
+  $('#fresh').hidden=false;$('#fresh').className='dot'+(age>40?' neg':age>20?' yel':'');
+  $('#gen').textContent=`${d.account.slice(0,6)}…${d.account.slice(-4)} · ${age<1?'updated just now':'updated '+fmt(age)+' min ago'}${age>40?' — stale':''}`;
+  renderHero(d);renderGauges(d);renderAlerts(d);
+  renderPositions(d);renderScan(d);renderJournal(d.journal);
+  renderMacro(d);renderFlow(d);
   // local notifications for keys not seen on this device -- same rule as Web Push: dashboard-only
   // alerts (funding carry, breakouts on coins already held) never notify
   const fresh=d.alerts.filter(a=>!lastKeys.has(a.key)&&a.push!==false);
@@ -236,7 +340,122 @@ async function render(){
     reg?reg.showNotification(`HL guardrails: ${fresh.length} alert(s)`,opts):new Notification('HL guardrails',opts);
   }
   d.alerts.forEach(a=>lastKeys.add(a.key));
-  localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)));
+  try{localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)))}catch(e){}
+}
+
+// ---- chart kit: small hand-written SVG, no library ---------------------------------------------
+// Specs (dataviz method): 2px lines, 10% area wash, hairline solid gridlines, >=8px markers with a
+// 2px surface ring, bars <=24px with a 4px rounded data end, text in text tokens never series colour.
+const NS='http://www.w3.org/2000/svg';
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const tip=$('#tip');
+function showTip(html,x,y){tip.innerHTML=html;tip.style.opacity=1;const w=tip.offsetWidth,h=tip.offsetHeight;
+  tip.style.left=Math.min(innerWidth-w-8,Math.max(8,x-w/2))+'px';tip.style.top=Math.max(8,y-h-14)+'px'}
+function hideTip(){tip.style.opacity=0}
+function niceTicks(lo,hi,n=4){const span=hi-lo||Math.abs(hi)||1,raw=span/n,mag=10**Math.floor(Math.log10(raw)),step=[1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=raw);
+  const out=[];for(let v=Math.ceil(lo/step)*step;v<=hi+1e-9;v+=step)out.push(+v.toFixed(12));return out}
+const W=el=>Math.max(260,el.clientWidth||el.parentElement.clientWidth||320);
+// Hover for marks: any element with data-tip shows it.
+document.addEventListener('pointermove',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(t)showTip(t.dataset.tip,e.clientX,e.clientY);else if(!e.target.closest?.('.xhair'))hideTip()});
+document.addEventListener('scroll',hideTip,{passive:true});
+
+// Line chart with area wash, horizontal reference lines and a crosshair + tooltip.
+function lineChart(el,pts,{h=150,fmtY=v=>fmt(v),fmtX=t=>new Date(t).toLocaleString(),refs=[],color='--blue'}={}){
+  if(pts.length<2){el.innerHTML='<div class="empty">Not enough history yet — the curve fills in as runs accumulate.</div>';return}
+  const w=W(el),pl=4,pr=56,pt=10,pb=22;
+  const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+  let lo=Math.min(...ys),hi=Math.max(...ys);
+  for(const r of refs)if(r.include){lo=Math.min(lo,r.y);hi=Math.max(hi,r.y)}
+  const pad=(hi-lo)*.08||Math.abs(hi)*.01||1;lo-=pad;hi+=pad;
+  const x0=xs[0],x1=xs[xs.length-1]||x0+1,X=t=>pl+(t-x0)/(x1-x0||1)*(w-pl-pr),Y=v=>pt+(hi-v)/(hi-lo)*(h-pt-pb);
+  const line=pts.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('');
+  const area=line+`L${X(x1).toFixed(1)} ${h-pb}L${X(x0).toFixed(1)} ${h-pb}Z`;
+  const ticks=niceTicks(lo,hi,4);
+  const c=css(color);
+  let s=`<svg viewBox="0 0 ${w} ${h}" height="${h}" role="img" aria-label="line chart">`;
+  s+=ticks.map(v=>`<line x1="${pl}" x2="${w-pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/><text x="${w-pr+8}" y="${Y(v)+4}" font-size="11" fill="var(--muted)">${fmtY(v)}</text>`).join('');
+  s+=`<path d="${area}" fill="${c}" opacity=".12"/>`;
+  s+=refs.map(r=>r.y>lo&&r.y<hi?`<line x1="${pl}" x2="${w-pr}" y1="${Y(r.y)}" y2="${Y(r.y)}" stroke="${css(r.color||'--crit')}" stroke-width="1" opacity=".85"/>`
+    +(r.label?`<text x="${w-pr-4}" y="${Y(r.y)+14}" font-size="11" text-anchor="end" fill="var(--text-2)" paint-order="stroke" stroke="var(--surface)" stroke-width="4" stroke-linejoin="round">${esc(r.label)}</text>`:''):'').join('');
+  s+=`<path d="${line}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const last=pts[pts.length-1];
+  s+=`<circle cx="${X(last[0])}" cy="${Y(last[1])}" r="4.5" fill="${c}" stroke="var(--surface)" stroke-width="2"/>`;
+  const xt=[x0,(x0+x1)/2,x1];
+  s+=xt.map((t,i)=>`<text x="${i==0?pl:i==2?w-pr:X(t)}" y="${h-5}" font-size="11" fill="var(--muted)" text-anchor="${i==0?'start':i==2?'end':'middle'}">${fmtX(t,true)}</text>`).join('');
+  s+=`<g class="xhair" style="display:none"><line y1="${pt}" y2="${h-pb}" stroke="var(--axis)" stroke-width="1"/><circle r="4.5" fill="${c}" stroke="var(--surface)" stroke-width="2"/></g>`;
+  s+=`<rect class="xhair-hit" x="${pl}" y="0" width="${w-pl-pr}" height="${h}" fill="transparent"/></svg>`;
+  el.innerHTML=s;
+  const svg=el.querySelector('svg'),g=svg.querySelector('.xhair'),hit=svg.querySelector('.xhair-hit');
+  const move=e=>{const b=svg.getBoundingClientRect(),mx=(e.clientX-b.left)*(w/b.width);
+    let i=0,best=1e18;for(let k=0;k<pts.length;k++){const dd=Math.abs(X(pts[k][0])-mx);if(dd<best){best=dd;i=k}}
+    const p=pts[i];g.style.display='';g.querySelector('line').setAttribute('x1',X(p[0]));g.querySelector('line').setAttribute('x2',X(p[0]));
+    const cc=g.querySelector('circle');cc.setAttribute('cx',X(p[0]));cc.setAttribute('cy',Y(p[1]));
+    showTip(`<b>${fmtY(p[1],true)}</b><br><span class="mut">${fmtX(p[0])}</span>`,b.left+X(p[0])*b.width/w,b.top+Y(p[1])*b.height/h)};
+  hit.addEventListener('pointermove',move);hit.addEventListener('pointerdown',move);
+  hit.addEventListener('pointerleave',()=>{g.style.display='none';hideTip()});
+}
+
+// ---- hero: portfolio value, day/week, equity curve ---------------------------------------------
+let eqRange=(()=>{try{return +localStorage.getItem('hlgEqRange')||7}catch(e){return 7}})();
+function pnlOf(d){
+  const day=d.day_pnl!=null?d.day_pnl:(d.day_start_equity?d.equity-d.day_start_equity:0);
+  const week=d.week_pnl!=null?d.week_pnl:(d.week_start_equity?d.equity-d.week_start_equity:0);
+  return {day,week};
+}
+function renderHero(d){
+  const A=d.acct||{},uni=!!A.unified,val=uni&&A.portfolio_value?A.portfolio_value:d.equity;
+  const {day,week}=pnlOf(d);
+  $('#hlabel').textContent=uni?'Portfolio':'Perp equity';
+  $('#hval').textContent='$'+fmt(val,val<1e4?2:0);
+  $('#hcollat').textContent=uni?`$${fmt(A.base)} USDC collateral · sizing base`:'sizing base';
+  const pc=(n,b)=>b?` <span class="mut">${sgn(n)}${fmt(Math.abs(100*n/b),2)}%</span>`:'';
+  $('#hchips').innerHTML=`<span class="chip">Today <b class="${cls(day)}">${sgn(day)}$${fmt(Math.abs(day))}</b>${pc(day,d.day_start_equity)}</span>`
+    +`<span class="chip">This week <b class="${cls(week)}">${sgn(week)}$${fmt(Math.abs(week))}</b>${pc(week,d.week_start_equity)}</span>`
+    +`<span class="chip">Positions <b>${d.positions.length}</b><span class="mut">/ ${d.rules.max_positions}</span></span>`;
+  const locked=d.locked_until&&d.locked_until>Date.now();
+  $('#hstate').className='state'+(locked?' lock':'');
+  $('#hstate').innerHTML=locked?`<span style="color:var(--crit)">■</span> Locked until ${new Date(d.locked_until).toUTCString().slice(5,22)} UTC`
+    :`<span style="color:var(--good)">●</span> Trading allowed`;
+  for(const b of document.querySelectorAll('#eqrange button'))b.setAttribute('aria-pressed',String(+b.dataset.r===eqRange));
+  renderEquity();
+}
+function renderEquity(){
+  if(!D)return;
+  const d=D,uni=!!(d.acct&&d.acct.unified);
+  // Portfolio value when recorded (unified accounts, newer runs); the sizing base before that.
+  let pts=HIST.map(h=>[Date.parse(h.t),uni&&h.pv!=null?h.pv:h.equity]).filter(p=>isFinite(p[0])&&p[1]!=null);
+  if(eqRange)pts=pts.filter(p=>p[0]>=Date.now()-eqRange*864e5);
+  const R=d.rules||{},refs=[];
+  // loss-lock levels, on the same base the rule uses (start-of-day / start-of-week value)
+  if(d.day_start_equity&&R.daily_loss_limit_pct&&eqRange&&eqRange<=1)refs.push({y:d.day_start_equity*(1-R.daily_loss_limit_pct/100),label:`day lock −${R.daily_loss_limit_pct}%`,include:true});
+  if(d.week_start_equity&&R.weekly_loss_limit_pct&&eqRange&&eqRange>1&&eqRange<=7)refs.push({y:d.week_start_equity*(1-R.weekly_loss_limit_pct/100),label:`week lock −${R.weekly_loss_limit_pct}%`,include:true});
+  $('#eqlegend').innerHTML=`<span><i></i>${uni?'Portfolio value':'Perp equity'}</span>`+(refs.length?`<span><i style="background:var(--crit);height:1px"></i>loss lock</span>`:'');
+  lineChart($('#eqchart'),pts,{h:150,refs,fmtY:(v,full)=>full?'$'+fmt(v,2):usd(v),
+    fmtX:(t,short)=>{const x=new Date(t);return short?(eqRange===1?x.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):x.toLocaleDateString([], {month:'short',day:'numeric'})):x.toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}});
+}
+$('#eqrange').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;eqRange=+b.dataset.r;try{localStorage.setItem('hlgEqRange',eqRange)}catch(x){}
+  for(const x of document.querySelectorAll('#eqrange button'))x.setAttribute('aria-pressed',String(x===b));renderEquity()});
+
+// ---- gauges: how close each risk number is to its limit ----------------------------------------
+function gauge(label,value,frac,state,note,marker){
+  const col={good:'--good',warn:'--warn',crit:'--crit'}[state],ic={good:'✓',warn:'!',crit:'✕'}[state],word={good:'ok',warn:'near limit',crit:'at limit'}[state];
+  return `<div class="gauge fade-in"><div class="gl"><span>${label}</span></div><div class="gv num">${value}</div>`
+    +`<div class="meter"><span style="width:${Math.max(2,Math.min(100,frac*100))}%;background:var(${col})"></span>${marker!=null?`<em style="left:${marker*100}%"></em>`:''}</div>`
+    +`<div class="gs st-${state}"><span class="ic">${ic}</span><span>${word}</span><span class="mut">· ${note}</span></div></div>`;
+}
+const band=(f,warn=.5,crit=.85)=>f>=crit?'crit':f>=warn?'warn':'good';
+function renderGauges(d){
+  const A=d.acct||{},R=d.rules||{},{day,week}=pnlOf(d);
+  const dayBase=d.day_start_equity||d.equity,weekBase=d.week_start_equity||d.equity;
+  const dayUsed=Math.max(0,-day)/(dayBase*R.daily_loss_limit_pct/100||1);
+  const weekUsed=Math.max(0,-week)/(weekBase*R.weekly_loss_limit_pct/100||1);
+  const lev=A.leverage??null,cap=R.max_gross_exposure_x,ratio=A.ratio_pct??null;
+  let h=gauge('Daily loss limit',`${fmt(Math.max(0,-day)/dayBase*100,2)}%`,dayUsed,band(dayUsed),`of ${R.daily_loss_limit_pct}% used`);
+  h+=gauge('Weekly loss limit',`${fmt(Math.max(0,-week)/weekBase*100,2)}%`,weekUsed,band(weekUsed),`of ${R.weekly_loss_limit_pct}% used`);
+  h+=lev==null?'':gauge(A.unified?'Account leverage':'Leverage',`${fmt(lev,2)}×`,lev/cap,band(lev/cap,.66,1),`cap ${cap}×`);
+  // HL liquidates as the ratio approaches 100%; the dashboard's warn/crit bands are 25% / 50%
+  h+=ratio==null?'':gauge(A.unified?'Account ratio':'Margin ratio',`${fmt(ratio,2)}%`,ratio/100,ratio>=50?'crit':ratio>=25?'warn':'good','liquidation at 100%',null);
+  $('#gauges').innerHTML=h;
 }
 
 // ---- alert list ---------------------------------------------------------------------------------
@@ -246,7 +465,6 @@ async function render(){
 const GROUPS=[['position','Your positions'],['entry','Entries'],['heads_up','Heads-up'],['info','Info'],['ended','Recently ended']];
 const store=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
 let cleared=new Set(store('hlgCleared')||[]), collapsed=store('hlgCollapsed')||{info:true,ended:true}, openKeys=new Set(), lastAlerts=null;
-const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 const ago=ms=>{const m=Math.max(0,(Date.now()-ms)/60000);return m<1?'just now':m<60?`${Math.round(m)}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`};
 const left=ms=>{const m=Math.floor((ms-Date.now())/60000);return m<=0?'window closing':m<60?`valid ${m}m`:`valid ${Math.floor(m/60)}h ${m%60}m`};
 function catOf(a){return a.cat||(a.kind==='guardrail'?'position':'entry')}  // payloads from before categories existed
@@ -260,27 +478,28 @@ function renderAlerts(d){
   by.ended=d.ended||[];
   const vis=c=>by[c].filter(a=>c==='position'||!cleared.has(a.key));
   const liveCount=vis('position').length+vis('entry').length;
-  $('#ncount').textContent=liveCount?`${liveCount} need attention`:'';
+  $('#ncount').textContent=liveCount?`${liveCount} need attention`:'all clear';
   const row=(a,c)=>{
     const open=openKeys.has(a.key), quiet=a.push===false;
     const sub=[a.new?'<span class="new">NEW</span>':'',a.first_seen?ago(a.first_seen):'',
       c==='ended'?`<span class="st ${a.status}">${a.status}</span> ${esc(a.why||'')}`:(a.valid_until?left(a.valid_until):''),
       quiet&&c!=='ended'?'dashboard only':''].filter(Boolean).join(' · ');
+    const chart=open&&(c==='entry'||c==='info')?signalChartFor(a):'';
     return `<div class="al ${c}${quiet?' quiet':''}" data-key="${esc(a.key)}"><div class="top">`
       +`<div class="sum" data-act="toggle">${esc(a.summary||a.text.split('\n')[0])}${sub?`<div class="sub">${sub}</div>`:''}</div>`
       +(c==='position'?'':`<button data-act="clear" aria-label="clear">✕</button>`)+`</div>`
-      +(open?`<pre>${esc(a.text)}</pre>`:'')+`</div>`;
+      +(open?chart+`<pre>${esc(a.text)}</pre>`:'')+`</div>`;
   };
   const html=GROUPS.map(([c,label])=>{
     const items=vis(c);if(!items.length)return '';
     const col=!!collapsed[c];
-    return `<div class="grp" data-cat="${c}"><div class="gh" data-act="collapse"><span class="car">${col?'▸':'▾'}</span>${label} <span class="n">${items.length}</span><span class="sp"></span>`
+    return `<div class="grp" data-cat="${c}"><div class="gh" data-act="collapse"><span class="car" style="transform:rotate(${col?-90:0}deg)">▾</span>${label} <span class="n">${items.length}</span><span class="sp"></span>`
       +(c==='position'?'':`<button data-act="clearall">Clear all</button>`)+`</div>`
       +(col?'':items.map(a=>row(a,c)).join(''))+`</div>`;
   }).join('');
   const hidden=all.filter(a=>cleared.has(a.key)).length;
-  $('#alerts').innerHTML=(html||'<div class="ok">All rules satisfied. No live signals.</div>')
-    +(hidden?`<div class="mut" style="font-size:12px;margin-top:8px">${hidden} cleared on this device · <a href="#" data-act="restore">show again</a></div>`:'');
+  $('#alerts').innerHTML=(html||'<div class="empty"><span class="ok">✓</span> All rules satisfied. No live signals.</div>')
+    +(hidden?`<div class="mut" style="font-size:12px;margin-top:10px">${hidden} cleared on this device · <a href="#" data-act="restore">show again</a></div>`:'');
 }
 $('#alerts').addEventListener('click',e=>{
   const t=e.target.closest('[data-act]');if(!t||!lastAlerts)return;
@@ -294,36 +513,153 @@ $('#alerts').addEventListener('click',e=>{
   renderAlerts(lastAlerts);
 });
 
-function renderJournal(j){
-  const s=j&&j.summary||{}, rec=j&&j.recent||[];
-  const R=r=>r==null?'—':`<span class="${cls(r)}">${r>=0?'+':''}${fmt(r,2)}R</span>`;
-  $('#jcount').textContent=rec.length?`${s.open||0} open · ${s.closed||0} closed`:'';
-  // Few closed trades say little: a 36%-win-rate system has long losing streaks by design. The
-  // numbers become worth reading after ~30 closed signals.
-  const head=s.closed?`<div class="row" style="margin-bottom:8px;font-size:13px">`
-    +`<div>Win rate <b>${fmt(100*s.win_rate)}%</b></div><div>Avg ${R(s.avg_r)}</div><div>PF <b>${s.pf==null?'—':fmt(s.pf,2)}</b></div>`
-    +`<div>Failed early <b>${s.failed_early}</b> <small class="mut">(${s.failed_early_recovered} recovered)</small></div></div>`
-    +(s.closed<30?`<p class="mut" style="font-size:12px;margin:0 0 8px">${s.closed} closed so far — too few to judge; wait for ~30.</p>`:''):'';
-  $('#journal').innerHTML=rec.length?head+`<div style="overflow-x:auto"><table><tr><th>Signal</th><th>Status</th><th>R</th><th>Best</th><th>Early fail</th><th>Close loc</th></tr>`+
-    rec.map(e=>`<tr><td>${e.coin} ${e.tf} <small class="mut">${e.signal_day}</small></td><td>${e.status}</td><td>${R(e.r)}</td>`
-      +`<td>${e.max_r?R(e.max_r):'—'}</td><td>${e.failed_early?'<span class="neg">yes</span>':'no'}</td>`
-      +`<td>${e.close_loc==null?'—':fmt(e.close_loc,2)}</td></tr>`).join('')+'</table></div>'
-    :'<span class="mut">No breakout signals recorded yet. Each new one is followed from here on.</span>';
+// ---- signal chart: the breakout in context -------------------------------------------------------
+// Candles: rising hollow blue, falling filled red (direction is carried by fill as well as colour).
+function signalChartFor(a){
+  const m=a.meta||{},row=(D&&D.scan||[]).find(r=>r.coin===m.coin&&r.tf===m.tf&&r.bars);
+  if(!row||!row.bars||row.bars.length<5)return '';
+  return candleSvg(row.bars,{level:row.level,stop:row.stop,close:row.signal_close,w:Math.min(640,($('#alerts').clientWidth||320)-30),tf:row.tf,liq:row.liq});
+}
+function candleSvg(bars,{level,stop,close,w=320,h=170,tf}){
+  const pl=4,pr=54,pt=10,pb=18,n=bars.length;
+  let lo=Math.min(...bars.map(b=>b[3])),hi=Math.max(...bars.map(b=>b[2]));
+  for(const v of [level,stop])if(v!=null){lo=Math.min(lo,v);hi=Math.max(hi,v)}
+  const pad=(hi-lo)*.06;lo-=pad;hi+=pad;
+  const cw=(w-pl-pr)/n,bw=Math.max(2,Math.min(9,cw*.62)),X=i=>pl+cw*(i+.5),Y=v=>pt+(hi-v)/(hi-lo)*(h-pt-pb);
+  const up=css('--blue'),dn=css('--red');
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block;margin-top:10px">`;
+  s+=niceTicks(lo,hi,3).map(v=>`<line x1="${pl}" x2="${w-pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)"/><text x="${w-pr+6}" y="${Y(v)+4}" font-size="10.5" fill="var(--muted)">${fmt(v,sig(v))}</text>`).join('');
+  // level label on the left above its line, stop label on the right below its line: the two sit
+  // close together by construction (stop = close - 2 ATR), so they must not share a corner
+  const ref=(v,label,col,right)=>v==null?'':`<line x1="${pl}" x2="${w-pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="${col}" stroke-width="1"/>`
+    +`<text x="${right?w-pr-3:pl+3}" y="${right?Y(v)+13:Y(v)-4}" text-anchor="${right?'end':'start'}" font-size="10.5" fill="var(--text-2)" paint-order="stroke" stroke="var(--surface-2)" stroke-width="4" stroke-linejoin="round">${label} ${fmt(v,sig(v))}</text>`;
+  s+=ref(level,'breakout level',css('--text-2'),false)+ref(stop,'stop',css('--crit'),true);
+  bars.forEach((b,i)=>{const [t,o,hh,l,c]=b,isUp=c>=o,col=isUp?up:dn,y1=Y(Math.max(o,c)),y2=Y(Math.min(o,c));
+    const when=new Date(t).toLocaleString([], tf==='1d'?{month:'short',day:'numeric'}:{month:'short',day:'numeric',hour:'2-digit'});
+    s+=`<g data-tip="<b>${when}</b><br>O ${fmt(o,sig(o))} · H ${fmt(hh,sig(hh))}<br>L ${fmt(l,sig(l))} · C ${fmt(c,sig(c))}"><rect x="${X(i)-cw/2}" y="${pt}" width="${cw}" height="${h-pt-pb}" fill="transparent"/>`
+      +`<line x1="${X(i)}" x2="${X(i)}" y1="${Y(hh)}" y2="${Y(l)}" stroke="${col}" stroke-width="1.2"/>`
+      +`<rect x="${X(i)-bw/2}" y="${y1}" width="${bw}" height="${Math.max(1,y2-y1)}" rx="1" fill="${isUp?css('--surface-2'):col}" stroke="${col}" stroke-width="1.2"/></g>`});
+  if(close!=null)s+=`<circle cx="${X(n-1)}" cy="${Y(close)}" r="4.5" fill="${up}" stroke="var(--surface-2)" stroke-width="2"/>`;
+  s+=`<text x="${pl}" y="${h-3}" font-size="10.5" fill="var(--muted)">last ${n} ${tf} bars · ● signal close</text></svg>`;
+  return s;
 }
 
-const usd=n=>n>=1e9?`$${fmt(n/1e9,1)}B`:n>=1e6?`$${fmt(n/1e6,1)}M`:n>=1e3?`$${fmt(n/1e3,0)}k`:`$${fmt(n)}`;
-const sig=p=>p<10?4:p<1000?2:0;
+// ---- positions: a price ladder per position ------------------------------------------------------
+function renderPositions(d){
+  const P=d.positions||[];
+  $('#poscount').textContent=`${P.length} / ${d.rules.max_positions}`;
+  if(!P.length){$('#positions').innerHTML='<div class="empty">Flat — no open positions.</div>';return}
+  const w=Math.min(900,($('#positions').clientWidth||320));
+  $('#positions').innerHTML=P.map(p=>{
+    const sz=+p.szi,long=sz>0,entry=+p.entryPx,mark=Math.abs(sz)?Math.abs(+p.positionValue/sz):entry,upnl=+p.unrealizedPnl;
+    const stop=p.stop_px!=null?+p.stop_px:null,liq=p.liquidationPx?+p.liquidationPx:null,rstop=p.risk_stop_px!=null?+p.risk_stop_px:null;
+    const risk=stop!=null?Math.abs(entry-stop):rstop!=null?Math.abs(entry-rstop):null;
+    const rNow=risk?((long?1:-1)*(mark-entry))/risk:null;
+    const head=`<div class="ph"><div><span class="coin">${p.coin}</span> <span class="pill ${long?'long':'short'}">${long?'LONG':'SHORT'} ${p.leverage}×</span></div>`
+      +`<div class="num ${cls(upnl)}" style="font-weight:650">${sgn(upnl)}$${fmt(Math.abs(upnl),2)}${rNow!=null?` <span class="mut" style="font-weight:500">${sgn(rNow)}${fmt(Math.abs(rNow),2)}R</span>`:''}</div></div>`
+      +`<div class="meta">${fmt(Math.abs(sz),4)} ${p.coin} · $${fmt(+p.positionValue)} notional · entry ${fmt(entry,sig(entry))}</div>`
+      +(stop==null?`<div style="margin-top:8px"><span class="warnchip">! No stop on the book</span> <span class="mut" style="font-size:12px">1.5% risk stop would be ${fmt(rstop,sig(rstop))}</span></div>`
+        :p.stop_cov<.99?`<div style="margin-top:8px"><span class="warnchip">! Stop covers ${fmt(100*p.stop_cov)}% of the size</span></div>`:'');
+    return `<div class="pcard">${head}${ladder({long,entry,mark,stop,liq,rstop:stop==null?rstop:null},w-30)}</div>`;
+  }).join('');
+}
+// One horizontal price line: liquidation, stop, entry, mark. The segment entry→mark is the open P&L.
+function ladder({long,entry,mark,stop,liq,rstop},w){
+  const marks=[{v:entry,label:'entry',col:'--text-2',kind:'tick'},{v:mark,label:'mark',col:'--blue',kind:'dot'}];
+  if(stop!=null)marks.push({v:stop,label:'stop',col:'--crit',kind:'tick'});
+  if(rstop!=null)marks.push({v:rstop,label:'1.5% risk',col:'--muted',kind:'tick'});
+  if(liq!=null)marks.push({v:liq,label:'liq',col:'--crit',kind:'diamond'});
+  const vs=marks.map(m=>m.v);let lo=Math.min(...vs),hi=Math.max(...vs);const pad=(hi-lo)*.08||lo*.01;lo-=pad;hi+=pad;
+  const h=64,pl=8,pr=8,cy=30,X=v=>pl+(v-lo)/(hi-lo)*(w-pl-pr);
+  const gain=(long?mark-entry:entry-mark)>=0;
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block;margin-top:10px">`;
+  s+=`<line x1="${pl}" x2="${w-pr}" y1="${cy}" y2="${cy}" stroke="var(--surface-3)" stroke-width="6" stroke-linecap="round"/>`;
+  s+=`<line x1="${X(entry)}" x2="${X(mark)}" y1="${cy}" y2="${cy}" stroke="${css(gain?'--blue':'--red')}" stroke-width="6" stroke-linecap="round"/>`;
+  // Labels go into lanes (above, below, further above, further below): each takes the first lane
+  // where it clears the previous label by a few px, so close prices never print on top of each other.
+  const lanes=[cy-15,cy+25,cy-30,cy+40],laneEnd=lanes.map(()=>-1e9),placed=[];
+  marks.sort((a,b)=>a.v-b.v).forEach(m=>{
+    const x=X(m.v),txt=`${m.label} ${fmt(m.v,sig(m.v))}`,tw=txt.length*6.1;
+    let x0=Math.min(Math.max(x-tw/2,2),w-tw-2),k=lanes.findIndex((_,j)=>x0>laneEnd[j]+6);
+    if(k<0)k=laneEnd.indexOf(Math.min(...laneEnd));
+    laneEnd[k]=x0+tw;placed.push({m,x,x0,y:lanes[k]});
+  });
+  const top=Math.min(...placed.map(p=>p.y))-12,bot=Math.max(...placed.map(p=>p.y))+6;
+  s=s.replace(`viewBox="0 0 ${w} ${h}" width="100%" height="${h}"`,`viewBox="0 ${top} ${w} ${bot-top}" width="100%" height="${bot-top}"`);
+  for(const {m,x,x0,y} of placed){
+    const col=css(m.col);
+    if(m.kind==='dot')s+=`<circle cx="${x}" cy="${cy}" r="6" fill="${col}" stroke="var(--surface-2)" stroke-width="2"/>`;
+    else if(m.kind==='diamond')s+=`<path d="M${x} ${cy-7}L${x+7} ${cy}L${x} ${cy+7}L${x-7} ${cy}Z" fill="${col}" stroke="var(--surface-2)" stroke-width="2"/>`;
+    else s+=`<line x1="${x}" x2="${x}" y1="${cy-9}" y2="${cy+9}" stroke="${col}" stroke-width="2" stroke-linecap="round"/>`;
+    // a hairline leader from the label to its mark when the label sits in an outer lane
+    if(Math.abs(y-cy)>26)s+=`<line x1="${x}" x2="${x}" y1="${y<cy?y+3:cy+10}" y2="${y<cy?cy-10:y-11}" stroke="var(--axis)" stroke-width="1"/>`;
+    s+=`<text x="${x0}" y="${y}" font-size="11" fill="var(--text-2)"><tspan fill="var(--muted)">${m.label}</tspan> ${fmt(m.v,sig(m.v))}</text>`;
+  }
+  return s+'</svg>';
+}
 
+// ---- scanner, near-breakout ---------------------------------------------------------------------
+function renderScan(d){
+  const TF_LABEL={'1d':'Daily','4h':'4-hour','1h':'Hourly'},TF_ORDER={'1d':0,'4h':1,'1h':2};
+  const tfGroups=new Map();
+  for(const r of d.scan){const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
+  const tfKeys=[...tfGroups.keys()].sort((a,b)=>(TF_ORDER[a]??99)-(TF_ORDER[b]??99)||a.localeCompare(b));
+  const setupCell=r=>r.setup?`<span class="pill long">${r.setup}</span> stop ${fmt(r.stop,sig(r.stop))}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:''}`
+    :`<span class="mut">${esc(r.rejected||(r.hi20?`below 20-bar high ${fmt(r.hi20,sig(r.hi20))}`:'—'))}</span>`;
+  const trend=t=>t==='UP'?'<span class="pos">▲ up</span>':'<span class="neg">▼ down</span>';
+  const scanRow=r=>`<tr${r.watch?' style="opacity:.55"':''}><td>${r.urank?`<small class="mut">${r.urank}</small> `:''}<b>${r.coin}</b>${r.watch?' <small>watch</small>':''}</td><td>${fmt(r.px,sig(r.px))}</td><td>${trend(r.trend)}</td><td>${fmt(r.rsi4h)}</td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td style="text-align:left">${setupCell(r)}</td></tr>`;
+  // live setups first, then near-breakouts, then the rest by liquidity
+  const scanOrder=r=>(r.setup?0:r.near_atr!=null?1:2)*1e15-(r.vlm24h||0);
+  $('#scan').innerHTML=tfKeys.map(tf=>
+    `<div class="tfhead">${TF_LABEL[tf]||tf}</div><div class="tw"><table><tr><th>Coin</th><th>Price</th><th>Trend</th><th>RSI</th><th>24h vol</th><th>Funding</th><th style="text-align:left">Setup</th></tr>`+
+    [...tfGroups.get(tf)].sort((a,b)=>scanOrder(a)-scanOrder(b)).map(scanRow).join('')+'</table></div>').join('');
+  const U=d.universe||{};
+  $('#unilabel').textContent=U.mode==='auto'?`top ${U.coins} by volume`:U.coins?`${U.coins} coins`:'';
+  // near-breakout: how far each coin is from its trigger, as a bar (0.5 ATR = empty, at trigger = full)
+  const near=d.scan.filter(r=>r.near_atr!=null&&!r.watch).sort((a,b)=>a.near_atr-b.near_atr);
+  $('#nearcard').hidden=!near.length;$('#nearcount').textContent=near.length||'';
+  $('#near').innerHTML=near.map(r=>{const f=1-r.near_atr/.5;
+    return `<div style="display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;margin:9px 0" data-tip="<b>${r.coin} ${r.tf}</b><br>trigger ${fmt(r.hi20,sig(r.hi20))} · ${fmt(r.near_atr,2)} ATR away">`
+      +`<div><b>${r.coin}</b> <small class="mut">${r.tf}</small></div>`
+      +`<div class="meter" style="height:8px"><span style="width:${Math.max(3,f*100)}%;background:var(--blue)"></span></div>`
+      +`<div class="num" style="font-size:12.5px;color:var(--text-2)">${fmt(100*(r.hi20/r.px-1),1)}% to ${fmt(r.hi20,sig(r.hi20))}</div></div>`}).join('');
+}
+
+// ---- journal: cumulative R --------------------------------------------------------------------
+function renderJournal(j){
+  const s=j&&j.summary||{}, rec=j&&j.recent||[];
+  const R=r=>r==null?'—':`<span class="${cls(r)}">${sgn(r)}${fmt(Math.abs(r),2)}R</span>`;
+  $('#jcount').textContent=rec.length?`${s.open||0} open · ${s.closed||0} closed`:'';
+  const curve=s.curve||[];
+  let html='';
+  if(s.closed){
+    html+=`<div class="chips" style="margin:0 0 6px"><span class="chip">Win rate <b>${fmt(100*s.win_rate)}%</b></span><span class="chip">Avg <b>${R(s.avg_r)}</b></span>`
+      +`<span class="chip">PF <b>${s.pf==null?'—':fmt(s.pf,2)}</b></span><span class="chip">Failed early <b>${s.failed_early}</b><span class="mut">${s.failed_early_recovered} recovered</span></span></div>`;
+    html+=`<div class="chart" id="jchart"></div>`;
+    if(s.closed<30)html+=`<p class="desc" style="margin:6px 0 10px">${s.closed} closed so far — too few to judge; a 36%-win-rate system has long losing streaks by design. Wait for ~30.</p>`;
+  }
+  html+=rec.length?`<div class="tw"><table><tr><th>Signal</th><th>Status</th><th>R</th><th>Best</th><th>Early fail</th><th>Close loc</th></tr>`+
+    rec.map(e=>`<tr><td><b>${e.coin}</b> ${e.tf} <small class="mut">${e.signal_day}</small></td><td>${e.status}</td><td>${R(e.r)}</td>`
+      +`<td>${e.max_r?R(e.max_r):'—'}</td><td>${e.failed_early?'<span class="neg">yes</span>':'<span class="mut">no</span>'}</td>`
+      +`<td>${e.close_loc==null?'—':fmt(e.close_loc,2)}</td></tr>`).join('')+'</table></div>'
+    :'<div class="empty">No breakout signals recorded yet. Each new one is followed from here on.</div>';
+  $('#journal').innerHTML=html;
+  if(s.closed&&curve.length){let c=0;const pts=[[curve[0].t-1,0],...curve.map(x=>[x.t,c+=x.r])];
+    lineChart($('#jchart'),pts,{h:120,fmtY:v=>(v>=0?'+':'')+fmt(v,1)+'R',refs:[{y:0,label:'',color:'--axis'}],
+      fmtX:(t,short)=>new Date(t).toLocaleDateString([], {month:'short',day:'numeric'})})}
+}
+
+const usdS=usd;
 function renderMacro(d){
   const t=d.tradfi&&d.tradfi.rows||[];
   // "N stale hidden" matters: HL lists xyz:DXY, xyz:VIX and friends at zero volume with a frozen
   // mark, so a silently short table would otherwise look like missing data rather than filtering.
   $('#tfcount').textContent=t.length?`${t.length} live${d.tradfi.dropped?` · ${d.tradfi.dropped} stale hidden`:''}`:'';
-  $('#tradfi').innerHTML=t.length?`<table><tr><th>Instrument</th><th>Price</th><th>24h</th><th>24h volume</th><th>Open interest</th></tr>`+
-    t.map(r=>`<tr><td>${r.coin.replace(/^xyz:/,'')}</td><td>${fmt(r.px,sig(r.px))}</td>`
-      +`<td class="${cls(r.chg24h_pct)}">${r.chg24h_pct==null?'—':(r.chg24h_pct>=0?'+':'')+fmt(r.chg24h_pct,2)+'%'}</td>`
-      +`<td>${usd(r.vlm24h)}</td><td>${usd(r.oi_usd)}</td></tr>`).join('')+'</table>'
-    :'<span class="mut">no live TradFi markets</span>';
+  $('#tradfi').innerHTML=t.length?`<div class="tw"><table><tr><th>Instrument</th><th>Price</th><th>24h</th><th>24h volume</th><th>Open interest</th></tr>`+
+    t.map(r=>`<tr><td><b>${r.coin.replace(/^xyz:/,'')}</b></td><td>${fmt(r.px,sig(r.px))}</td>`
+      +`<td class="${cls(r.chg24h_pct)}">${r.chg24h_pct==null?'—':sgn(r.chg24h_pct)+fmt(Math.abs(r.chg24h_pct),2)+'%'}</td>`
+      +`<td>${usd(r.vlm24h)}</td><td>${usd(r.oi_usd)}</td></tr>`).join('')+'</table></div>'
+    :'<div class="empty">No live TradFi markets.</div>';
   const m=d.macro;  // absent whenever scanner.macro_context is off (the hosted default: FRED blocks Actions runners)
   $('#macrocard').hidden=!m;
   if(m)$('#macro').innerHTML=`<span class="${m.hy_stress?'neg':'pos'}">${m.hy_stress?'credit stress':'credit calm'}</span>`
@@ -334,37 +670,27 @@ function renderMacro(d){
 
 function renderFlow(d){
   // Cross-margin positions have no per-coin liquidationPx (HL assesses liquidation on the whole
-  // account), so a per-position table would be a column of dashes. The account-level figures are
-  // the ones that matter. HL's own ratio is shown rather than a derived "move to liquidation":
-  // HL does not publish the unified liquidation threshold, and a precise-looking number built on
-  // a guessed threshold would be worse than none.
+  // account). HL's own ratio is shown rather than a derived "move to liquidation": HL does not
+  // publish the unified liquidation threshold, and a precise-looking number built on a guessed
+  // threshold would be worse than none.
   const g=d.acct;
   if(g&&d.positions.length){
-    const rc=g.ratio_pct==null?'mut':g.ratio_pct>=50?'neg':g.ratio_pct>=25?'yel':'pos';
-    $('#liqrisk').innerHTML=`<div class="row" style="margin-bottom:8px">`
-      +`<div><div class="mut">${g.unified?'USDC collateral':'Perp equity'}</div><div class="kpi">${usd(g.base)}</div></div>`
-      +`<div><div class="mut">Maintenance margin</div><div class="kpi">${usd(g.maint_margin)}</div></div>`
-      +`<div><div class="mut">${g.unified?'Unified account ratio':'Margin ratio'}</div><div class="kpi ${rc}">${g.ratio_pct==null?'—':fmt(g.ratio_pct,2)+'%'}</div></div>`
-      +`<div><div class="mut">Perp notional</div><div class="kpi">${usd(g.notional)}</div></div></div>`
-      +`<p class="mut" style="font-size:12px;margin:0 0 10px">${g.unified
-          ?'Unified account: spot USDC collateralises the perps, so risk is sized against it. The ratio is maintenance margin as a share of collateral — the same figure Hyperliquid shows; lower is safer.'
-          :'Classic account: perps are margined by the perp wallet. Ratio is maintenance margin as a share of perp equity; lower is safer.'}</p>`
-      +`<table><tr><th>Coin</th><th>Mark</th><th>Margin</th><th>Liq price</th><th>Lev</th></tr>`
-      +d.positions.map(p=>{
-        const cur=Math.abs(+p.szi)?Math.abs(+p.positionValue/+p.szi):+p.entryPx, liq=+p.liquidationPx;
-        return `<tr><td>${p.coin} ${+p.szi>0?'L':'S'}</td><td>${fmt(cur,sig(cur))}</td>`
-          +`<td class="mut">${p.margin_type||'—'}</td>`
-          +`<td>${liq?fmt(liq,sig(liq)):'<span class="mut">account-level</span>'}</td><td>${p.leverage}x</td></tr>`;
-      }).join('')+'</table>';
-  } else $('#liqrisk').innerHTML='<span class="mut">flat — nothing to liquidate</span>';
+    $('#liqrisk').innerHTML=`<div class="chips" style="margin:10px 0">`
+      +`<span class="chip">${g.unified?'USDC collateral':'Perp equity'} <b>${usd(g.base)}</b></span>`
+      +`<span class="chip">Maintenance margin <b>${usd(g.maint_margin)}</b></span>`
+      +`<span class="chip">Perp notional <b>${usd(g.notional)}</b></span></div>`
+      +`<p class="desc" style="margin:0">${g.unified
+          ?'Unified account: spot USDC collateralises the perps, so risk is sized against it. The ratio (see the gauge above) is maintenance margin as a share of collateral — the same figure Hyperliquid shows; lower is safer.'
+          :'Classic account: perps are margined by the perp wallet. The ratio is maintenance margin as a share of perp equity; lower is safer.'}</p>`;
+  } else $('#liqrisk').innerHTML='<div class="empty">Flat — nothing to liquidate.</div>';
 
   const mk=d.market||[];
-  $('#market').innerHTML=mk.length?`<table><tr><th>Coin</th><th>24h</th><th>24h volume</th><th>Open interest</th><th>Vol/OI</th><th>Premium</th></tr>`+
-    mk.map(r=>`<tr><td>${r.coin}</td>`
-      +`<td class="${cls(r.chg24h_pct)}">${r.chg24h_pct==null?'—':(r.chg24h_pct>=0?'+':'')+fmt(r.chg24h_pct,2)+'%'}</td>`
+  $('#market').innerHTML=mk.length?`<div class="tw"><table><tr><th>Coin</th><th>24h</th><th>24h volume</th><th>Open interest</th><th>Vol/OI</th><th>Premium</th></tr>`+
+    mk.map(r=>`<tr><td><b>${r.coin}</b></td>`
+      +`<td class="${cls(r.chg24h_pct)}">${r.chg24h_pct==null?'—':sgn(r.chg24h_pct)+fmt(Math.abs(r.chg24h_pct),2)+'%'}</td>`
       +`<td>${usd(r.vlm24h)}</td><td>${usd(r.oi_usd)}</td><td>${r.vol_oi==null?'—':fmt(r.vol_oi,2)}</td>`
-      +`<td class="${cls(-r.premium_bps)}">${fmt(r.premium_bps,1)}bp</td></tr>`).join('')+'</table>'
-    :'<span class="mut">no market data</span>';
+      +`<td class="${cls(-r.premium_bps)}">${fmt(r.premium_bps,1)}bp</td></tr>`).join('')+'</table></div>'
+    :'<div class="empty">No market data.</div>';
   renderLiqMap(d.liqmap);
   renderLiq(d.liquidations);
   if(!(d.liquidations&&d.liquidations.rows&&d.liquidations.rows.length)){
@@ -373,22 +699,51 @@ function renderFlow(d){
   }
 }
 
+// ---- liquidation map: bars by price level, current price in the middle ----------------------------
+let lmCoin=(()=>{try{return localStorage.getItem('hlgLmCoin')}catch(e){return null}})();
 function renderLiqMap(m){
   const cs=m&&m.coins?Object.entries(m.coins):[];
   $('#lmcard').hidden=!cs.length;
   if(!cs.length)return;
   const h=(Date.now()-m.t)/3600000;
   $('#lmage').textContent=`${m.accounts} accounts · ${h<1?'<1':fmt(h)}h ago`;
-  const side=s=>s&&s.usd>0?`${usd(s.usd)}<br><small class="mut">largest ${usd(s.top_usd)} at ${s.top_pct>=0?'+':''}${fmt(s.top_pct,1)}%</small>`:'<span class="mut">—</span>';
-  // most liquidation fuel within 5% first: that is where a move would be accelerated soonest
-  cs.sort((a,b)=>((b[1].near?.above?.usd||0)+(b[1].near?.below?.usd||0))-((a[1].near?.above?.usd||0)+(a[1].near?.below?.usd||0)));
   const tot=e=>(e.near?.above?.usd||0)+(e.near?.below?.usd||0);
-  const some=cs.filter(([,e])=>tot(e)>0), none=cs.filter(([,e])=>!tot(e)).map(([c])=>c);
-  $('#lm').innerHTML=(some.length?`<div style="overflow-x:auto"><table><tr><th>Coin</th><th>Shorts liq ≤5% above</th><th>Longs liq ≤5% below</th><th>Covers</th></tr>`+
-    some.map(([c,e])=>`<tr><td>${c}<br><small class="mut">${fmt(e.px,sig(e.px))}</small></td><td class="pos">${side(e.near&&e.near.above)}</td>`
-      +`<td class="neg">${side(e.near&&e.near.below)}</td><td class="mut">${e.coverage==null?'—':fmt(100*e.coverage)+'% of OI'}</td></tr>`).join('')+'</table></div>'
-    :'<span class="mut">No liquidation clusters within 5% of price.</span>')
-    +(none.length?`<p class="mut" style="font-size:12px;margin:8px 0 0">Nothing within 5%: ${none.join(', ')}. The big active HL traders run most of their leverage on the majors.</p>`:'');
+  const any=e=>(e.clusters||[]).length>0;
+  const withData=cs.filter(([,e])=>any(e)).sort((a,b)=>tot(b[1])-tot(a[1])||b[1].clusters.length-a[1].clusters.length);
+  if(!withData.find(([c])=>c===lmCoin))lmCoin=withData.length?withData[0][0]:null;
+  $('#lmcoins').innerHTML=withData.map(([c])=>`<button data-c="${c}" aria-pressed="${c===lmCoin}">${c}</button>`).join('');
+  const e=lmCoin&&m.coins[lmCoin];
+  $('#lmchart').innerHTML=e?liqBars(lmCoin,e,Math.min(900,$('#lmcard').clientWidth-34||320)):'<div class="empty">No liquidation clusters within 15% of price for any scanned coin.</div>';
+  const side=s=>s&&s.usd>0?`${usd(s.usd)}<br><small class="mut">largest ${usd(s.top_usd)} at ${s.top_pct>=0?'+':''}${fmt(s.top_pct,1)}%</small>`:'<span class="mut">—</span>';
+  const some=cs.filter(([,e])=>tot(e)>0).sort((a,b)=>tot(b[1])-tot(a[1])), none=cs.filter(([,e])=>!tot(e)).map(([c])=>c);
+  $('#lm').innerHTML=(some.length?`<div class="tw"><table><tr><th>Coin</th><th>Shorts liq ≤5% above</th><th>Longs liq ≤5% below</th><th>Covers</th></tr>`+
+    some.map(([c,e])=>`<tr><td><b>${c}</b><br><small class="mut">${fmt(e.px,sig(e.px))}</small></td><td>${side(e.near&&e.near.above)}</td>`
+      +`<td>${side(e.near&&e.near.below)}</td><td class="mut">${e.coverage==null?'—':fmt(100*e.coverage)+'% of OI'}</td></tr>`).join('')+'</table></div>'
+    :'<div class="empty">No liquidation clusters within 5% of price.</div>')
+    +(none.length?`<p class="desc" style="margin:10px 0 0">Nothing within 5%: ${none.join(', ')}. The big active HL traders run most of their leverage on the majors.</p>`:'');
+}
+$('#lmcoins').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;lmCoin=b.dataset.c;try{localStorage.setItem('hlgLmCoin',lmCoin)}catch(x){}renderLiqMap(D&&D.liqmap)});
+// One row per 1% price band: short-liquidation bars above the price (blue), long below (red),
+// length = dollars. Largest few carry a direct value label; every bar has a hover tooltip.
+function liqBars(coin,e,w){
+  const cl=[...e.clusters].sort((a,b)=>b.pct-a.pct),max=Math.max(...cl.map(c=>c.usd)),rowH=20,gap=4,pl=62,pr=64;
+  const above=cl.filter(c=>c.pct>0),below=cl.filter(c=>c.pct<0);
+  const rows=[...above,{now:true},...below],h=rows.length*(rowH+gap)+26;
+  const bw=w-pl-pr,top=new Set([...cl].sort((a,b)=>b.usd-a.usd).slice(0,3));
+  const blue=css('--blue'),red=css('--red');
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${coin} liquidation levels">`,y=4;
+  for(const c of rows){
+    if(c.now){s+=`<line x1="0" x2="${w}" y1="${y+rowH/2}" y2="${y+rowH/2}" stroke="var(--text-2)" stroke-width="1"/><rect x="${pl-2}" y="${y+1}" rx="9" width="148" height="${rowH-2}" fill="var(--surface-3)"/><text x="${pl+8}" y="${y+rowH/2+4}" font-size="11.5" fill="var(--text)">now ${fmt(e.px,sig(e.px))}</text>`;y+=rowH+gap;continue}
+    const len=Math.max(3,c.usd/max*bw),col=c.pct>0?blue:red,r=Math.min(4,len/2);
+    const tipTxt=`<b>${c.pct>0?'Shorts':'Longs'} liquidate ${usd(c.usd)}</b><br>around ${fmt(c.px,sig(c.px))} (${c.pct>=0?'+':''}${fmt(c.pct,1)}%) · ${c.n} position${c.n>1?'s':''}`;
+    s+=`<g data-tip="${tipTxt}"><rect x="0" y="${y}" width="${w}" height="${rowH}" fill="transparent"/>`
+      +`<text x="${pl-8}" y="${y+rowH/2+4}" font-size="11" fill="var(--muted)" text-anchor="end">${c.pct>=0?'+':''}${fmt(c.pct,1)}%</text>`
+      +`<path d="M${pl} ${y+3}H${pl+len-r}Q${pl+len} ${y+3} ${pl+len} ${y+3+r}V${y+rowH-3-r}Q${pl+len} ${y+rowH-3} ${pl+len-r} ${y+rowH-3}H${pl}Z" fill="${col}"/>`
+      +(top.has(c)?`<text x="${pl+len+6}" y="${y+rowH/2+4}" font-size="11" fill="var(--text-2)">${usd(c.usd)}</text>`:'')+`</g>`;
+    y+=rowH+gap;
+  }
+  s+=`<text x="0" y="${h-4}" font-size="11" fill="var(--muted)"><tspan fill="${blue}">■</tspan> shorts liquidate (forced buying) · <tspan fill="${red}">■</tspan> longs liquidate (forced selling)</text></svg>`;
+  return s;
 }
 
 function renderLiq(l){
@@ -396,13 +751,13 @@ function renderLiq(l){
   // directly. Different windows, so they are labelled rather than silently interchanged.
   const rows=l&&l.rows||[];
   $('#liqsrc').textContent=rows.length?(l.src==='live'?'live from OKX':'from the last run'):'';
-  $('#liq').innerHTML=rows.length?`<table><tr><th>Coin</th><th>Longs hit</th><th>Shorts hit</th><th>Pressure</th><th>Events</th></tr>`+
+  $('#liq').innerHTML=rows.length?`<div class="tw"><table><tr><th>Coin</th><th>Longs hit</th><th>Shorts hit</th><th>Pressure</th><th>Events</th></tr>`+
     rows.map(r=>{
       const who=r.skew>0.2?'<span class="neg">longs flushed</span>':r.skew<-0.2?'<span class="pos">shorts squeezed</span>':'<span class="mut">balanced</span>';
-      return `<tr><td>${r.coin}</td><td>${usd(r.long_usd)}</td><td>${usd(r.short_usd)}</td><td>${who}</td><td>${r.events}</td></tr>`;
-    }).join('')+'</table>'
-      +'<p class="mut" style="margin:6px 0 0;font-size:12px">Recent OKX liquidation events — not a 24h total, and OKX\'s book rather than Hyperliquid\'s (HL publishes none).</p>'
-    :'<span class="mut">no recent liquidations</span>';
+      return `<tr><td><b>${r.coin}</b></td><td>${usd(r.long_usd)}</td><td>${usd(r.short_usd)}</td><td>${who}</td><td>${r.events}</td></tr>`;
+    }).join('')+'</table></div>'
+      +'<p class="desc" style="margin:10px 0 0">Recent OKX liquidation events — not a 24h total, and OKX\'s book rather than Hyperliquid\'s (HL publishes none).</p>'
+    :'<div class="empty">No recent liquidations.</div>';
 }
 
 // OKX sends Access-Control-Allow-Origin:*, so when the CI fetch came back empty (it may be blocked
@@ -416,9 +771,9 @@ async function liveLiq(coins){
       const j=await r.json();
       let long=0,short=0,n=0;
       for(const b of j.data||[])for(const x of b.details||[]){
-        const usd=parseFloat(x.sz)*parseFloat(x.bkPx);
-        if(!isFinite(usd))continue;
-        n++; x.posSide==='long'?long+=usd:short+=usd;
+        const v=parseFloat(x.sz)*parseFloat(x.bkPx);
+        if(!isFinite(v))continue;
+        n++; x.posSide==='long'?long+=v:short+=v;
       }
       if(n)out.push({coin:c,long_usd:long,short_usd:short,events:n,skew:(long-short)/(long+short||1)});
     }catch(e){/* blocked or offline: the section just stays empty */}
@@ -430,24 +785,26 @@ function showTab(k){
   for(const b of document.querySelectorAll('.tab'))b.setAttribute('aria-selected',String(b.dataset.tab===k));
   for(const p of ['tech','macro','flow'])$('#pane-'+p).hidden=p!==k;
   try{localStorage.setItem('hlgTab',k)}catch(e){}
+  if(D){if(k==='flow')renderLiqMap(D.liqmap);if(k==='tech'){renderPositions(D);renderJournal(D.journal)}}  // charts measure their width
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 showTab((()=>{try{return localStorage.getItem('hlgTab')||'tech'}catch(e){return 'tech'}})());
+let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(!D)return;renderEquity();renderPositions(D);renderJournal(D.journal);renderLiqMap(D.liqmap);renderAlerts(D)},150)});
 $('#notif').onclick=async()=>{if(!hasNotif){alert('Notifications are not available in this browser. On iPhone: open in Safari, Share -> Add to Home Screen, then launch from the icon.');return}
-  const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Notifications on':'Blocked';
+  const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Alerts on':'Blocked';
   if(p==='granted'&&window.VAPID_PUBLIC_KEY)$('#push').disabled=false};
 function b64ToU8(b){const p='='.repeat((4-b.length%4)%4);const s=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(s,c=>c.charCodeAt(0))}
 $('#push').onclick=async()=>{
   const reg=await navigator.serviceWorker.ready;
   // reuse an existing subscription: subscribing again can rotate the endpoint and orphan the saved secret
   const sub=await reg.pushManager.getSubscription()||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
-  $('#sub').textContent=JSON.stringify([sub.toJSON()]);$('#pushbox').hidden=false;$('#push').textContent='Push subscribed';
+  $('#sub').textContent=JSON.stringify([sub.toJSON()]);$('#pushbox').hidden=false;$('#push').textContent='Push on';
 };
 // <owner>.github.io/<repo>/ -> that repo's secrets page, so a fork links to its own settings
 (()=>{const o=location.hostname.split('.')[0],r=location.pathname.split('/')[1];$('#secretslink').href=`https://github.com/${o}/${r}/settings/secrets/actions`})();
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#sub').textContent);$('#copy').textContent='Copied'}catch(e){$('#copy').textContent='Select the text and copy it'}};
-if(!hasNotif)$('#notif').textContent='Notifications n/a';
-if(hasNotif&&Notification.permission==='granted'){$('#notif').textContent='Notifications on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
+if(!hasNotif)$('#notif').textContent='Alerts n/a';
+if(hasNotif&&Notification.permission==='granted'){$('#notif').textContent='Alerts on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
 if(!window.VAPID_PUBLIC_KEY)$('#push').title='Set repo variable VAPID_PUBLIC_KEY to enable Web Push';
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 load();setInterval(load,5*60*1000);

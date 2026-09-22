@@ -81,6 +81,45 @@ def publish(name, obj, vlt, in_ci):
     (OUT / name).write_text(json.dumps(body, indent=None if vlt else 1))
 
 
+def add_stops(positions, inf, cfg, acct):
+    """Stop levels for the dashboard's position ladder: the protective stop actually resting on the
+    book (guardrails.stop_coverage, the same reading the NO STOP rule uses) and the stop that would
+    cap the loss at risk_per_trade_pct. One extra request; a failure just leaves the ladder without
+    them."""
+    try:
+        oo = inf.post("/info", {"type": "frontendOpenOrders", "user": cfg["account"]})
+    except Exception as e:  # noqa: BLE001
+        log.error("open orders for the ladder failed: %s", e)
+        return
+    risk_usd = acct["base"] * cfg["rules"]["risk_per_trade_pct"] / 100
+    for p in positions:
+        sz, entry = float(p["szi"]), float(p["entryPx"])
+        cov, trig = guardrails.stop_coverage(oo, p["coin"], sz)
+        p["stop_px"], p["stop_cov"] = trig, (cov / abs(sz)) if sz else 0.0
+        p["risk_stop_px"] = entry - risk_usd / abs(sz) if sz > 0 else entry + risk_usd / abs(sz)
+
+
+def thin_history(hist, now_ms, full_days=3, hourly_days=90):
+    """Every run for the last few days, one point per hour back to 90 days, one per day before
+    that: months of equity curve in a file that stays small."""
+    def ms(h):
+        try:
+            return int(dt.datetime.fromisoformat(h["t"]).timestamp() * 1000)
+        except (KeyError, TypeError, ValueError):
+            return 0
+    out, seen = [], set()
+    for h in reversed(hist):
+        age = now_ms - ms(h)
+        if age <= full_days * 86_400_000:
+            out.append(h)
+            continue
+        bucket = ("h", ms(h) // 3_600_000) if age <= hourly_days * 86_400_000 else ("d", ms(h) // 86_400_000)
+        if bucket not in seen:  # newest point in each bucket wins
+            seen.add(bucket)
+            out.append(h)
+    return list(reversed(out))[-4000:]
+
+
 def liqmap_payload(m, px_now):
     """The dashboard's view of the stored map: clusters with distances against the current price."""
     if not isinstance(m, dict) or not m.get("coins"):
@@ -164,6 +203,7 @@ def main():
         | {"leverage": p["position"]["leverage"]["value"], "margin_type": p["position"]["leverage"].get("type")}
         for p in st["assetPositions"]
     ]
+    add_stops(positions, inf, cfg, acct)
     now_ms = int(time.time() * 1000)
     px_by_coin = {r["coin"]: r["px"] for r in rows if r.get("px") is not None}
     alerts, ended = lifecycle.build([("guardrail", gn), ("scanner", sn)], prev, now_ms, px_by_coin)
@@ -227,10 +267,12 @@ def main():
         "liqmap": liqmap_payload(state.get("liqmap"), {r["coin"]: r["px"] for r in market_rows if r.get("px")}),
     }
     hist = prev_hist if isinstance(prev_hist, list) else []
-    hist.append({"t": out["generated"], "equity": out["equity"], "n_alerts": len(alerts), "new": [a["key"] for a in new]})
+    hist.append({"t": out["generated"], "equity": out["equity"], "pv": acct.get("portfolio_value"),
+                 "n_alerts": len(alerts), "new": [a["key"] for a in new]})
+    hist = thin_history(hist, now_ms)
     # state.json last: State wrote it in plaintext as it went, and this overwrites that
     publish("alerts.json", out, vlt, in_ci)
-    publish("history.json", hist[-2000:], vlt, in_ci)
+    publish("history.json", hist, vlt, in_ci)
     publish("state.json", state.d, vlt, in_ci)
     log.info("%d alerts (%d new), %d positions", len(alerts), len(new), len(positions))
 
