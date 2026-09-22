@@ -51,7 +51,7 @@ read back at the start of the next run.
 | `hlg/vault.py` | AES-256-GCM encryption of everything published | – |
 | `hlg/report.py` | the one-shot CI entry point that ties the modules together | via the modules above |
 | `hlg/vapid.py` | one-off VAPID key generator for Web Push | – |
-| `hlg/backtest.py`, `hlg/regime.py`, `hlg/miner.py` | research tools, run locally; not part of the monitor | HL, FRED |
+| `hlg/backtest.py`, `hlg/regime.py`, `hlg/miner.py`, `hlg/stablecoin.py` | research tools, run locally; not part of the monitor | HL, FRED, DefiLlama |
 | `pwa/` | static dashboard: `index.html` (UI, decryption, tabs), `sw.js` (offline shell, push display), manifest, icons | Pages, OKX (fallback) |
 
 `guardrails` and `scanner` also run as long-lived local processes (`python -m hlg.guardrails`,
@@ -153,7 +153,7 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 178 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 188 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config

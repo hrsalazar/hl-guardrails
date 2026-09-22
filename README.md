@@ -329,6 +329,21 @@ trades that run to the 21-day time stop. The legacy pullback rule stays availabl
 for information only - no alerts. The same breakout rule tested PF ~1.2 on them, but with only ~9 months of
 history and market-hours gaps; revisit with `hlg.backtest --coins xyz:...` once there is a year+ of data.
 
+**Shorting — tested, not adopted.** The scanner is long-only. The mirror rule (`breakout_short`:
+close below the 20-day low in a downtrend) and a combined book (`breakout_both`) exist in
+`VARIANTS` and were run on the same coins and window:
+
+| variant | trades | PF | total | Sharpe | IS PF | OOS PF |
+|---|---:|---:|---:|---:|---:|---:|
+| breakout_long (live) | 126 | 1.67 | +78% | 0.98 | 1.18 | 2.71 |
+| breakout_short | 100 | **0.88** | −7% | −0.11 | 0.56 | 1.14 |
+| breakout_both | 211 | 1.04 | +13% | 0.28 | 0.76 | 1.44 |
+
+The short side loses money outright — in-sample it's a clear loser (PF 0.56), and even
+out-of-sample it barely breaks even. Adding it to the book doesn't diversify the long side, it
+drags it: Sharpe falls from 0.98 to 0.28. Consistent with crypto's structural long bias over this
+window; `python -m hlg.backtest --variant breakout_short breakout_both` reproduces it.
+
 ### Timeframe
 
 `scanner.timeframes` is a list of bars the breakout rule runs on independently - each timeframe gets its own
@@ -524,6 +539,58 @@ against outcomes until there is enough fresh data to say something honest.
 > backtest filters above use the same data. If you want it on the hosted dashboard, the FRED *API*
 > host (`api.stlouisfed.org`, needs a free key) is a different endpoint and may not be blocked —
 > untested.
+
+### Stablecoins: does supply growth predict returns? — tested, and the opposite of the claim
+
+The common trading claim is that stablecoin dominance and crypto prices move inversely: money
+parks in stablecoins when risk appetite falls, so shrinking stablecoin supply (or supply growing
+slower than its own trend) should mark a good time to be long. `python -m hlg.backtest
+--stbl-study` tests it, using total USD-pegged stablecoin market cap from
+[DefiLlama](https://stablecoins.llama.fi/stablecoincharts/all) (free, no key, daily back to
+2017 — chosen over reconstructing a CoinGecko-based dominance *percentage*, whose only free
+historical endpoint is capped at roughly a year anonymously and would need an approximated
+total-market-cap denominator; the raw stablecoin-supply series is exact, not approximate).
+
+**Part 1 — the hypothesis as stated: does 30-day stablecoin supply growth predict forward
+returns?** BTC and an equal-weight basket of `backtest.coins`, full history (2020-08 → now,
+~2,200 daily observations), stablecoin data lagged a day so nothing is knowable early:
+
+| series | forward window | n | correlation |
+|---|---:|---:|---:|
+| BTC | 7d | 2,218 | +0.042 |
+| BTC | 30d | 2,195 | **+0.113** |
+| BTC | 90d | 2,135 | **+0.136** |
+| basket (equal-weight, all coins) | 7d | 2,217 | +0.172 |
+| basket | 30d | 2,194 | **+0.265** |
+| basket | 90d | 2,134 | **+0.378** |
+
+Every correlation is **positive** — the opposite sign from the claim. By quintile of 30-day
+stablecoin growth on the signal day, BTC's forward 30-day return: Q1 (shrinking most) +2.8%, Q2
++0.1%, Q3 +6.0%, Q4 +4.1%, **Q5 (growing most) +8.8%**, roughly monotonic and backed by ~440
+observations per bucket, not a handful of outliers. Stablecoin supply growing fastest — not
+shrinking — led the best forward returns.
+
+**Part 2 — does gating the live entry rule on it help?** Same 2023-06 → now window and adoption
+bar as the entry study (PF ≥ base + 0.10, drawdown no worse than base − 2pp, PF holding up in both
+halves, and above the 95th percentile of randomly dropping the same number of trades):
+
+| variant | trades | PF | Sharpe | verdict |
+|---|---:|---:|---:|---|
+| breakout_long (base) | 126 | 1.67 | 0.98 | — |
+| only enter while supply growth is below its own trend | 63 | 1.58 | 0.69 | fail (41st pctile) |
+| only enter during a stablecoin outflow | 21 | 1.10 | 0.12 | fail (25th pctile) |
+
+Both fail, and `stbl_outflow` fails badly — worse than picking the same number of trades at
+random. Consistent with Part 1: the periods the hypothesis says should be *best* for going long
+(shrinking stablecoin supply) tested worst.
+
+Not adopted as a filter, and not shown on the dashboard as context, since the data says the
+opposite of the framing it would be shown under. One plausible reading, offered as interpretation
+rather than a finding: stablecoins are typically minted *to buy* crypto, not parked defensively —
+so net minting may be more a coincident symptom of bullish demand than a leading contrarian
+signal. That's post-hoc and untested; it isn't a reason to invert the filter and trade on it
+either, for the same overfitting reason the macro "credit stress" finding above was left as
+context only.
 
 ### Regime analysis (`python -m hlg.regime`)
 

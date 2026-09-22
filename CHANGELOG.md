@@ -2,6 +2,18 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-22 (evening)
+
+- **Shorting: tested, not adopted.** `breakout_short`/`breakout_both` (already in `VARIANTS`, never
+  reported) run and documented: the short side loses money outright (PF 0.88, in-sample PF 0.56)
+  and drags the combined book's Sharpe from 0.98 to 0.28. README "Backtest".
+- **Stablecoin supply growth vs forward returns: tested, and the opposite of the claim**
+  (`hlg/stablecoin.py`, `--stbl-study`). Total USD-pegged stablecoin market cap from DefiLlama
+  (free, no key, daily since 2017) correlates *positively* with forward BTC and basket returns at
+  every horizon tested (7/30/90d, ~2,200 observations); gating the live entry rule on it fails the
+  same adoption bar the entry study used, badly for the outflow variant (25th percentile of random
+  subsetting). Not adopted, not shown as dashboard context. README "Stablecoins".
+
 ## 2026-09-22 (later)
 
 - **Real-browser dashboard tests** (`tests/e2e`, Playwright/Chromium, 43 tests): decryption against

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from . import macro
+from . import macro, stablecoin
 from .common import API, load_config, log, setup_logging
 from .scanner import atr, ema, rsi
 
@@ -147,11 +147,11 @@ def features(df, k=1):
     return df
 
 
-def context(data, fund, macro_f=None):
+def context(data, fund, macro_f=None, stbl_f=None):
     """Adds the columns entry filters read that are *not* this coin's own chart: its funding, the
-    BTC tape, where it ranks against the rest of the universe, and the macro backdrop. Everything
-    is as-of the signal bar (macro already shifted a day in hlg.macro), so nothing here is knowable
-    later than the bar that triggers the trade."""
+    BTC tape, where it ranks against the rest of the universe, and the macro / stablecoin backdrop.
+    Everything is as-of the signal bar (both backdrops already shifted a day in their own module),
+    so nothing here is knowable later than the bar that triggers the trade."""
     btc = data.get("BTC")
     btc_bull = (btc.c > ema(btc.c, 200)) if btc is not None else None
     rs_rank = pd.DataFrame({c: d.ret20 for c, d in data.items()}).rank(axis=1, pct=True)
@@ -161,11 +161,14 @@ def context(data, fund, macro_f=None):
         d["rs_rank"] = rs_rank[c].reindex(d.index)
         for col in MACRO_COLS:
             d[col] = macro_f[col].reindex(d.index) if macro_f is not None and not macro_f.empty else np.nan
+        for col in STBL_COLS:
+            d[col] = stbl_f[col].reindex(d.index) if stbl_f is not None and not stbl_f.empty else np.nan
     return data
 
 
 # ----------------------------------------------------------------------------- filters
 MACRO_COLS = ["hy_stress", "vix_calm", "spx_bull", "dxy_headwind", "risk_on"]
+STBL_COLS = ["stbl_chg", "stbl_below_trend", "stbl_shrinking"]
 
 
 def _pass(v, test):
@@ -199,6 +202,9 @@ FILTERS = {
     "spx_bull": lambda k: _pass(getattr(k, "spx_bull", None), bool),
     "no_dxy_headwind": lambda k: _pass(getattr(k, "dxy_headwind", None), lambda v: not v),
     "risk_on": lambda k: _pass(getattr(k, "risk_on", None), bool),
+    # stablecoin backdrop (hlg.stablecoin): the "money rotating out of stables = risk-on" hypothesis
+    "no_stbl_growth": lambda k: _pass(getattr(k, "stbl_below_trend", None), bool),
+    "stbl_outflow": lambda k: _pass(getattr(k, "stbl_shrinking", None), bool),
 }
 
 BASE_BREAKOUT = VARIANTS["breakout_long"]
@@ -642,6 +648,105 @@ def entry_study(P, iv):
     print("\n".join(rep))
 
 
+def stbl_study(P, iv):
+    """python -m hlg.backtest --stbl-study
+
+    Tests the "stablecoin dominance and crypto move inversely" claim two ways.
+
+    Part 1: the hypothesis as stated -- does stablecoin market-cap growth predict forward BTC (and
+    a crypto-basket) returns, on the *full* available history (BTC's cached range, 2020-08 -> now:
+    much more data than the 2023-06 backtest window, since this is a pure data question, not tied
+    to the live trading rule). stbl_chg is already shifted a day (hlg.stablecoin), so this reads
+    only what was known at T; the forward return is deliberately forward-looking -- that is the
+    thing being tested. Correlation plus a quintile breakdown (mean forward return by quintile of
+    signal-day stbl_chg): a quintile table shows a non-monotonic or flat relationship a single
+    correlation number can hide.
+
+    Part 2: does it help the live entry rule? Same 2023-06 -> now window and adoption bar as
+    --entry-study (fixed before running): PF >= base + 0.10, max DD no worse than base - 2pp, PF
+    in each half >= the base's, and (since both candidates are subsets of the baseline's own
+    signals) above the 95th percentile of randomly dropping the same number of trades."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    stbl_f = stablecoin.features(stablecoin.frame(cache_dir=str(cache)))
+    if stbl_f.empty:
+        log.error("stbl_study: no stablecoin data, aborting")
+        return
+    rep = [f"# Stablecoins vs crypto returns ({stbl_f.index[0].date()} -> {stbl_f.index[-1].date()})\n"]
+
+    # ---- Part 1: correlation with forward returns, full BTC history, not capped to the backtest window
+    full_data = {}
+    for c in DEF["coins"]:
+        df = bars(c, cache, iv)
+        if df is not None and len(df) >= 200:
+            full_data[c] = df
+    ret1d = pd.DataFrame({c: d.c.pct_change() for c, d in full_data.items()})
+    basket = (1 + ret1d).cumprod()  # equal-weight, NaN before a coin's own listing (excluded, not zero-filled)
+    windows = [7, 30, 90]
+    corr_rows = []
+    quint_rows = []
+    for name, level in (("BTC", full_data["BTC"].c), ("basket (equal-weight, all coins)", basket.mean(axis=1, skipna=True))):
+        for n in windows:
+            fwd = level.shift(-n) / level - 1
+            x = stbl_f.stbl_chg.reindex(fwd.index)
+            both = pd.concat([x, fwd], axis=1, keys=["x", "fwd"]).dropna()
+            if len(both) < 30:
+                continue
+            corr = both.x.corr(both.fwd)
+            corr_rows.append(dict(series=name, fwd_days=n, n=len(both), corr=round(corr, 3)))
+            if n == 30:  # one quintile table per series, at the 30d horizon (matches stbl_chg's own window)
+                q = pd.qcut(both.x, 5, labels=["Q1 shrinking most", "Q2", "Q3", "Q4", "Q5 growing most"])
+                g = both.groupby(q, observed=True).fwd
+                quint_rows.append((name, pd.DataFrame({"n": g.size(), "mean_fwd_pct": (g.mean() * 100).round(2),
+                                                        "win_rate": (g.apply(lambda s: (s > 0).mean())).round(2)})))
+    rep.append("## Correlation with forward returns\n\nstbl_chg (signal-day, already 1d-lagged) vs forward return; "
+               "negative = the hypothesis's predicted direction (stablecoins growing -> lower forward returns).\n\n"
+               + pd.DataFrame(corr_rows).to_markdown(index=False) + "\n")
+    for name, q in quint_rows:
+        rep.append(f"### {name}, by 30d-stbl_chg quintile on the signal day\n\n" + q.to_markdown() + "\n")
+
+    # ---- Part 2: does it help the live entry rule (same window/bar as --entry-study)
+    start = pd.Timestamp(P["start"], tz="UTC")
+    data, fund = {}, {}
+    for c in DEF["coins"]:
+        df = bars(c, cache, iv)
+        if df is None or len(df) < 80:
+            continue
+        data[c] = features(df, 1)
+        fund[c] = funding(c, int(start.timestamp() * 1000), cache, iv)
+    context(data, fund, stbl_f=stbl_f)
+    days = sorted(set().union(*[set(d.index) for d in data.values()]))
+    days = [d for d in days if d >= start]
+    mid = days[len(days) // 2]
+    rows, trades = {}, {}
+    for name in ("base", "no_stbl_growth", "stbl_outflow"):
+        V = VARIANTS["breakout_long"] if name == "base" else {**VARIANTS["breakout_long"], "filters": [name]}
+        T, C, dd = run(V, data, fund, P)
+        s = stats(T, C, dd, P) | (halves(T, mid) if len(T) else {})
+        rows[name], trades[name] = s, T
+        log.info("%s: trades %s pf %.2f", name, s.get("trades"), s.get("pf", 0))
+    b = rows["base"]
+    base_net = trades["base"].net.values
+    verdict = {}
+    for name in ("no_stbl_growth", "stbl_outflow"):
+        s = rows[name]
+        if not s.get("trades"):
+            verdict[name] = "fail (no trades)"
+            continue
+        pct = bootstrap_pf(base_net, s["trades"], s["pf"]) if s["trades"] < len(base_net) else float("nan")
+        ok = (s["pf"] >= b["pf"] + 0.10 and s["max_dd_pct"] >= b["max_dd_pct"] - 2
+              and s.get("IS_pf", 0) >= b.get("IS_pf", 0) and s.get("OOS_pf", 0) >= b.get("OOS_pf", 0)
+              and not np.isnan(pct) and pct > 95)
+        verdict[name] = ("PASS" if ok else "fail") + f" (random-subset pctile {pct:.0f})"
+    S = pd.DataFrame(rows).T
+    cols = ["trades", "win_rate", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf"]
+    rep.append(f"\n## Entry-filter test ({P['start']} -> now, same bar as --entry-study)\n\n"
+               + S[[c for c in cols if c in S]].astype(float).round(2).to_markdown() + "\n")
+    rep.append("Verdicts (rule fixed before running): " + "; ".join(f"`{k}` {v}" for k, v in verdict.items()) + "\n")
+    (out / "stbl_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -652,6 +757,8 @@ def main():
     ap.add_argument("--native", action="store_true", help="use 20/50/14-bar windows on the chosen interval instead of day-equivalent windows")
     ap.add_argument("--filters", nargs="*", help=f"ad-hoc entry filters on the breakout rule: {', '.join(FILTERS)}")
     ap.add_argument("--no-macro", action="store_true", help="skip the FRED fetch (macro filters then never reject)")
+    ap.add_argument("--no-stbl", action="store_true", help="skip the DefiLlama fetch (stablecoin filters then never reject)")
+    ap.add_argument("--stbl-study", action="store_true", help="stablecoin-mcap vs forward returns correlation, plus the two backdrop filters")
     ap.add_argument("--universe-study", action="store_true", help="breakout on fixed list vs point-in-time liquidity universes")
     ap.add_argument("--entry-study", action="store_true", help="failed-breakout study: fast exit, confirmation, fib retrace entries, bar-quality filters")
     a = ap.parse_args()
@@ -668,6 +775,8 @@ def main():
         return universe_study(P, iv)
     if a.entry_study:
         return entry_study(P, iv)
+    if a.stbl_study:
+        return stbl_study(P, iv)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
@@ -691,7 +800,11 @@ def main():
     if not a.no_macro:
         macro_f = macro.features(macro.frame(start=P["start"], cache_dir=str(cache)))
         log.info("macro: %d rows%s", len(macro_f), "" if len(macro_f) else " (filters will not reject)")
-    context(data, fund, macro_f)
+    stbl_f = None
+    if not a.no_stbl:
+        stbl_f = stablecoin.features(stablecoin.frame(cache_dir=str(cache)))
+        log.info("stablecoin: %d rows%s", len(stbl_f), "" if len(stbl_f) else " (filters will not reject)")
+    context(data, fund, macro_f, stbl_f)
     if a.filters:
         VARIANTS[f"breakout+{'+'.join(a.filters)}"] = {**BASE_BREAKOUT, "filters": list(a.filters)}
         a.variant = [f"breakout+{'+'.join(a.filters)}"]
