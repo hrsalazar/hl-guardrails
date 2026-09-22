@@ -77,8 +77,14 @@ def features(df, chg_days=30):
     f = pd.DataFrame(index=df.index)
     f["stbl"] = df.stbl
     f["stbl_chg"] = df.stbl.pct_change(chg_days) * 100
-    f["stbl_below_trend"] = f.stbl_chg < f.stbl_chg.ewm(span=50, adjust=False).mean()  # growing slower than its own recent pace
-    f["stbl_shrinking"] = f.stbl_chg < 0  # net stablecoin outflow over the window -- a sign test, not a fitted level
+    # nullable "boolean" dtype, not plain bool: a NaN comparison (before the series has chg_days of
+    # history) evaluates to False, which a filter would then read as a confident, real "not
+    # shrinking" rather than "unknown" -- see hlg.macro.features, which has the same fix and the
+    # full reasoning. No trade in the current backtest window is actually affected (DefiLlama's
+    # series starts 2017, years before any coin's own cached history), but the guarantee should
+    # hold regardless of what data happens to line up today.
+    f["stbl_below_trend"] = (f.stbl_chg < f.stbl_chg.ewm(span=50, adjust=False).mean()).astype("boolean").mask(f.stbl_chg.isna())
+    f["stbl_shrinking"] = (f.stbl_chg < 0).astype("boolean").mask(f.stbl_chg.isna())
     return f
 
 

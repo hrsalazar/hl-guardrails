@@ -174,8 +174,10 @@ STBL_COLS = ["stbl_chg", "stbl_below_trend", "stbl_shrinking"]
 def _pass(v, test):
     """A filter with no reading has no opinion. Rejecting on NaN would quietly drop the early
     sample (before rolling windows fill) and make filtered variants incomparable to the baseline,
-    which would look like an edge and be an artefact."""
-    if v is None or (isinstance(v, float) and np.isnan(v)):
+    which would look like an edge and be an artefact. `pd.isna` (not a bare float-NaN check) so
+    this also catches pandas' nullable-boolean `pd.NA` -- see hlg.macro.features -- not only a
+    missing float reading."""
+    if v is None or pd.isna(v):
         return True
     return test(v)
 

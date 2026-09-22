@@ -82,6 +82,42 @@ def test_features_on_empty_frame_is_empty():
     assert macro.features(pd.DataFrame()).empty
 
 
+def test_a_missing_raw_reading_produces_a_genuine_unknown_not_a_silent_false():
+    """A NaN > x comparison evaluates to False in plain pandas -- which a filter or a descriptive
+    breakdown would then read as a confident "not stressed" for a period the series says nothing
+    about. Caught in practice: this FRED mirror's HY series (BAMLH0A0HYM2) only starts 2023-09-22,
+    inside the 2023-06-01 backtest window; 7 of 126 baseline trades' signal days predate it."""
+    n = 250
+    idx = pd.date_range("2025-01-01", periods=n, freq="D", tz="UTC")
+    hy = pd.Series([np.nan] * 10 + list(np.linspace(3.0, 6.0, n - 10)), index=idx)
+    spx = pd.Series(np.linspace(100, 200, n), index=idx)  # fully populated: isolates the hy gap
+    df = pd.DataFrame({"hy": hy, "vix": hy, "spx": spx, "dxy": hy, "y10": hy})
+    f = macro.features(df)
+    assert f.hy_stress.iloc[:10].isna().all()      # genuinely unknown, not False
+    assert bool(f.hy_stress.iloc[-1]) is True       # real data still reads as before
+    assert f.risk_on.iloc[:10].isna().all()         # an unknown leg makes the AND unknown too...
+    # ...unless the other leg is a definite False, in which case Kleene logic still resolves it
+    both_false = pd.array([pd.NA, False], dtype="boolean") & pd.array([True, False], dtype="boolean")
+    assert list(both_false) == [pd.NA, False]
+
+
+def test_an_unwarmed_rolling_window_is_also_a_genuine_unknown():
+    """spx_bull's 200d rolling mean is NaN for its first 199 rows even when spx itself has a
+    reading the whole time -- the same silent-False trap, from a different cause."""
+    n = 250
+    idx = pd.date_range("2025-01-01", periods=n, freq="D", tz="UTC")
+    spx = pd.Series(np.linspace(100, 200, n), index=idx)
+    df = pd.DataFrame({c: spx for c in ("hy", "vix", "spx", "dxy", "y10")})
+    f = macro.features(df)
+    assert f.spx_bull.iloc[:199].isna().all()
+    assert bool(f.spx_bull.iloc[-1]) is True
+
+
+def test_pass_treats_a_missing_nullable_boolean_as_no_opinion():
+    assert backtest._pass(pd.NA, lambda v: not v) is True
+    assert backtest._pass(pd.array([True])[0], lambda v: not v) is False  # a real reading still rejects normally
+
+
 # ----------------------------------------------------------------- entry filters
 class Row:
     def __init__(self, **kw):

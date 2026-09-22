@@ -490,46 +490,77 @@ earns on ~20% of its trades, so which ones you keep swamps everything):
 | `squeeze` | ATR in the bottom half of its 100-bar range | 71% | **1.77** | 64th pctile — noise |
 | `rs_top_half` | top half of 20d return vs the universe | 100% | 1.69 | no-op: a 20-bar-high breakout is *already* top half |
 | `vol_confirm` | breakout bar volume ≥ 1.5× its 20-bar average | 85% | 1.62 | noise |
-| `vix_calm` | VIX below its 50d EMA | 82% | 1.61 | noise |
+| `vix_calm` | VIX below its 50d EMA | 82% | 1.58 | noise |
 | `cheap_funding` | funding ≤ 30% APR | 85% | 1.59 | noise |
 | `btc_bull` | BTC above its EMA200 | 89% | 1.38 | **worse** (3rd pctile) |
-| `no_credit_stress` | HY spread below its 50d EMA | 89% | 1.32 | **worse** (1st pctile) |
-| `spx_bull` | S&P above its 200d | 97% | 1.26 | **worse** (0th pctile) |
-| `risk_on` | no credit stress *and* SPX bullish | 90% | 1.24 | **worse** (0th pctile) |
-| `no_dxy_headwind` | dollar below its 50d EMA | 60% | 1.22 | noise |
+| `no_credit_stress` | HY spread below its 50d EMA | 90% | 1.32 | **worse** (1st pctile) |
+| `spx_bull` | S&P above its 200d | 99% | 1.48 | **worse** (0th pctile) |
+| `risk_on` | no credit stress *and* SPX bullish | 90% | 1.23 | **worse** (0th pctile) |
+| `no_dxy_headwind` | dollar below its 50d EMA | 61% | 1.19 | **worse** (just under 5th pctile) |
 | `not_extended` | ≤ 2 ATR above EMA20 at the signal | 67% | 1.14 | **worse** (2nd pctile) |
 
-**Nothing earned a place in the entry rule.** The best-looking one (`squeeze`, PF 1.77 and a much
-softer -12% max drawdown vs -18%) sits at the 65th percentile of random subsets — indistinguishable
-from luck, and it is *worse* out-of-sample than the baseline (OOS PF 2.34 vs 2.71). `rs_top_half`
-turned out to be a no-op — it kept all 126 trades, because a coin closing above its 20-bar high is
-already in the top half of 20-day returns by construction. Thresholds were
-fixed a priori (median splits, or a series against its own moving average) precisely so there was
-nothing to tune; with 11 filters tested you would expect ~0.5 of them above the 95th percentile by
-chance alone, and none got there.
+> **A correction, found while answering "are we using all the data points FRED has?"** The FRED
+> series behind `hy_stress`/`vix_calm`/`spx_bull`/`dxy_headwind`/`risk_on` used to collapse a
+> genuinely missing reading into a confident `False` (`nan > x` evaluates to `False` in plain
+> pandas), rather than the "no opinion, let it through" the design intended — two real gaps hit
+> this window: this FRED mirror's HY series only starts 2023-09-22, inside the backtest's
+> 2023-06-01 start, and `spx_bull`'s 200-day rolling mean has no warmup buffer at all when fetched
+> from that same start, so it reads as a confident "bearish" for its first ~200 days regardless of
+> where SPX actually was. `spx_bull` moved the most (97% kept/PF 1.26 → 99%/1.48); `no_dxy_headwind`
+> flipped from "noise" to "worse" (borderline, just under the 5th percentile); everything else is
+> unchanged or within ordinary data-revision drift. `hlg/macro.py` now uses pandas' nullable
+> `"boolean"` dtype so a missing reading, from either cause, stays genuinely unknown. See
+> `docs/architecture.md` / the commit history for the fix and its regression tests.
+
+**Nothing earned a place in the entry rule, before or after the fix.** The best-looking one
+(`squeeze`, PF 1.77 and a much softer -12% max drawdown vs -18%) sits at the 65th percentile of
+random subsets — indistinguishable from luck, and it is *worse* out-of-sample than the baseline
+(OOS PF 2.34 vs 2.71). `rs_top_half` turned out to be a no-op — it kept all 126 trades, because a
+coin closing above its 20-bar high is already in the top half of 20-day returns by construction.
+Thresholds were fixed a priori (median splits, or a series against its own moving average)
+precisely so there was nothing to tune; with 11 filters tested you would expect ~0.5 of them above
+the 95th percentile by chance alone, and none got there.
 
 The interesting result is the failures. Gating on a **risk-on** backdrop is reliably *worse than
-random*, and splitting the baseline's own trades by backdrop shows why:
+random*, and splitting the baseline's own trades by backdrop shows why (corrected numbers; the
+"unknown" rows below are the two data gaps above, now kept separate instead of silently folded
+into "calm"/"below 200d"):
 
-| signal-day backdrop | trades | PF | win rate | share of total profit |
+| signal-day backdrop | trades | PF | win rate | net |
 |---|---:|---:|---:|---:|
-| credit stress (HY widening) | 27 | **3.74** | 52% | **63%** |
-| credit calm | 99 | 1.29 | 31% | 37% |
-| S&P below its 200d | 11 | 8.60 | 64% | 46% |
-| S&P above its 200d | 115 | 1.38 | 33% | 54% |
+| credit stress (HY widening) | 22 | **3.39** | 50% | +$344 |
+| credit calm | 97 | 1.51 | 34% | +$395 |
+| credit **unknown** (no HY reading existed yet) | 7 | 0.20 | 14% | −$71 |
+| S&P below its 200d | 4 | 6.24 | 75% | +$113 |
+| S&P above its 200d | 98 | 1.65 | 37% | +$497 |
+| S&P **unknown** (200d window not warmed up) | 24 | 1.27 | 25% | +$58 |
 
-Breakouts that fire while credit is deteriorating were a fifth of the trades and most of the money
-(permutation test p ≈ 0.03), spread over 10 quarters and 13 coins rather than one lucky cluster.
-They also survive losing their three biggest winners (PF 1.97), while the calm-credit trades go
-*negative* without theirs (PF 0.90). The plausible reading: a coin strong enough to break out into a
-hostile tape is showing real idiosyncratic strength, while breakouts in an everything-rallies tape
-are just beta and fail when the tide goes out.
+Two things worth noting precisely: the 7 credit-unknown trades were the worst-performing group in
+the entire sample (PF 0.20) — under the old bug they were silently counted as "calm", which is
+exactly why the old "credit calm" PF (1.29) read lower than the corrected one (1.51). And "S&P
+below its 200d" shrinks from a previously-reported 11 trades to a genuine 4 — too few to read
+anything into; most of what looked like an 11-trade bearish-SPX sample was actually 20-odd
+warmup-affected trades with no real signal either way. The core, weaker claim survives the
+correction — credit-stress signal days still show a meaningfully higher PF (3.39 vs 1.51) — but the
+stronger, more precise version previously published here (a specific permutation p-value, "10
+quarters and 13 coins") was computed on the pre-fix, contaminated buckets and has not been
+re-verified; it is not repeated here rather than restated on data now known to be wrong.
+Both buckets survive losing their three biggest winners — stress stays profitable (PF 1.50) and,
+corrected, so does calm (PF 1.08), which is a real weakening of what was claimed here before ("calm
+goes negative without them, PF 0.90" doesn't reproduce; calm's edge is thinner than stress's, not
+absent). The credit-stress trades span 9 of the window's 13 quarters and 12 different coins, so it
+isn't one lucky cluster — but with the bucket now smaller (22, not 27) and the contrast with calm
+less dramatic, this reads as a real but modest tilt, not the stronger asymmetry previously described.
+The plausible reading, unchanged: a coin strong enough to break out into a hostile tape may be
+showing real idiosyncratic strength, while breakouts in an everything-rallies tape are more likely
+just beta.
 
-That is **not** wired in as a rule. It is a post-hoc hypothesis on 27 trades, found on the same
-sample that generated it, and the p-values ignore that 11 filters were tried first — invert the gate
-and you are fitting noise with a good story attached. So the backdrop ships as **context only**: a
-line on breakout alerts and a strip on the dashboard, changing no decision, there to be logged
-against outcomes until there is enough fresh data to say something honest.
+That is **not** wired in as a rule. It is a post-hoc hypothesis on a couple dozen trades, found on
+the same sample that generated it, and the earlier p-value estimate here ignored that 11 filters
+were tried first — invert the gate and you are fitting noise with a good story attached. So the
+backdrop ships as **context only**: a line on breakout alerts and a strip on the dashboard, changing
+no decision, there to be logged against outcomes until there is enough fresh data to say something
+honest.
 
 > **`scanner.macro_context` ships off**, because `fred.stlouisfed.org` read-times-out from GitHub
 > Actions runners — 10 of 10 requests hit the timeout, adding ~300 s to a job that runs every 15

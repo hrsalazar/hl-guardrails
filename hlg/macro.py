@@ -75,15 +75,31 @@ def frame(start="2020-01-01", cache_dir="miner_cache", end=None):
 def features(df):
     """Backdrop columns the filters read. All comparisons are vs the series' own trend, so they
     stay meaningful across levels that drift over years (a VIX of 17 means something different
-    in 2021 than in 2026); nothing here is tuned to a threshold picked off this sample."""
+    in 2021 than in 2026); nothing here is tuned to a threshold picked off this sample.
+
+    Booleans use pandas' nullable "boolean" dtype, not plain bool: a raw series that is NaN (no
+    reading yet -- e.g. BAMLH0A0HYM2 on this FRED mirror only starts 2023-09-22, well inside the
+    2023-06-01 backtest window) must produce a genuinely missing flag, not a silent False. A plain
+    `nan > x` comparison evaluates to False, which `no_credit_stress`/`risk_on` would then read as
+    a confident "not stressed" for a period the series says nothing about -- and unlike the raw
+    NaN case _pass() is built to catch, that False looks like real data, not a missing one. The
+    nullable dtype also gives `~`/`&` correct three-valued (Kleene) logic in `risk_on` below, so
+    an unknown leg doesn't silently resolve to a definite answer."""
     if df.empty:
         return df
+    def trend_flag(raw, trend, op):
+        """op(raw, trend) as a nullable boolean, NA wherever EITHER side has no reading yet --
+        covers both a genuinely missing raw value and a rolling/EWM window that hasn't warmed up
+        (`.rolling(200).mean()` is NaN for its first 199 rows even when `raw` itself is present
+        the whole time; a bare `x > NaN` would silently read as a confident False either way)."""
+        return op(raw, trend).astype("boolean").mask(raw.isna() | trend.isna())
+
     f = pd.DataFrame(index=df.index)
     f["hy"], f["vix"], f["spx"], f["dxy"], f["y10"] = df.hy, df.vix, df.spx, df.dxy, df.y10
-    f["hy_stress"] = df.hy > df.hy.ewm(span=50, adjust=False).mean()      # credit spreads widening vs own trend
-    f["vix_calm"] = df.vix < df.vix.ewm(span=50, adjust=False).mean()
-    f["spx_bull"] = df.spx > df.spx.rolling(200).mean()
-    f["dxy_headwind"] = df.dxy > df.dxy.ewm(span=50, adjust=False).mean()  # dollar strengthening
+    f["hy_stress"] = trend_flag(df.hy, df.hy.ewm(span=50, adjust=False).mean(), lambda a, b: a > b)
+    f["vix_calm"] = trend_flag(df.vix, df.vix.ewm(span=50, adjust=False).mean(), lambda a, b: a < b)
+    f["spx_bull"] = trend_flag(df.spx, df.spx.rolling(200).mean(), lambda a, b: a > b)
+    f["dxy_headwind"] = trend_flag(df.dxy, df.dxy.ewm(span=50, adjust=False).mean(), lambda a, b: a > b)
     f["risk_on"] = (~f.hy_stress) & f.spx_bull                             # both legs of the backdrop agree
     return f
 

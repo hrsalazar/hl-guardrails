@@ -2,6 +2,27 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-22 (late night)
+
+- **Correction: missing macro readings were silently coerced to False, not left unknown.**
+  `nan > x` evaluates to `False` in plain pandas, so `hy_stress`/`vix_calm`/`spx_bull`/
+  `dxy_headwind`/`risk_on` read as a confident, wrong answer during any gap in the underlying FRED
+  series - two real ones hit the 2023-06-01 backtest window: this FRED mirror's HY series only
+  starts 2023-09-22, and `spx_bull`'s 200-day rolling mean has no warmup buffer when fetched from
+  that same start. `hlg/macro.py` now uses pandas' nullable `"boolean"` dtype so a missing reading
+  stays genuinely unknown; `hlg/stablecoin.py` gets the same fix for consistency (no trade in the
+  current window was actually affected there). `_pass()` updated to recognise it. Regression tests
+  that fail against the old code.
+- README "Macro" corrected accordingly: `spx_bull`'s filter result moved the most (97%/PF 1.26 →
+  99%/PF 1.48); `no_dxy_headwind` flipped from "noise" to "worse" (borderline). The "signal-day
+  backdrop" breakdown is rebuilt with the two data gaps kept separate instead of silently folded
+  into "calm"/"below 200d" - the 7 credit-unknown trades were the worst-performing group in the
+  whole sample (PF 0.20), and "S&P below its 200d" shrinks from a reported 11 trades to a genuine
+  4. The core direction (credit-stress signal days outperform) survives; a previously-published
+  permutation p-value and "calm goes negative without its top 3 winners" claim do not reproduce
+  and are removed rather than restated on data now known to be wrong. Nothing changes about the
+  finding's status: still not wired in as a rule.
+
 ## 2026-09-22 (night)
 
 - **Dollar index (DXY) vs crypto returns: tested alongside stablecoins** (`--dxy-study`). Unlike
