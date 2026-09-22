@@ -1,0 +1,26 @@
+name: e2e
+
+# Real-browser dashboard tests (tests/e2e, Playwright). Kept off the push/PR trigger that test.yml
+# uses for the fast unit suite: this needs a downloaded Chromium and takes ~20s rather than ~2s.
+# Runs on demand, and automatically on a PR that actually touches the dashboard.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pwa/**"
+      - "hlg/vault.py"
+      - "tests/e2e/**"
+      - "requirements-e2e.txt"
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-e2e.txt
+      - run: playwright install --with-deps chromium
+      - run: pytest tests/e2e -q

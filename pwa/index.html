@@ -518,7 +518,7 @@ $('#alerts').addEventListener('click',e=>{
 function signalChartFor(a){
   const m=a.meta||{},row=(D&&D.scan||[]).find(r=>r.coin===m.coin&&r.tf===m.tf&&r.bars);
   if(!row||!row.bars||row.bars.length<5)return '';
-  return candleSvg(row.bars,{level:row.level,stop:row.stop,close:row.signal_close,w:Math.min(640,($('#alerts').clientWidth||320)-30),tf:row.tf,liq:row.liq});
+  return candleSvg(row.bars,{level:row.level,stop:row.stop,close:row.signal_close,w:Math.max(260,Math.min(640,($('#alerts').clientWidth||320)-30)),tf:row.tf,liq:row.liq});
 }
 function candleSvg(bars,{level,stop,close,w=320,h=170,tf}){
   const pl=4,pr=54,pt=10,pb=18,n=bars.length;
@@ -549,7 +549,7 @@ function renderPositions(d){
   const P=d.positions||[];
   $('#poscount').textContent=`${P.length} / ${d.rules.max_positions}`;
   if(!P.length){$('#positions').innerHTML='<div class="empty">Flat — no open positions.</div>';return}
-  const w=Math.min(900,($('#positions').clientWidth||320));
+  const w=Math.max(260,Math.min(900,($('#positions').clientWidth||320)));  // also runs while its tab is hidden
   $('#positions').innerHTML=P.map(p=>{
     const sz=+p.szi,long=sz>0,entry=+p.entryPx,mark=Math.abs(sz)?Math.abs(+p.positionValue/sz):entry,upnl=+p.unrealizedPnl;
     const stop=p.stop_px!=null?+p.stop_px:null,liq=p.liquidationPx?+p.liquidationPx:null,rstop=p.risk_stop_px!=null?+p.risk_stop_px:null;
@@ -713,7 +713,11 @@ function renderLiqMap(m){
   if(!withData.find(([c])=>c===lmCoin))lmCoin=withData.length?withData[0][0]:null;
   $('#lmcoins').innerHTML=withData.map(([c])=>`<button data-c="${c}" aria-pressed="${c===lmCoin}">${c}</button>`).join('');
   const e=lmCoin&&m.coins[lmCoin];
-  $('#lmchart').innerHTML=e?liqBars(lmCoin,e,Math.min(900,$('#lmcard').clientWidth-34||320)):'<div class="empty">No liquidation clusters within 15% of price for any scanned coin.</div>';
+  // #lmcard sits inside the Flow tab pane, which is `hidden` unless that tab is active -- render()
+  // draws this chart unconditionally regardless of the active tab, and a hidden ancestor makes
+  // clientWidth read 0. That must fall back to a real width, not "0 - 34": a bare `X-34||320`
+  // computes the (truthy, negative) subtraction *before* the fallback ever gets a chance to apply.
+  $('#lmchart').innerHTML=e?liqBars(lmCoin,e,Math.max(260,Math.min(900,($('#lmcard').clientWidth||320)-34))):'<div class="empty">No liquidation clusters within 15% of price for any scanned coin.</div>';
   const side=s=>s&&s.usd>0?`${usd(s.usd)}<br><small class="mut">largest ${usd(s.top_usd)} at ${s.top_pct>=0?'+':''}${fmt(s.top_pct,1)}%</small>`:'<span class="mut">—</span>';
   const some=cs.filter(([,e])=>tot(e)>0).sort((a,b)=>tot(b[1])-tot(a[1])), none=cs.filter(([,e])=>!tot(e)).map(([c])=>c);
   $('#lm').innerHTML=(some.length?`<div class="tw"><table><tr><th>Coin</th><th>Shorts liq ≤5% above</th><th>Longs liq ≤5% below</th><th>Covers</th></tr>`+

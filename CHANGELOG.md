@@ -2,6 +2,16 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-22 (later)
+
+- **Real-browser dashboard tests** (`tests/e2e`, Playwright/Chromium, 43 tests): decryption against
+  a real `hlg.vault`-sealed envelope, the alert list's interactions and persistence, every SVG
+  chart, three viewport widths, both colour schemes, no console errors across a full session.
+  Caught a real bug: `renderLiqMap`'s chart width computed `clientWidth - 34` before the zero-width
+  fallback could apply, so any page load with the Flow tab inactive built the liquidation chart
+  with a negative SVG viewBox. Fixed with a floor at the three affected call sites. Excluded from
+  the default `pytest -q`; runs via `.github/workflows/e2e.yml` on demand or when `pwa/` changes.
+
 ## 2026-09-22
 
 - **Dashboard redesign with charts:** equity curve with loss-lock lines, risk gauges (loss limits,

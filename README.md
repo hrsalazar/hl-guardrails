@@ -544,3 +544,35 @@ network. They cover the guardrail rules in `hlg/guardrails.py` (every rule, incl
 daily/weekly loss-limit lock), the breakout/pullback setup detection in `hlg/scanner.py`, and
 `hlg/common.py`'s `State` and `Notifier`. CI (`.github/workflows/test.yml`) runs the same suite
 on every push and pull request.
+
+### Dashboard: a real-browser test suite (`tests/e2e`)
+
+The unit suite never touches `pwa/index.html` — it checks the *data* `hlg/report.py` produces, not
+what a person sees or clicks. `tests/e2e` does, in real Chromium via [Playwright](https://playwright.dev/python/):
+
+```bash
+pip install -r requirements-e2e.txt
+playwright install chromium
+pytest tests/e2e -q
+```
+
+43 tests against four synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
+good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
+AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against
+real ciphertext, not a JS-side stand-in: wrong passphrase, correct passphrase, the key surviving a
+reload via IndexedDB, *Lock*, and a served envelope with a downgraded KDF iteration count being
+refused). It also clicks through the alert list's clear/collapse/restore and persistence, tab and
+equity-range state surviving a reload, the SVG charts (candles, price ladder, liquidation bars)
+rendering real marks with real tooltips, three viewport widths with no horizontal overflow, both
+colour schemes, and — the check a screenshot can't give you — that nothing throws in the console
+across a full click-through session. It is what caught a real bug: `renderLiqMap`'s chart-width
+formula computed `clientWidth - 34` *before* falling back on a zero width, so on every page load
+where the Flow tab isn't the active one (`#lmcard`'s hidden ancestor makes `clientWidth` read 0),
+the liquidation chart was briefly built with a negative SVG viewBox. Fixed with a floor, not a
+special case, since the same shape of bug existed at two other call sites (see the `Math.max`
+wrapping `clientWidth` in `pwa/index.html`).
+
+Excluded from the default `pytest -q` (needs a downloaded browser and takes ~20s; see `pytest.ini`)
+and not run on every push — `.github/workflows/e2e.yml` runs it on demand (`workflow_dispatch`) or
+when `pwa/` changes on a pull request.

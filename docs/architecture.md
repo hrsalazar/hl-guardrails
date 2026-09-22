@@ -158,3 +158,10 @@ every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every g
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
+
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (43 tests, ~20s):
+decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
+persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
+throws in the console across a full session. Excluded from the default `pytest -q` (see
+`pytest.ini`); `.github/workflows/e2e.yml` runs it on demand or when a PR touches `pwa/`. README
+"Development" has the setup and what it caught.
