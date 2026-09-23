@@ -134,6 +134,10 @@ def build_full(*, age_min=2, journal_closed=8):
         {"kind": "scanner", "cat": "info", "key": "setup_BTC_LONG_2026-09-18", "push": False, "new": False,
          "first_seen": gen - 7 * H, "status": "live", "meta": {"coin": "BTC"},
          "summary": "BTC 1d breakout - already held, don't add", "text": "BREAKOUT LONG BTC [already in a position - do NOT add]"},
+        {"kind": "event", "cat": "heads_up", "key": f"event_USD_{gen + 14 * H}", "push": True, "new": False,
+         "first_seen": gen - 2 * H, "status": "live", "valid_until": gen + 14 * H, "meta": {"event_t": gen + 14 * H},
+         "summary": "CPI m/m, Core CPI m/m in 14h 00m",
+         "text": "EVENT USD CPI m/m, Core CPI m/m at Wed 12:30 UTC (in 14h 00m)\n  You hold 3 positions (ETH, HYPE, SOL): check every stop is placed"},
     ]
     ended = [
         {"kind": "scanner", "cat": "entry", "key": "setup_ARB_LONG_2026-09-19 08:00", "push": True,
@@ -228,6 +232,32 @@ def build_full(*, age_min=2, journal_closed=8):
         },
         "universe": {"mode": "auto", "coins": 30, "day": "2026-09-22"},
         "liqmap": liqmap,
+        "events": {
+            "upcoming": [
+                {"t": gen - 1 * H, "country": "USD", "titles": ["Unemployment Claims"], "forecast": ["230K"], "previous": ["228K"]},
+                {"t": gen + 14 * H, "country": "USD", "titles": ["CPI m/m", "Core CPI m/m"], "forecast": ["0.3%", "0.3%"], "previous": ["0.4%", "0.3%"]},
+                {"t": gen + 3 * D, "country": "USD", "titles": ["Non-Farm Employment Change"], "forecast": ["", ""], "previous": ["", ""]},
+            ],
+            "next_fomc": gen + 35 * D, "fetched": gen - H,
+        },
+        "fng": {"t": gen, "value": 71, "label": "Greed", "as_of": gen - 6 * H,
+                "series": [[gen - (90 - i) * D, 40 + (i * 7) % 45] for i in range(90)]},
+        "digest": {
+            "t": gen - 3 * H, "day": "2026-09-23", "model": "claude-sonnet-5", "n_items": 64,
+            "sources": ["CoinDesk", "ECB", "Federal Reserve"], "failed": ["MarketWatch"], "fng": 71,
+            "tilt": "risk-off", "confidence": "medium",
+            "headline": "Hot inflation print risk and ETF outflows weigh on crypto into CPI",
+            "why": "Two days of spot ETF outflows meet a CPI release that could push back rate-cut hopes.",
+            "points": [
+                {"text": "US spot bitcoin ETFs saw a second day of net outflows.",
+                 "links": [{"src": "CoinDesk", "title": "ETF outflows continue", "url": "https://example.com/etf"}]},
+                # hostile third-party content: must render as text, and a javascript: link must not become a link
+                {"text": "<img src=x onerror=\"window.__pwned=1\"> Fed speakers stay cautious.",
+                 "links": [{"src": "Evil", "title": "<b>click</b>", "url": "javascript:window.__pwned=1"},
+                           {"src": "Federal Reserve", "title": "Speech", "url": "https://example.com/fed\" onmouseover=\"window.__pwned=1"}]},
+            ],
+            "watch": ["CPI Wednesday 12:30 UTC", "ETF flows"],
+        },
     }
     return out
 
@@ -248,6 +278,7 @@ def build_empty(*, age_min=95):
         "journal": {"summary": {"closed": 0, "open": 0}, "recent": []},
         "universe": {"mode": "fixed", "coins": 3, "day": None},
         "liqmap": None,
+        "events": None, "fng": None, "digest": None,
     }
 
 

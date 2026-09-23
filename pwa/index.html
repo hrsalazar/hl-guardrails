@@ -178,6 +178,26 @@ tr:last-child td{border-bottom:0}
 .coins button{padding:4px 11px;font-size:12.5px}
 .coins button[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
 
+/* macro tab: brief, calendar, sentiment */
+.tilt{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:650;border:1px solid var(--line-2);background:var(--surface-2)}
+.tilt.on{color:var(--pos);border-color:color-mix(in srgb,var(--pos) 45%,transparent)}
+.tilt.off{color:var(--neg);border-color:color-mix(in srgb,var(--neg) 45%,transparent)}
+.tilt.neu{color:var(--text-2)}
+.brief-h{font-size:16px;font-weight:620;line-height:1.35;margin:12px 0 4px}
+.brief-why{font-size:13.5px;color:var(--text-2);margin:0 0 10px}
+.brief ol{margin:0;padding-left:20px}.brief li{margin:8px 0;font-size:13.5px;line-height:1.45}
+.brief .src{display:block;font-size:12px;margin-top:2px}.brief .src a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--axis)}
+.brief .src a:hover{color:var(--blue)}
+.brief .foot2{font-size:12px;color:var(--muted);margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.ev{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+.ev:last-child{border-bottom:0}
+.ev .when{font-size:12.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ev .what{font-size:13.5px;font-weight:560}.ev .what small{display:block;font-weight:400;margin-top:2px}
+.ev .cd{font-size:12.5px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ev.soon .cd{color:var(--warn)}.ev.past{opacity:.55}
+.fngrow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.fngv{font-size:40px;font-weight:650;letter-spacing:-.02em;line-height:1}
+
 /* tooltip */
 #tip{position:fixed;z-index:50;pointer-events:none;background:var(--surface-3);color:var(--text);border:1px solid var(--line-2);border-radius:10px;padding:7px 10px;font-size:12px;line-height:1.35;box-shadow:0 10px 24px -8px rgba(0,0,0,.5);opacity:0;transition:opacity .12s;max-width:240px}
 #tip b{font-weight:650}
@@ -243,6 +263,10 @@ pre#sub{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(
       <p class="desc">Every breakout signal, followed under the strategy's rules whether or not you took it: entry at the next open, 2×ATR stop, 3×ATR trail, 21-day time stop. R = multiples of the initial risk.</p><div id="journal"></div></section>
   </div>
   <div class="pane" id="pane-macro" hidden>
+    <section class="card" id="briefcard"><h3>Daily brief <span class="badge" id="briefage"></span></h3><div id="brief"></div></section>
+    <section class="card" id="calcard"><h3>Calendar <span class="badge" id="calnext"></span></h3>
+      <p class="desc">High-impact scheduled US releases. Crypto often moves sharply in the minutes after one, and a stop that isn't on the book can be gapped through. You get a push 24h before each.</p><div id="cal"></div></section>
+    <section class="card" id="fngcard"><h3>Crowd sentiment <span class="badge">Fear &amp; Greed</span></h3><div id="fng"></div></section>
     <section class="card"><h3>Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></section>
     <section class="card" id="macrocard" hidden><h3>Macro backdrop</h3><div id="macro" style="font-size:13px;margin-top:8px"></div></section>
   </div>
@@ -284,6 +308,9 @@ const hasNotif=typeof Notification!=='undefined';
 const usd=n=>{const a=Math.abs(n),s=n<0?'−':'';return a>=1e9?`${s}$${fmt(a/1e9,1)}B`:a>=1e6?`${s}$${fmt(a/1e6,1)}M`:a>=1e4?`${s}$${fmt(a/1e3,0)}k`:`${s}$${fmt(a)}`};
 const sig=p=>p<1?5:p<10?4:p<1000?2:0;
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// for attribute values built from third-party text (news links): quotes too, and http(s) only
+const attr=s=>esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/>/g,'&gt;');
+const safeUrl=u=>/^https?:\/\/[^\s"'<>]+$/i.test(u||'')?u:null;
 let lastKeys=new Set((()=>{try{return JSON.parse(localStorage.getItem('seenKeys')||'[]')}catch(e){return []}})());
 
 // ---- decryption: must stay byte-compatible with hlg/vault.py --------------------------------
@@ -524,7 +551,7 @@ function renderAlerts(d){
   const row=(a,c)=>{
     const open=openKeys.has(a.key), quiet=a.push===false;
     const sub=[a.new?'<span class="new">NEW</span>':'',a.first_seen?ago(a.first_seen):'',
-      c==='ended'?`<span class="st ${a.status}">${a.status}</span> ${esc(a.why||'')}`:(a.valid_until?left(a.valid_until):''),
+      c==='ended'?`<span class="st ${a.status}">${a.status}</span> ${esc(a.why||'')}`:(a.valid_until?(a.kind==='event'?inT(a.valid_until):left(a.valid_until)):''),
       quiet&&c!=='ended'?'dashboard only':''].filter(Boolean).join(' · ');
     const chart=open&&(c==='entry'||c==='info')?signalChartFor(a):'';
     return `<div class="al ${c}${quiet?' quiet':''}" data-key="${esc(a.key)}"><div class="top">`
@@ -692,7 +719,50 @@ function renderJournal(j){
 }
 
 const usdS=usd;
+// ---- macro tab: daily brief, calendar, sentiment -----------------------------------------------
+// Tilt is carried by icon and word as well as colour, like every status here.
+const TILT={'risk-on':['on','▲','Risk-on'],'neutral':['neu','●','Neutral'],'risk-off':['off','▼','Risk-off']};
+const inT=t=>{const m=Math.round((t-Date.now())/60000);if(m<=0)return 'now';const dd=Math.floor(m/1440),h=Math.floor(m%1440/60),mm=m%60;
+  return dd?`in ${dd}d ${h}h`:h?`in ${h}h ${String(mm).padStart(2,'0')}m`:`in ${mm}m`};
+const whenL=t=>new Date(t).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+function renderBrief(b){
+  if(!b){$('#briefage').textContent='';
+    $('#brief').innerHTML='<div class="empty">No brief yet. Claude writes one each day after 06:00 UTC from ~70 public macro and crypto headlines; it needs the <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).</div>';return}
+  const [c,ic,word]=TILT[b.tilt]||TILT.neutral, age=(Date.now()-b.t)/3600000;
+  $('#briefage').textContent=age<24?'today, '+new Date(b.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):`${Math.floor(age/24)}d old`;
+  const link=l=>{const u=safeUrl(l.url),t=`${esc(l.src)}: ${esc(l.title)}`;return u?`<a href="${attr(u)}" target="_blank" rel="noopener noreferrer">${t}</a>`:t};
+  $('#brief').innerHTML=`<div class="brief fade-in"><span class="tilt ${c}" data-tip="The model's read of the balance of the news for crypto over the next few days. Not a signal and not backtested.">${ic} ${word}</span> <span class="badge">${esc(b.confidence)} confidence</span>`
+    +`<div class="brief-h">${esc(b.headline)}</div><p class="brief-why">${esc(b.why)}</p>`
+    +`<ol>${b.points.map(p=>`<li>${esc(p.text)}${(p.links||[]).length?`<span class="src">${p.links.map(link).join('<br>')}</span>`:''}</li>`).join('')}</ol>`
+    +((b.watch||[]).length?`<div class="chips" style="margin-top:12px"><span class="mut" style="font-size:12px;align-self:center">Watch</span>${b.watch.map(w=>`<span class="chip">${esc(w)}</span>`).join('')}</div>`:'')
+    +`<div class="foot2">Written by Claude (${esc(b.model)}) from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: there's no free headline archive to backtest it against, so it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div></div>`;
+}
+function renderCalendar(e){
+  if(!e){$('#calcard').hidden=true;return}
+  $('#calcard').hidden=false;
+  $('#calnext').textContent=e.next_fomc?`next FOMC ${inT(e.next_fomc)}`:'';
+  const up=e.upcoming||[];
+  $('#cal').innerHTML=up.length?up.map(g=>{
+      const past=g.t<Date.now(),soon=!past&&g.t-Date.now()<24*3600e3;
+      const fc=g.titles.map((t,i)=>g.forecast[i]||g.previous[i]?`${esc(t)}: forecast ${esc(g.forecast[i]||'—')}, prev ${esc(g.previous[i]||'—')}`:'').filter(Boolean);
+      return `<div class="ev${soon?' soon':''}${past?' past':''}"><span class="when">${whenL(g.t)}</span>`
+        +`<span class="what">${g.titles.map(esc).join(', ')}${fc.length?`<small class="mut">${fc.join('<br>')}</small>`:''}</span>`
+        +`<span class="cd">${past?'released':inT(g.t)}</span></div>`}).join('')
+    :`<div class="empty">No high-impact US releases left this week${e.next_fomc?`. Next FOMC decision: ${whenL(e.next_fomc)} (${inT(e.next_fomc)})`:''}.</div>`;
+}
+function renderFng(f){
+  if(!f){$('#fngcard').hidden=true;return}
+  $('#fngcard').hidden=false;
+  const s=f.series||[],wk=s.length>7?s[s.length-8][1]:null;
+  $('#fng').innerHTML=`<div class="fngrow"><span class="fngv num">${f.value}</span><b>${esc(f.label)}</b>`
+    +(wk!=null?`<span class="mut" style="font-size:13px">${f.value>=wk?'up':'down'} from ${wk} a week ago</span>`:'')+`</div>`
+    +`<div class="chart" id="fngchart"></div>`
+    +`<p class="desc" style="margin:8px 0 0">0 = extreme fear, 100 = extreme greed (alternative.me: volatility, momentum, social, dominance, search). The popular reading is contrarian. It gets the same test as every other backdrop here — see README "Sentiment" — and is context only.</p>`;
+  lineChart($('#fngchart'),s,{h:130,fmtY:v=>fmt(v),refs:[{y:25,label:'extreme fear',color:'--axis',include:true},{y:75,label:'extreme greed',color:'--axis',include:true}],
+    fmtX:(t,short)=>new Date(t).toLocaleDateString([], {month:'short',day:'numeric'})});
+}
 function renderMacro(d){
+  renderBrief(d.digest);renderCalendar(d.events);renderFng(d.fng);
   const t=d.tradfi&&d.tradfi.rows||[];
   // "N stale hidden" matters: HL lists xyz:DXY, xyz:VIX and friends at zero volume with a frozen
   // mark, so a silently short table would otherwise look like missing data rather than filtering.
@@ -831,11 +901,11 @@ function showTab(k){
   for(const b of document.querySelectorAll('.tab'))b.setAttribute('aria-selected',String(b.dataset.tab===k));
   for(const p of ['tech','macro','flow'])$('#pane-'+p).hidden=p!==k;
   try{localStorage.setItem('hlgTab',k)}catch(e){}
-  if(D){if(k==='flow')renderLiqMap(D.liqmap);if(k==='tech'){renderPositions(D);renderJournal(D.journal)}}  // charts measure their width
+  if(D){if(k==='flow')renderLiqMap(D.liqmap);if(k==='tech'){renderPositions(D);renderJournal(D.journal)}if(k==='macro')renderFng(D.fng)}  // charts measure their width
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 showTab((()=>{try{return localStorage.getItem('hlgTab')||'tech'}catch(e){return 'tech'}})());
-let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(!D)return;renderEquity();renderPositions(D);renderJournal(D.journal);renderLiqMap(D.liqmap);renderAlerts(D)},150)});
+let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(!D)return;renderEquity();renderPositions(D);renderJournal(D.journal);renderLiqMap(D.liqmap);renderFng(D.fng);renderAlerts(D)},150)});
 $('#notif').onclick=async()=>{if(!hasNotif){alert('Notifications are not available in this browser. On iPhone: open in Safari, Share -> Add to Home Screen, then launch from the icon.');return}
   const p=await Notification.requestPermission();$('#notif').textContent=p==='granted'?'Alerts on':'Blocked';
   if(p==='granted'&&window.VAPID_PUBLIC_KEY)$('#push').disabled=false};

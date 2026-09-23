@@ -29,6 +29,7 @@ value in the **Secret** box.
 | `VAPID_SUBJECT` | Secrets | `mailto:you@example.com` or `https://<you>.github.io` (host only, no path) |
 | `VAPID_PUBLIC_KEY` | **Variables** tab | from `python -m hlg.vapid` |
 | `PUSH_SUBSCRIPTIONS` | Secrets | added in step 5 |
+| `ANTHROPIC_API_KEY` | Secrets | optional: an API key from console.anthropic.com, for the daily brief (a few cents a day). Without it the brief is skipped and everything else works |
 
 To set them from a terminal, use the GitHub CLI; it prompts for the value without showing it:
 
@@ -76,8 +77,10 @@ For each phone or computer:
 - **Dashboard header:** the timestamp turns amber after 20 minutes and red after 40. Red means
   runs have stopped; check the scheduler.
 - **Notifications** fire only for alerts that weren't in the previous run, and only for guardrail
-  breaches, breakout entries and momentum. Funding notes and breakouts on coins you already hold
-  stay on the dashboard.
+  breaches, breakout entries, momentum and **high-impact releases (FOMC, CPI, jobs…) 24h ahead**,
+  once per release. Funding notes and breakouts on coins you already hold stay on the dashboard.
+- **The daily brief** (Macro tab) appears on the first run after 06:00 UTC. It's reading material:
+  never pushed, not backtested. Its source links let you check any point before relying on it.
 - **The alert list** groups by your positions, entries, heads-up, info and recently ended. Tap a
   line to expand it; ✕ or *Clear all* hides alerts on that device (position warnings cannot be
   cleared). A signal that passed shows for 24h as missed, failed or expired.
@@ -97,6 +100,7 @@ For each phone or computer:
 | data is encrypted | open `https://<you>.github.io/hl-guardrails/alerts.json` | `"alg": "AES-256-GCM"`, no readable numbers |
 | logs are quiet | open any run's *Run guardrails + scanner* step | ~3 lines: market, liquidations, `run ok: published encrypted` |
 | push works | manual run with the test box ticked | notification received; `push: N/N` |
+| daily brief works | the first run after 06:00 UTC | a `digest: N headlines from M/11 feeds, … tokens` line; the Macro tab says "today" |
 
 ## Troubleshooting
 
@@ -113,6 +117,9 @@ For each phone or computer:
 | Day/week PnL restarted | the passphrase changed, so previous state was unreadable | expected once; it recovers the next day or week |
 | `gh` "not recognised as a cmdlet" | PATH not refreshed in that terminal | open a new terminal, or use the full path |
 | Stale UI after an update | service-worker cache | reload once; `sw.js` bumps its cache version on UI changes |
+| Macro tab: "No brief yet" | `ANTHROPIC_API_KEY` not set, or before 06:00 UTC | set the secret; the next run after 06:00 UTC writes one |
+| Log: `digest failed: Claude API HTTP 401` / `400` | the key is wrong or revoked (401), or the model name in `config.yaml` → `digest.model` is not available to it (400/404) | re-set the secret / fix the model; it retries two hours later, not every run |
+| Log: `events: calendar fetch failed: HTTP 429` | the weekly calendar feed rate-limits shared IPs | nothing: the last week's list is kept and it retries in an hour |
 
 ## Local use
 
@@ -120,7 +127,7 @@ For each phone or computer:
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 echo "account: '0x…'" > config.local.yaml
-pytest -q                          # 192 tests, no network
+pytest -q                          # 212 tests, no network
 python -m hlg.guardrails           # continuous, console / Telegram
 python -m hlg.scanner
 python -m hlg.report               # one CI-style run; writes plaintext site/*.json (gitignored)

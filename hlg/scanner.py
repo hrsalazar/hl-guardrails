@@ -19,7 +19,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import account, journal, liqmap, universe
+from . import account, events, journal, liqmap, universe
 from .common import (
     Notifier,
     State,
@@ -393,6 +393,15 @@ def run_once(cfg, inf, notif, state):
                     msg += f"\n  macro: {mac['label']} (HY {mac['hy']:.2f}, VIX {mac['vix']:.1f}) - context only, not part of the rule"
                 if a.get("liq"):
                     msg += f"\n  HL liq levels: {liqmap.describe(a['liq'])} - context only"
+                ev_note = events.note_for_entry(state.get("events"), now_ms) if state is not None else ""
+                if ev_note:
+                    msg += f"\n  calendar: {ev_note} - context only"
+                fg = (state.get("fng") or {}) if state is not None else {}
+                if a["tf"] == "4h" and fg.get("value") is not None and fg["value"] <= 24:
+                    # README "Sentiment": on 4h (not 1d) extreme-fear entries lost money, but almost all
+                    # in one stretch -- shown so you can weigh it, deliberately not made a filter
+                    msg += (f"\n  sentiment: Fear & Greed {fg['value']} (extreme fear) - 4h breakouts entered in extreme fear "
+                            "made PF 0.79 over 82 backtest trades, nearly all in the 2025-26 fear stretch; context, not a rule")
                 # A breakout on a coin you already hold is not an entry (no adds), so it stays on the
                 # dashboard instead of buzzing the phone.
                 notif.send(msg, key=f"setup_{coin}_LONG_{a['signal_day']}", cooldown_s=24 * 3600 if a["tf"] == "1d" else 4 * 3600,

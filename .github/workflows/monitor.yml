@@ -60,6 +60,9 @@ jobs:
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
           PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
           HLG_TEST_PUSH: ${{ inputs.test_push }}
+          # Daily macro brief (hlg.digest). Optional: without it that step is skipped. Only public
+          # headlines and market data are sent to the API, never account data.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m hlg.report
       - name: Stamp site
         run: |

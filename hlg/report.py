@@ -25,7 +25,7 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import account, guardrails, journal, liqmap, liquidations, market, scanner, universe, vault
+from . import account, digest, events, guardrails, journal, liqmap, liquidations, market, scanner, sentiment, universe, vault
 from . import alerts as lifecycle
 from .common import (
     Notifier,
@@ -193,7 +193,16 @@ def main():
     prev = prev or {}
 
     inf = info()
-    gn, sn = Notifier(cfg), Notifier(cfg)
+    now_ms = int(time.time() * 1000)
+    # Scheduled releases first: the scanner reads them to flag entries opened into one. Cached in
+    # state and refreshed every few hours, so most runs make no request here.
+    E = events.settings(cfg)
+    if E["enabled"]:
+        try:
+            events.refresh(state, now_ms, E)
+        except Exception as e:  # noqa: BLE001 - context data; never fails the run
+            log.error("events failed: %s", e)
+    gn, sn, en = Notifier(cfg), Notifier(cfg), Notifier(cfg)
     guardrails.run_once(cfg, inf, gn, state)
     rows = scanner.run_once(cfg, inf, sn, state)
 
@@ -204,9 +213,10 @@ def main():
         for p in st["assetPositions"]
     ]
     add_stops(positions, inf, cfg, acct)
-    now_ms = int(time.time() * 1000)
+    if E["enabled"]:
+        events.alerts(en, state.get("events"), now_ms, E, held={p["coin"] for p in positions})
     px_by_coin = {r["coin"]: r["px"] for r in rows if r.get("px") is not None}
-    alerts, ended = lifecycle.build([("guardrail", gn), ("scanner", sn)], prev, now_ms, px_by_coin)
+    alerts, ended = lifecycle.build([("guardrail", gn), ("scanner", sn), ("event", en)], prev, now_ms, px_by_coin)
     # push = the alert's own flag (funding carry and already-held breakouts are dashboard-only)
     new = [a for a in alerts if a["new"] and a["push"]]
 
@@ -238,6 +248,10 @@ def main():
         # Absent rather than empty when the source gave nothing: the dashboard then fetches OKX
         # itself, which works even if OKX is blocked from Actions the way FRED is.
         liq = {"src": "baked", "rows": got} if got else None
+    try:
+        sentiment.refresh(state, now_ms)  # one small request every 6h
+    except Exception as e:  # noqa: BLE001
+        log.error("fear & greed failed: %s", e)
     out = {
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "account": cfg["account"],
@@ -265,6 +279,9 @@ def main():
         "universe": {"mode": universe.settings(S)["mode"], "coins": len(scanned),
                      "day": (state.get("universe") or {}).get("day")},
         "liqmap": liqmap_payload(state.get("liqmap"), {r["coin"]: r["px"] for r in market_rows if r.get("px")}),
+        "events": events.payload(state.get("events"), now_ms) if E["enabled"] else None,
+        "fng": state.get("fng"),
+        "digest": state.get("digest"),
     }
     hist = prev_hist if isinstance(prev_hist, list) else []
     hist.append({"t": out["generated"], "equity": out["equity"], "pv": acct.get("portfolio_value"),
@@ -303,6 +320,26 @@ def main():
                 publish("state.json", state.d, vlt, in_ci)
         except Exception as e:  # noqa: BLE001 - context data; never fails the run
             log.error("liqmap failed: %s", e)
+    # Daily brief (hlg.digest): once per UTC day, last, for the same reason as liqmap. Only public
+    # data goes into the prompt -- the tape, the calendar, the index, headlines; nothing from the
+    # account. The attempt time is published whatever happens, so a failure (or a paid call whose
+    # reply didn't parse) retries hours later, not on every 15-minute run.
+    D = digest.settings(cfg)
+    api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    if D["enabled"] and api_key and digest.due(state, now_ms, D):
+        try:
+            tape = ([{"name": r["coin"], "chg24h_pct": r.get("chg24h_pct")} for r in market_rows if r["coin"] in ("BTC", "ETH", "SOL")]
+                    + [{"name": r["coin"].replace("xyz:", ""), "chg24h_pct": r.get("chg24h_pct")} for r in tradfi_rows])
+            brief = digest.run(state, now_ms, D, {"fng": state.get("fng"), "tape": tape,
+                                                  "events": events.groups(state.get("events"), now_ms, now_ms + 7 * 86_400_000)},
+                               api_key)
+            if brief:
+                out["digest"] = brief
+                publish("alerts.json", out, vlt, in_ci)
+        except Exception as e:  # noqa: BLE001 - reading material; never fails the run
+            log.error("digest failed: %s", e)
+        finally:
+            publish("state.json", state.d, vlt, in_ci)
     log.info("run ok: published %s in %.1fs", "encrypted" if vlt else ("locked stub" if in_ci else "plaintext (local)"),
              time.monotonic() - started, extra={"safe": True})
     return 0

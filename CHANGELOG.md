@@ -2,6 +2,32 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-23 (late night)
+
+- **Macro tab rebuilt around news, calendar and sentiment.**
+  - **Calendar** (`hlg/events.py`): high-impact US releases from the free FairEconomy weekly feed plus
+    the Fed's own FOMC schedule. A **pushed** heads-up 24h before each one names your open positions;
+    breakout alerts note a release within 24h. The feed rate-limits hard (HTTP 429), so fetches are
+    6-hourly with a one-hour backoff after a failure.
+  - **Daily brief** (`hlg/digest.py`): once a UTC day, ~70 headlines from 11 RSS feeds (Fed, ECB,
+    Bloomberg, FT, CNBC, MarketWatch, CoinDesk, The Block, Cointelegraph, Decrypt) summarised by
+    Claude into a headline, a risk-on/neutral/risk-off tilt with confidence, cited points and a watch
+    list. Needs the `ANTHROPIC_API_KEY` secret. Only public data goes in the prompt; headlines are
+    treated as untrusted (strict JSON reply, feed-sourced http(s)-only links, E2E-tested against
+    injected markup). Reading material: not backtestable, never pushed, gates nothing.
+  - **Fear & Greed** (`hlg/sentiment.py`): value, band and 90-day line.
+- **Tested, not adopted** (README "Sentiment", "Events"):
+  - Fear & Greed level vs forward returns is *positive* (30d: BTC +0.20, basket +0.28): the
+    contrarian claim is backwards. Extreme-band entry filters fail on 1d; `fng_not_extreme_fear`
+    passes on 4h (PF 1.38 -> 1.57, 98th pctile) but is one of four tests and mostly one market phase
+    (76 of 82 removed trades in 2025-Q4..2026-Q3), so it's shown as a context line on 4h breakouts
+    instead of becoming a rule.
+  - Skipping entries in the 24h before FOMC: removes one trade in three years. Nothing to act on.
+  - Measured the premise of the event alert: BTC's range in the hour after an FOMC decision is 2.6x
+    a normal hour (27 decisions since 2023-06); the FOMC alert quotes it.
+- Fixed before it shipped: `fomc_ahead` divided a pandas-3 microsecond index as if it were
+  nanoseconds, which would have made the FOMC filter silently never fire; caught by its unit test.
+
 ## 2026-09-23 (night)
 
 - **AVAX added to `scanner.coins` and `rules.allowed_coins`** — on your own read that the market is

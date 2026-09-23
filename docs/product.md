@@ -35,7 +35,7 @@ never trades and never needs keys, which is the core trust argument.
 ## Current state
 
 **Works today, for one person:** guardrails, scanner (1d/4h), momentum alerts, tabbed dashboard
-(Technical / Macro / Flow), encryption, push, 192 tests, and CI.
+(Technical / Macro / Flow), encryption, push, 212 tests, and CI.
 
 **It is single-tenant.** One repository watches one account for one owner. Configuration is a
 YAML file and secrets are set by hand. Setup takes about 20 minutes and requires a GitHub
@@ -80,7 +80,11 @@ and B is only worth building once A shows demand.
    in-sample-heavy, and come without modelled slippage. Many regulators restrict advertising
    hypothetical performance. Marketing should use the guardrails, not returns.
 4. **Data licensing.** Check the Hyperliquid, OKX and FRED terms for commercial use and
-   redistribution of their data before a paid launch. Personal use differs from reselling.
+   redistribution of their data before a paid launch. Personal use differs from reselling. The
+   macro tab adds more to check: the FairEconomy calendar is an unofficial feed, publishers' RSS
+   terms usually allow personal reading but not redistribution of summaries to paying users, and
+   alternative.me asks for attribution. A hosted product would need licensed news and calendar
+   data, and the Claude API cost scales per user.
 5. **Licence for this code.** The repo currently has **no LICENSE file**, which by default means
    all rights are reserved: people may view the code but not reuse it. That protects a future
    product. Choose deliberately: keep it proprietary, go source-available (e.g. BSL or

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from . import macro, stablecoin
+from . import events, macro, sentiment, stablecoin
 from .common import API, load_config, log, setup_logging
 from .scanner import atr, ema, rsi
 
@@ -147,11 +147,30 @@ def features(df, k=1):
     return df
 
 
-def context(data, fund, macro_f=None, stbl_f=None):
+def fomc_ahead(index, fomc_ms, hours=24):
+    """True for a bar whose next-open fill lands within `hours` before an FOMC decision: signal at
+    this bar's close, fill at the next bar's open (= this bar's start + its length), decision in
+    (fill, fill + hours]. The meeting schedule is published a year ahead, so this is not lookahead."""
+    if len(index) < 2 or not fomc_ms:
+        return pd.Series(False, index=index, dtype="boolean")
+    step = pd.Series(index).diff().median()
+    # explicit unit: pandas 3 builds indexes at us or ns resolution depending on the source, and a
+    # hard-coded divisor silently turned ms into seconds here -- every gap then looked huge and the
+    # filter never fired (caught by test_fomc_window_flags_only_bars_...)
+    fill = (index + step).as_unit("ms").asi8
+    t = np.array(sorted(fomc_ms), dtype="int64")
+    nxt = np.searchsorted(t, fill, side="right")  # first decision strictly after the fill
+    ok = nxt < len(t)
+    gap = np.where(ok, t[np.minimum(nxt, len(t) - 1)] - fill, np.iinfo("int64").max)
+    return pd.Series(gap <= hours * 3_600_000, index=index, dtype="boolean")
+
+
+def context(data, fund, macro_f=None, stbl_f=None, sent_f=None, fomc=None):
     """Adds the columns entry filters read that are *not* this coin's own chart: its funding, the
-    BTC tape, where it ranks against the rest of the universe, and the macro / stablecoin backdrop.
-    Everything is as-of the signal bar (both backdrops already shifted a day in their own module),
-    so nothing here is knowable later than the bar that triggers the trade."""
+    BTC tape, where it ranks against the rest of the universe, the macro / stablecoin / Fear &
+    Greed backdrop, and whether the fill lands just before an FOMC decision. Everything is as-of the
+    signal bar (the backdrops already shifted a day in their own modules), so nothing here is
+    knowable later than the bar that triggers the trade."""
     btc = data.get("BTC")
     btc_bull = (btc.c > ema(btc.c, 200)) if btc is not None else None
     rs_rank = pd.DataFrame({c: d.ret20 for c, d in data.items()}).rank(axis=1, pct=True)
@@ -163,12 +182,18 @@ def context(data, fund, macro_f=None, stbl_f=None):
             d[col] = macro_f[col].reindex(d.index) if macro_f is not None and not macro_f.empty else np.nan
         for col in STBL_COLS:
             d[col] = stbl_f[col].reindex(d.index) if stbl_f is not None and not stbl_f.empty else np.nan
+        for col in SENT_COLS:
+            # daily series onto (possibly intraday) bars: the day's value applies to each of its bars
+            d[col] = (sent_f[col].reindex(d.index.floor("D")).set_axis(d.index)
+                      if sent_f is not None and not sent_f.empty else np.nan)
+        d["fomc_next24"] = fomc_ahead(d.index, fomc) if fomc else np.nan
     return data
 
 
 # ----------------------------------------------------------------------------- filters
 MACRO_COLS = ["hy_stress", "vix_calm", "spx_bull", "dxy_headwind", "risk_on"]
 STBL_COLS = ["stbl_chg", "stbl_below_trend", "stbl_shrinking"]
+SENT_COLS = ["fng", "fng_extreme_greed", "fng_extreme_fear"]
 
 
 def _pass(v, test):
@@ -207,6 +232,11 @@ FILTERS = {
     # stablecoin backdrop (hlg.stablecoin): the "money rotating out of stables = risk-on" hypothesis
     "no_stbl_growth": lambda k: _pass(getattr(k, "stbl_below_trend", None), bool),
     "stbl_outflow": lambda k: _pass(getattr(k, "stbl_shrinking", None), bool),
+    # crowd sentiment (hlg.sentiment): the index's own published bands, not tuned cutoffs
+    "fng_not_extreme_greed": lambda k: _pass(getattr(k, "fng_extreme_greed", None), lambda v: not v),
+    "fng_not_extreme_fear": lambda k: _pass(getattr(k, "fng_extreme_fear", None), lambda v: not v),
+    # scheduled event risk (hlg.events): don't open into an FOMC decision
+    "no_fomc_entry": lambda k: _pass(getattr(k, "fomc_next24", None), lambda v: not v),
 }
 
 BASE_BREAKOUT = VARIANTS["breakout_long"]
@@ -852,6 +882,62 @@ def dxy_study(P, iv):
     print("\n".join(rep))
 
 
+def sentiment_study(P, iv):
+    """python -m hlg.backtest --sentiment-study [--interval 4h]
+
+    The Crypto Fear & Greed index, tested the same two ways as --stbl-study.
+
+    Part 1: does the level predict forward BTC / basket returns (the contrarian claim says low
+    readings precede better returns)? Full overlap with cached price history.
+
+    Part 2: two entry filters on breakout_long, thresholds = the index's own published bands,
+    written down before the first run: `fng_not_extreme_greed` (skip entries when the index is >=
+    76 -- "the crowd is euphoric, tops form there") and `fng_not_extreme_fear` (skip <= 24 --
+    "breakouts in panic fail"). Adoption bar, fixed before running and identical to --entry-study /
+    --stbl-study: PF >= base + 0.10, max DD no worse than base - 2pp, PF in each half >= the base's,
+    and above the 95th percentile of randomly dropping the same number of trades."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    sent_f = sentiment.features(sentiment.frame(cache_dir=str(cache)))
+    if sent_f.empty:
+        log.error("sentiment_study: no Fear & Greed data, aborting")
+        return
+    rep = [f"# Fear & Greed vs crypto returns ({sent_f.fng.first_valid_index().date()} -> {sent_f.index[-1].date()}, {iv})\n"]
+    full_data, basket = _full_history(P, iv, cache)
+    _corr_and_quintiles(rep, sent_f.fng, "fng", full_data, basket)
+    share = lambda s: f"{s.mean() * 100:.0f}%"  # noqa: E731
+    days = sent_f[sent_f.index >= pd.Timestamp(P["start"], tz="UTC")]
+    rep.append(f"Days in the backtest window: extreme greed {share(days.fng_extreme_greed.astype(float))}, "
+               f"extreme fear {share(days.fng_extreme_fear.astype(float))}.\n")
+    _entry_filter_test(rep, P, iv, cache, ("fng_not_extreme_greed", "fng_not_extreme_fear"), dict(sent_f=sent_f), "fng")
+    (out / f"sentiment_study_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+
+
+def event_study(P, iv):
+    """python -m hlg.backtest --event-study [--interval 4h]
+
+    Should breakout entries avoid opening into an FOMC decision? `no_fomc_entry` skips a signal
+    whose fill lands within 24h before a decision (same window as the live heads-up), from the
+    Fed's own published schedule. Same adoption bar as every entry filter, fixed before running.
+
+    Only FOMC is testable: BLS (CPI, payrolls) refuses automated requests and there is no other
+    free source of past release dates, so those events get the live heads-up without a backtest.
+    Expect a small sample -- 8 meetings a year -- which the random-subset percentile accounts for."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    r = requests.get(events.FOMC_URL, headers=events.UA, timeout=20)
+    r.raise_for_status()
+    fomc = events.parse_fomc(r.text)
+    start = pd.Timestamp(P["start"], tz="UTC")
+    in_window = [t for t in fomc if pd.Timestamp(t, unit="ms", tz="UTC") >= start and t < time.time() * 1000]
+    rep = [f"# FOMC decisions vs breakout entries ({iv}, {P['start']} -> now)\n",
+           f"{len(in_window)} scheduled FOMC decisions in the window (federalreserve.gov).\n"]
+    _entry_filter_test(rep, P, iv, cache, ("no_fomc_entry",), dict(fomc=fomc), "fomc")
+    (out / f"event_study_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -867,6 +953,8 @@ def main():
     ap.add_argument("--dxy-study", action="store_true", help="dollar-index vs forward returns correlation, plus the no_dxy_headwind filter")
     ap.add_argument("--universe-study", action="store_true", help="breakout on fixed list vs point-in-time liquidity universes")
     ap.add_argument("--entry-study", action="store_true", help="failed-breakout study: fast exit, confirmation, fib retrace entries, bar-quality filters")
+    ap.add_argument("--sentiment-study", action="store_true", help="Fear & Greed vs forward returns, plus the two extreme-band entry filters")
+    ap.add_argument("--event-study", action="store_true", help="skip breakout entries that fill within 24h before an FOMC decision?")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
     a = ap.parse_args()
@@ -890,6 +978,10 @@ def main():
         return stbl_study(P, iv)
     if a.dxy_study:
         return dxy_study(P, iv)
+    if a.sentiment_study:
+        return sentiment_study(P, iv)
+    if a.event_study:
+        return event_study(P, iv)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

@@ -76,6 +76,28 @@ endpoint.
 Runtime dependencies are pinned to exact versions in `requirements.txt`, so an unattended
 upgrade can't change behaviour. GitHub Actions are pinned to major versions.
 
+### 6. What goes to third parties, and untrusted input (`hlg/digest.py`, `hlg/events.py`)
+
+The daily brief is the only place data is *sent* anywhere beyond fetching public endpoints. What
+goes to the Anthropic API is public by construction: the day's headlines, the Fear & Greed
+reading, the 24h change of BTC/ETH/SOL and the TradFi perps, and the release calendar. The
+address, positions, balances, PnL and alerts are never in the prompt (a unit test checks that a
+value planted in state does not reach the request body).
+
+The reverse direction is the bigger risk: headlines are third-party text and the model's reply
+ends up in the dashboard. So the prompt tells the model to treat headlines as data and ignore
+instructions inside them; the reply must parse as strict JSON with length-capped fields or it is
+dropped; links shown come from the feeds (never from the model's text) and must be plain
+`http(s)` URLs, checked on the server and again in the page, which escapes every field. The E2E
+suite feeds the brief `<img onerror>` markup, a `javascript:` link and a quote-injected URL and
+asserts all three stay inert. The model has no tools and its output drives no action: the worst a
+poisoned headline can do is make the brief's wording wrong, which is why it's labelled reading
+material and gates nothing.
+
+API errors are logged as status and error type only, never the request (which carries the key).
+A failed attempt is recorded before the call, so a bad key or a malformed reply retries two hours
+later rather than every 15 minutes.
+
 ## Secrets inventory
 
 | Name | Kind | Sensitivity | If leaked |
@@ -86,6 +108,7 @@ upgrade can't change behaviour. GitHub Actions are pinned to major versions.
 | `VAPID_SUBJECT` | secret | low | – |
 | `PUSH_SUBSCRIPTIONS` | secret | medium: device push endpoints | re-subscribe the devices |
 | `VAPID_PUBLIC_KEY` | variable | public by design | – |
+| `ANTHROPIC_API_KEY` | secret | medium: spend on your Anthropic account | revoke it in the Anthropic console, set a new one; consider a spend limit on that key |
 | scheduler token | external | low: can only trigger the workflow | revoke it in GitHub settings |
 
 **Secret names are not secret.** Anyone with admin access sees them, and so does tooling output.

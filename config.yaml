@@ -88,6 +88,27 @@ liqmap:
   band_pct: 1.0          # cluster width, % of price
   range_pct: 15          # ignore liquidation prices further than this from the price
 
+# Scheduled high-impact releases (hlg.events): FOMC from federalreserve.gov, everything else from the
+# free weekly FairEconomy calendar. A heads-up is PUSHED once when a release is within warn_hours,
+# naming any open positions; breakout alerts note one too. Context, not a rule.
+events:
+  enabled: true
+  warn_hours: 24
+  countries: [USD]
+  impacts: [High]
+  refresh_hours: 6       # the weekly feed rate-limits hard; a failed fetch retries after an hour
+
+# Daily macro + crypto brief (hlg.digest): ~70 public headlines from central-bank, markets and crypto
+# RSS feeds, summarised by Claude once a UTC day into a few points and a risk tilt. Needs the
+# ANTHROPIC_API_KEY secret (skipped without it); ~a few cents a day. Only public data goes into the
+# prompt - never the address, positions or PnL. Reading material: not backtestable (no free
+# headline archive), never pushed, gates nothing. Feeds: see hlg/digest.py FEEDS.
+digest:
+  enabled: true
+  hour_utc: 6            # first run after this hour; 06:00 UTC = after Asia, before Europe and US data
+  model: claude-sonnet-5
+  lookback_hours: 30
+
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars
 

@@ -48,5 +48,16 @@ flow:
   liquidation_coins: [BTC, ETH, SOL]
   budget_s: 10
 
+# Scheduled high-impact releases (FOMC, CPI, jobs...): pushed heads-up when one is within warn_hours.
+events:
+  enabled: true
+  warn_hours: 24
+
+# Daily AI brief of public macro/crypto headlines. Needs the ANTHROPIC_API_KEY secret; skipped without it.
+digest:
+  enabled: true
+  hour_utc: 6
+  model: claude-sonnet-5
+
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars

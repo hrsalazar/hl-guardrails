@@ -149,7 +149,7 @@ layer. Everything else is grouped into three tabs (the last one you used is reme
 | Tab | Contents | Source |
 |---|---|---|
 | **Technical** | open positions; the breakout scanner, grouped by timeframe | Hyperliquid candles |
-| **Macro** | TradFi instruments — SP500, gold, silver, oil, copper, natgas, EUR/JPY, plus MSTR/COIN as crypto-equity proxies | HL's `xyz` TradFi perps (`scanner.tradfi_coins`) |
+| **Macro** | the **daily brief** (Claude's digest of the day's public headlines), the **calendar** of high-impact US releases with countdowns and the next FOMC, **Fear & Greed** with its 90-day line, then TradFi instruments — SP500, gold, silver, oil, copper, natgas, EUR/JPY, MSTR/COIN | RSS feeds + Claude API, FairEconomy + federalreserve.gov, alternative.me, HL's `xyz` perps |
 | **Flow** | maintenance-margin buffer, 24h volume / open interest / turnover / mark-vs-oracle premium, recent liquidations | HL asset contexts + OKX |
 
 Three things worth knowing about the data, because each one is a trap:
@@ -196,6 +196,28 @@ read as magnets that price is drawn to, and the journal will show whether breako
 short-liquidation cluster actually did better. Until then it changes no rule. Only per-coin
 aggregates are kept; the account list is held in the encrypted state and no address is stored
 with its positions.
+
+**The daily brief (Macro tab)** is the one piece here that can't be backtested, so it is labelled
+as reading material, never pushed, and part of no rule. Once a UTC day (first run after 06:00),
+after alerts go out, `hlg/digest.py` pulls the last ~30h of headlines from 11 free RSS feeds —
+Federal Reserve, ECB, Bloomberg Markets and Economics, FT Markets, CNBC, MarketWatch, CoinDesk, The
+Block, Cointelegraph, Decrypt — takes up to 8 per source (so a prolific crypto outlet can't drown
+out the Fed), and asks Claude for a short brief: a headline, a **risk-on / neutral / risk-off
+tilt with a stated confidence**, 3-6 points each citing the headlines it rests on, and what to
+watch. That tilt is the "sentiment analysis": a model's read of the news balance, not a measured
+edge. Safeguards, because headlines are untrusted text going into a model:
+
+- the prompt says to use only what's given, treat headlines as data and ignore any instructions in
+  them, stay calibrated ("thin news = neutral, low confidence") and give no trade calls;
+- the reply must be strict JSON with every field length-capped, or it is dropped whole;
+- source links come from the feeds, never from the model's text, and only `http(s)` links render —
+  the browser test suite feeds it `<img onerror>` and `javascript:` links to prove they stay inert;
+- **only public data goes in the prompt** (headlines, the index, the 24h tape, the calendar): never
+  the address, a position, a balance or PnL.
+
+It needs an `ANTHROPIC_API_KEY` repository secret (docs/operations.md) and costs a few cents a day
+(~70 headlines ≈ 5-6k input tokens, one call). Without the secret the step is skipped silently. A
+failed call retries two hours later, not every 15 minutes, so a broken key can't run up calls.
 
 **Liquidation risk is account-level.** Per-position `liquidationPx` is `null` for cross-margined
 positions — the normal case — because Hyperliquid assesses liquidation on the whole account. The
@@ -719,6 +741,72 @@ fewer trades. Borderline-to-worse-than-random, not the edge the 90-day correlati
 consistent with this project's other finding that gating entries on a calm-backdrop condition
 tends to remove the rule's best trades along with the bad ones, not just the bad ones.
 
+### Sentiment: Fear & Greed — tested; the contrarian claim is backwards, no filter adopted
+
+`python -m hlg.backtest --sentiment-study [--interval 4h]`. The Crypto Fear & Greed index
+(alternative.me, daily since 2018-02, `hlg/sentiment.py`, shifted a day like every backdrop). Popular
+reading: contrarian — extreme fear is the time to buy, extreme greed the time to be careful.
+
+**Part 1 — does the level predict forward returns?** The opposite, like stablecoins: higher readings
+went with *better* forward returns, at every horizon (~2,200 daily observations).
+
+| forward | BTC corr | basket corr |
+|---|---:|---:|
+| 7d | +0.11 | +0.15 |
+| 30d | +0.20 | +0.28 |
+| 90d | +0.21 | +0.36 |
+
+By quintile, BTC's mean 30-day forward return rises from −0.1% after the most fearful fifth of days
+to +9.6% after the greediest; the basket from −1.1% to +25.9%. Two cautions: overlapping forward
+windows make these observations far less independent than the count suggests, and the index is
+partly *built from* price momentum and volume, so some of this is momentum measuring itself. But
+nothing here supports "buy extreme fear" for a trend-following rule.
+
+**Part 2 — as an entry filter**, the index's own published bands, rules written before running
+(same bar as `--entry-study`: PF ≥ base + 0.10, drawdown no more than 2pp worse, both halves at
+least as good, >95th percentile of randomly dropping the same number of trades):
+
+| interval | filter | trades | PF | max DD | IS / OOS PF | random pctile | verdict |
+|---|---|---:|---:|---:|---:|---:|---|
+| 1d | base | 126 | 1.67 | -18% | 1.18 / 2.71 | — | — |
+| 1d | `fng_not_extreme_greed` (skip ≥ 76) | 118 | 1.72 | -15% | 1.21 / 2.71 | 66 | fail |
+| 1d | `fng_not_extreme_fear` (skip ≤ 24) | 120 | 1.69 | -18% | 1.18 / 3.04 | 56 | fail |
+| 4h | base | 402 | 1.38 | -40% | 1.09 / 1.54 | — | — |
+| 4h | `fng_not_extreme_greed` | 384 | 1.35 | -36% | 1.00 / 1.53 | 24 | fail |
+| 4h | `fng_not_extreme_fear` | 332 | **1.57** | -37% | 1.16 / 1.86 | **98** | **pass** |
+
+**Not adopted, despite the one pass.** Four filter-timeframe combinations were run, and one clearing
+the 95th percentile happens by chance roughly one time in five. The 1d version of the same filter
+does nothing. And the 82 extreme-fear 4h entries it removes (PF 0.79, net −$251 on the $1k book) are
+concentrated: 76 of them fall in the prolonged fear of 2025-Q4 to 2026-Q3. Take out the worst quarter
+and the rest are PF 0.91 — still slightly negative, much weaker. That is evidence about one market
+phase, not a stable rule. It is shown instead: a 4h breakout alert raised while the index is ≤ 24
+carries one context line quoting these numbers, and the Macro tab shows the index with its 90-day
+line. Worth re-running once the current phase is behind us.
+
+### Events: scheduled releases — measured; the pre-FOMC entry filter has nothing to act on
+
+The calendar heads-up (`hlg/events.py`) says a release is coming and names your open positions.
+The claim behind it — crypto moves hard when the Fed speaks — was checked, not assumed: BTCUSDT
+hourly bars (Binance's public history, research only) around all **27 FOMC decisions from 2023-06
+to 2026-09**, against the same UTC hour on ordinary days:
+
+| window after the decision | median high-low range | normal | ratio | share above normal's 90th pct |
+|---|---:|---:|---:|---:|
+| 1 hour | 1.47% | 0.56% | 2.6× | 63% |
+| 4 hours | 2.80% | 1.09% | 2.6× | 52% |
+
+So a stop that isn't on the book, or sits inside that range, is at real risk — which is what the
+heads-up says. CPI and payrolls couldn't be measured the same way: BLS refuses automated requests
+(HTTP 403) and no other free source has past release dates, so their alerts say "volatility usually
+jumps at the print" without a number.
+
+**`no_fomc_entry`** (`--event-study`): skip a breakout whose fill lands within 24h before a decision.
+Rule fixed before running, same bar as every filter. It has almost nothing to act on: over three
+years it removed **one** 1d trade (PF 1.67 → 1.66, 27th percentile) and, on 4h, zero net (one entry
+swapped for another; PF 1.38 → 1.37). Breakouts and FOMC days simply rarely coincide. Not adopted;
+the value of the calendar is protecting positions you already hold, not filtering entries.
+
 ### Regime analysis (`python -m hlg.regime`)
 
 Tags every day with a BTC regime (bull/bear vs EMA200, range/trending by 20d span vs ATR, breadth, drawdown) and
@@ -750,7 +838,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-43 tests against four synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+49 tests against four synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

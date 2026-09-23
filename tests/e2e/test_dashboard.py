@@ -387,6 +387,81 @@ def test_macro_backdrop_card_only_shows_when_macro_data_exists(page, base_url):
     expect(page.locator("#macro")).to_contain_text("context only, not part of any rule")
 
 
+def test_daily_brief_shows_tilt_points_and_source_links(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    brief = page.locator("#brief")
+    expect(brief.locator(".tilt")).to_have_text("▼ Risk-off")  # icon + word, not colour alone
+    expect(brief).to_contain_text("medium confidence")
+    expect(brief.locator(".brief-h")).to_have_text("Hot inflation print risk and ETF outflows weigh on crypto into CPI")
+    expect(brief.locator("li")).to_have_count(2)
+    expect(brief.locator('a[href="https://example.com/etf"]')).to_have_attribute("rel", "noopener noreferrer")
+    expect(brief.locator(".chip")).to_have_text(["CPI Wednesday 12:30 UTC", "ETF flows"])
+    expect(brief).to_contain_text("Reading material, not a signal")
+    expect(brief).to_contain_text("1 unreachable")
+
+
+def test_hostile_text_in_the_brief_is_inert(page, base_url):
+    """The brief is model output built from third-party headlines: markup must render as text, and
+    a javascript: or quote-injected link must never become a live link."""
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    brief = page.locator("#brief")
+    expect(brief).to_contain_text('<img src=x onerror="window.__pwned=1"> Fed speakers stay cautious.')
+    expect(brief).to_contain_text("Evil: <b>click</b>")
+    assert brief.locator("img").count() == 0 and brief.locator("b").count() == 0
+    hrefs = [a.get_attribute("href") for a in brief.locator("a").all()]
+    assert hrefs == ["https://example.com/etf"], hrefs  # the injected one fails safeUrl and stays text
+    brief.hover()
+    for a in brief.locator("li").all():
+        a.hover()
+    assert page.evaluate("window.__pwned") is None
+
+
+def test_calendar_lists_releases_with_countdowns_and_next_fomc(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    rows = page.locator("#cal .ev")
+    expect(rows).to_have_count(3)
+    expect(rows.nth(0)).to_have_class(re.compile(r"\bpast\b"))
+    expect(rows.nth(0).locator(".cd")).to_have_text("released")
+    expect(rows.nth(1)).to_have_class(re.compile(r"\bsoon\b"))  # within 24h: highlighted
+    expect(rows.nth(1)).to_contain_text("CPI m/m, Core CPI m/m")
+    expect(rows.nth(1)).to_contain_text("forecast 0.3%, prev 0.4%")
+    expect(rows.nth(1).locator(".cd")).to_have_text(re.compile(r"^in 1[34]h \d\dm$"))
+    expect(rows.nth(2).locator(".cd")).to_have_text(re.compile(r"^in [23]d \d+h$"))
+    expect(page.locator("#calnext")).to_have_text(re.compile(r"^next FOMC in 3[45]d \d+h$"))
+
+
+def test_event_alert_counts_down_instead_of_saying_valid(page, base_url):
+    page.goto(url(base_url, "full"))
+    ev = page.locator('.al[data-key^="event_USD_"]')
+    expect(ev).to_be_visible()  # heads-up group starts expanded
+    expect(ev.locator(".sub")).to_contain_text(re.compile(r"in 1[34]h"))
+    expect(ev.locator(".sub")).not_to_contain_text("valid")
+
+
+def test_fear_and_greed_card_shows_value_band_and_chart(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    card = page.locator("#fng")
+    expect(card.locator(".fngv")).to_have_text("71")
+    expect(card).to_contain_text("Greed")
+    expect(card).to_contain_text("a week ago")
+    svg = card.locator("#fngchart svg")
+    expect(svg).to_be_visible()
+    expect(svg).to_contain_text("extreme greed")
+    assert float(svg.get_attribute("viewBox").split()[2]) >= 260  # measured on the visible tab, not a hidden 0px one
+
+
+def test_macro_tab_empty_states(page, base_url):
+    page.goto(url(base_url, "empty"))
+    page.locator('.tab[data-tab="macro"]').click()
+    expect(page.locator("#brief")).to_contain_text("ANTHROPIC_API_KEY")
+    expect(page.locator("#calcard")).to_be_hidden()
+    expect(page.locator("#fngcard")).to_be_hidden()
+
+
 # ---------------------------------------------------------------------- notifications / push
 def test_push_stays_disabled_without_a_configured_vapid_key(page, base_url):
     page.goto(url(base_url, "full"))  # scenario's config.js has no VAPID_PUBLIC_KEY

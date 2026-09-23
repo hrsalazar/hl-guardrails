@@ -9,7 +9,7 @@ alert across runs by key (first_seen), gives signals an expiry, and keeps the on
 Categories, in the order the dashboard shows them:
   position  guardrail breach on the account or an open position (always pushed, never clearable)
   entry     live breakout entry signal (pushed)
-  heads_up  momentum spike (pushed)
+  heads_up  momentum spike, high-impact release within 24h (pushed)
   info      funding carry, breakout on a coin already held (dashboard only)
 """
 ENDED_KEEP_MS = 24 * 3600_000
@@ -62,8 +62,9 @@ def build(kind_notifiers, prev, now_ms, px_by_coin=None):
     ended = [e for e in (prev or {}).get("ended", []) if now_ms - e.get("ended_at", 0) < ENDED_KEEP_MS
              and e["key"] not in live_keys]
     for key, a in prev_live.items():
-        # guardrail breaches that clear just disappear: "no stop" fixed is good news, not history
-        if key in live_keys or a.get("cat") in (None, "position"):
+        # guardrail breaches that clear just disappear: "no stop" fixed is good news, not history;
+        # so does an event heads-up once the release is out -- there is nothing to have missed
+        if key in live_keys or a.get("cat") in (None, "position") or a.get("kind") == "event":
             continue
         coin = (a.get("meta") or {}).get("coin")
         status, why = ended_status(a, px_by_coin.get(coin))

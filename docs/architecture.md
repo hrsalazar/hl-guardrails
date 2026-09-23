@@ -47,6 +47,9 @@ read back at the start of the next run.
 | `hlg/alerts.py` | alert lifecycle: first seen, valid until, live/missed/failed/expired, what gets pushed | – |
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
 | `hlg/liquidations.py` | recent liquidation events from OKX, time-boxed and fail-soft | OKX |
+| `hlg/events.py` | scheduled high-impact releases: weekly calendar + FOMC schedule, pushed 24h heads-up, breakout-alert note | FairEconomy, federalreserve.gov |
+| `hlg/sentiment.py` | Crypto Fear & Greed: live reading for the dashboard, daily history for the backtest | alternative.me |
+| `hlg/digest.py` | daily brief: public RSS headlines digested by Claude into a tilt and cited points (needs `ANTHROPIC_API_KEY`) | RSS feeds, Anthropic API |
 | `hlg/macro.py` | FRED macro series for research and backtests (off in CI, see below) | FRED |
 | `hlg/vault.py` | AES-256-GCM encryption of everything published | – |
 | `hlg/report.py` | the one-shot CI entry point that ties the modules together | via the modules above |
@@ -69,12 +72,14 @@ read back at the start of the next run.
    Reuse the salt of any envelope found, so the key stays the same across runs, then decrypt.
    Plaintext (from before encryption) and the locked stub are handled too; see `load_prev`.
 3. **Guardrails.** Evaluate every rule against live positions, open orders and the account model.
-   Day and week baselines and the loss lock persist in `state`.
+   Day and week baselines and the loss lock persist in `state`. Just before this, the event
+   calendar is refreshed if stale (`hlg/events.py`, every 6h), so the scanner can see it.
 4. **Scanner.** Resolve today's coin list (`hlg/universe.py`), then breakout signals per timeframe from
    cached bar statistics and one `allMids` price snapshot, momentum from stored snapshots, and
    funding notes.
 5. **Context.** One extra asset-context call gives market and TradFi rows. Liquidations are
-   fetched with a hard budget.
+   fetched with a hard budget. Fear & Greed is refreshed every 6h. Releases within 24h become
+   `event` heads-up alerts (pushed once per release time).
 6. **Lifecycle** (`hlg/alerts.py`). An alert is *new* if its key wasn't live in the previous
    `alerts.json`; `first_seen` carries over by key. Signals that stopped being live move to `ended`
    as missed (ran more than 1 ATR past the signal close), failed (back below the breakout level)
@@ -85,7 +90,10 @@ read back at the start of the next run.
    not funding notes or breakouts on coins already held) to every subscription, plus a test message if the manual
    `test_push` input was set. Push is skipped when the previous state couldn't be read, since every
    alert would look new.
-9. The workflow then copies `pwa/` into `site/`, stamps `config.js` with the public VAPID key, and
+9. **After the push**, the slow context: liquidation levels every 4h, then once a UTC day the
+   daily brief (`hlg/digest.py`: RSS fetch plus one Claude call, ~1 min). Each republishes if it
+   produced something, so neither can delay a notification.
+10. The workflow then copies `pwa/` into `site/`, stamps `config.js` with the public VAPID key, and
    deploys Pages.
 
 ## Published data
@@ -117,6 +125,9 @@ Decrypted `alerts.json`, the dashboard payload:
 | `market`, `tradfi` | volume, OI, 24h change, premium and spread rows; `tradfi.dropped` counts hidden dead listings |
 | `liquidations` | `{src: "baked", rows}` or null (the dashboard then fetches OKX itself, labelled `live`) |
 | `macro` | FRED backdrop, or null |
+| `events` | `{upcoming: [{t, country, titles, forecast, previous}], next_fomc, fetched}`: the next 7 days of high-impact releases |
+| `fng` | `{value, label, as_of, series}`: Fear & Greed, 90 days |
+| `digest` | `{day, t, model, headline, tilt, confidence, why, points: [{text, links}], watch, n_items, sources, failed}`, or null |
 | `rules` | the rule thresholds in force |
 
 The encrypted `state.json` also carries the scanner's working memory between runs: `universe` (today's
@@ -135,6 +146,11 @@ only for bars that have closed since the last run.
 | Hyperliquid leaderboard | the account list for the liquidation map | ~40 MB, fetched once a day |
 | OKX public API | recent liquidation events, BTC/ETH/SOL | HL publishes no liquidation data; CORS-open, so the browser can fall back |
 | FRED | macro series for research | unreachable from Actions runners, so `macro_context: false` |
+| FairEconomy weekly calendar | high-impact releases, current week only | unofficial Forex Factory feed; rate-limits hard (429), fetched 6-hourly |
+| federalreserve.gov | FOMC meeting schedule, years ahead | HTML page, parsed; a parse returning < 6 meetings keeps the old list |
+| alternative.me | Crypto Fear & Greed | daily, back to 2018 |
+| RSS feeds (11) | headlines for the daily brief | list in `hlg/digest.py`; each fail-soft, 30s total budget |
+| Anthropic API | the daily brief | one call a day; public data only; `ANTHROPIC_API_KEY` |
 
 ## Design decisions
 
@@ -154,13 +170,13 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 192 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 212 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (43 tests, ~20s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (49 tests, ~25s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see
