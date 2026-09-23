@@ -2,6 +2,23 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-23 (evening)
+
+- **Adding specific coins (INJ, AVAX, TAO, FET): tested, not adopted.** New
+  `hlg/backtest.py::candidate_study` (`--candidate-study COIN [COIN...]`) tests naming coins onto
+  the live `scanner.coins` list directly, rather than ranking by liquidity like `--universe-study`
+  does. Pre-registered adoption rule (combined PF >= 1.4, max DD no worse than +5pp, OOS PF > 1.2,
+  candidates' own net P&L >= 0): 1d technically passes (PF 1.89 -> 1.92) but the win turns out to
+  be a shared-portfolio-slot artifact — three of the four candidates lose money or go flat
+  out-of-sample when tested alone; 4h fails outright (PF 1.53 -> 1.41, drawdown -26% -> -32%,
+  candidates net -$340). Not added. README "Universe" has the full breakdown.
+- **Found and documented, not changed: the live `scanner.coins` (11) isn't the backtest's research
+  list (`DEF["coins"]`, 15).** UNI/AAVE/AVAX/TON are backtested but not scanned live. Checked
+  per-coin for the first time: AAVE and UNI were the worst two performers of the 15 (reasonably
+  left out); AVAX was actually profitable and isn't scanned; XRP and NEAR are scanned despite
+  backtesting worse. The live list predates this breakdown rather than deriving from it — left
+  alone pending a deliberate decision, documented in README "Universe".
+
 ## 2026-09-23 (later)
 
 - **Funding alerts rewritten to explain themselves.** The old text was a bare number and a

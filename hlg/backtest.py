@@ -574,6 +574,68 @@ def universe_study(P, iv):
     print("\n".join(rep))
 
 
+def candidate_study(P, iv, fixed, candidates):
+    """python -m hlg.backtest --candidate-study INJ AVAX TAO FET [--interval 4h]
+
+    Does adding specific named coins to the live scanner list pay for itself? Not the liquidity-
+    ranked `--universe-study` (which asks "should the list rank itself"): this asks "should these
+    particular coins be on it", always eligible once listed -- the question actually being asked
+    when someone names a coin. Runs breakout_long on `fixed` (the live `scanner.coins`) alone and
+    on `fixed + candidates`, same window, same-day signals filling most-liquid first, same
+    adoption-rule discipline as the universe study. Adoption rule, fixed before running: the
+    candidate list ships only if combined PF >= 1.4, max DD no worse than the fixed list's + 5pp,
+    second-half (OOS) PF > 1.2, AND the candidates' own net P&L is not negative -- a coin that only
+    looks good riding the other 11's shared drawdown protection is not actually pulling weight.
+    """
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    start = pd.Timestamp(P["start"], tz="UTC")
+    start_ms = int(start.timestamp() * 1000)
+    data, fund = {}, {}
+    for c in dict.fromkeys(fixed + candidates):
+        df = bars(c, cache, iv)
+        if df is None or len(df) < 60:
+            log.warning("%s: no/short history, skipped", c)
+            continue
+        data[c] = features(df, 1)
+        fund[c] = funding(c, start_ms, cache, iv)
+    fixed = [c for c in fixed if c in data]
+    candidates = [c for c in candidates if c in data]
+    V = VARIANTS["breakout_long"]
+    liq_med = liquidity(data)[1]
+    rows = {}
+    for name, coins in [("fixed", fixed), ("fixed_plus_candidates", fixed + candidates)]:
+        sub = {c: data[c] for c in coins}
+        Q = {**P, "liq_med": liq_med, "elig_by_day": None, "delisted": set()}
+        T, C, dd = run(V, sub, {c: fund[c] for c in coins}, Q)
+        s = stats(T, C, dd, Q)
+        days = sorted(set().union(*[set(d.index) for d in sub.values()]))
+        days = [d for d in days if d >= start]
+        if days and not T.empty:
+            s |= halves(T, days[len(days) // 2])
+        cand_t = T[T.coin.isin(candidates)] if len(T) else T
+        s["candidate_trades"] = len(cand_t)
+        s["candidate_net"] = round(cand_t.net.sum(), 2) if len(cand_t) else 0.0
+        rows[name] = s
+        T.to_csv(out / f"candidates_{iv}_{name}.csv", index=False)
+        log.info("%s: trades %s pf %.2f dd %.1f", name, s.get("trades"), s.get("pf", 0), s.get("max_dd_pct", 0))
+    S = pd.DataFrame(rows).T
+    cols = ["trades", "win_rate", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf",
+            "candidate_trades", "candidate_net"]
+    base, cand = rows["fixed"], rows["fixed_plus_candidates"]
+    passed = (bool(cand.get("trades")) and cand["pf"] >= 1.4 and cand["max_dd_pct"] >= base["max_dd_pct"] - 5
+              and cand.get("OOS_pf", 0) > 1.2 and cand.get("candidate_net", -1) >= 0)
+    rep = [f"# Candidate study ({iv}, breakout_long, {P['start']} -> now)\n",
+           f"Fixed (live scanner.coins): {', '.join(fixed)}. Candidates tested: {', '.join(candidates)}. "
+           "Same-day signals fill most-liquid first.\n",
+           S[[c for c in cols if c in S]].astype(float).round(2).to_markdown() + "\n",
+           "Adoption rule (fixed before running): combined PF >= 1.4, max DD >= fixed - 5pp, OOS PF > 1.2, "
+           f"candidates' own net P&L >= 0 -> **{'PASS' if passed else 'FAIL'}**\n"]
+    (out / f"candidates_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return passed
+
+
 ENTRY_STUDY = {
     # pre-registered before running (README "Entries"); every variant is breakout_long plus one change
     "base": {},
@@ -804,6 +866,8 @@ def main():
     ap.add_argument("--dxy-study", action="store_true", help="dollar-index vs forward returns correlation, plus the no_dxy_headwind filter")
     ap.add_argument("--universe-study", action="store_true", help="breakout on fixed list vs point-in-time liquidity universes")
     ap.add_argument("--entry-study", action="store_true", help="failed-breakout study: fast exit, confirmation, fib retrace entries, bar-quality filters")
+    ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
+                     help="does adding these specific coins to the live scanner.coins list pay for itself?")
     a = ap.parse_args()
     cfg = load_config(a.config) if Path(a.config).exists() else {}
     P = {**DEF, **cfg.get("backtest", {})}
@@ -816,6 +880,9 @@ def main():
     iv = P["interval"]
     if a.universe_study:
         return universe_study(P, iv)
+    if a.candidate_study:
+        fixed = cfg.get("scanner", {}).get("coins") or P["coins"]
+        return candidate_study(P, iv, list(fixed), list(a.candidate_study))
     if a.entry_study:
         return entry_study(P, iv)
     if a.stbl_study:

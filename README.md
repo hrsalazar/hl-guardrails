@@ -418,6 +418,53 @@ small then), so top 30 and top 50 are identical — the cap never binds. `mode: 
 `allowed_coins: auto` remain available for anyone who wants to run it anyway, and the dashboard's
 near-breakout list and volume column work in either mode.
 
+### Adding specific coins (INJ, AVAX, TAO, FET) — tested, not adopted
+
+The liquidity-ranked universe above answers "should the list rank itself by volume". A different
+question is whether a handful of specific, named coins are worth adding to the live list by hand.
+`python -m hlg.backtest --candidate-study INJ AVAX TAO FET [--interval 4h]` tests that directly:
+breakout_long on the live `scanner.coins` (11 coins — see note below) alone, vs. the same list plus
+the named candidates always eligible, same-day signals filling most-liquid first as in the universe
+study. Adoption rule, fixed before running: combined PF >= 1.4, max DD no worse than the fixed
+list's + 5pp, second-half PF > 1.2, **and** the candidates' own net P&L not negative — riding the
+other 11 coins' shared drawdown protection without contributing doesn't count as pulling weight.
+
+| interval | universe | trades | PF | total | max DD | OOS PF | candidate trades | candidate net |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1d | fixed | 110 | 1.89 | +90% | -14% | 2.87 | — | — |
+| 1d | **fixed + candidates** | 123 | **1.92** | +134% | -16% | 1.96 | 25 | +$179 |
+| 4h | fixed | 336 | 1.53 | +262% | -26% | 1.61 | — | — |
+| 4h | **fixed + candidates** | 379 | **1.41** | +199% | -32% | 1.50 | 83 | **-$340** |
+
+**Result: not adopted — the two timeframes disagree, and neither pass is convincing on its own.**
+
+- **1d technically clears the bar** (PF 1.92, OOS 1.96, candidates net +$179), but the win is
+  fragile: run each candidate alone (no slot competition, same window) and three of the four —
+  INJ, AVAX, FET — earned essentially all of their profit in the first half and were flat-to-losing
+  out-of-sample (solo OOS PF 0.43 / 0.07 / 0.00); only TAO's *combined* result even involves it
+  turning a solo loss (PF 0.63) into a portfolio win, because the shared 3-slot cap mostly filters
+  out its weaker signals in favour of better-ranked coins competing for the same slots — a real
+  mechanic, but it means the 1d pass is measuring "these coins rarely cost you a slot", not "these
+  coins have their own edge".
+- **4h fails outright and louder**, the same pattern already seen with the liquidity-ranked
+  universe: PF drops (1.53 → 1.41), drawdown worsens by more than the 5pp allowance (-26% → -32%),
+  and the candidates lose money outright (-$340 over 83 trades).
+
+Bottom line: none of the four have a standalone edge on this rule: TAO loses money on its own; INJ,
+AVAX and FET show a real-looking edge only inside a sample window that has already passed. Not
+added to `scanner.coins`.
+
+**Note on which "fixed list" is which.** The backtest's own default research coin list
+(`hlg.backtest.DEF["coins"]`, 15 coins — used for the headline PF 1.67/1.75 numbers above) is not
+the same as the live `scanner.coins` in `config.yaml` (11 coins): UNI, AAVE, AVAX and TON are in the
+research list but not scanned live. Checked here for the first time per-coin: AAVE (PF 0.03) and
+UNI (PF 0.43) were the two worst performers of the 15 — reasonably left out. TON is a thin,
+roughly-breakeven 3-trade sample. AVAX was actually profitable (PF 1.90, 3 trades) and is *not*
+scanned live, while XRP (PF 0.57, a net loser) and NEAR (PF 1.11, barely positive) *are* — so the
+live list isn't a clean "keep the backtest's winners" derivation, it predates this per-coin
+breakdown. Left as-is rather than changed silently; worth a deliberate decision, not a backtest
+side-effect.
+
 ### Entries: can failed breakouts be avoided? — tested, nothing adopted yet
 
 About 60% of breakout trades lose; the system pays through the ~20% that run for weeks. So the test
