@@ -124,7 +124,13 @@ def build_full(*, age_min=2, journal_closed=8):
          "text": "MOMENTUM TAO up +9.4% in 4h - no setup here (not backtested at this speed), just a heads-up to go look"},
         {"kind": "scanner", "cat": "info", "key": "fund_ZEC_4", "push": False, "new": False,
          "first_seen": gen - 5 * H, "status": "live", "meta": {"coin": "ZEC"},
-         "summary": "Funding ZEC +42% APR", "text": "FUNDING ZEC: +42% APR - longs pay; carry = long spot + short perp"},
+         "summary": "Funding ZEC +42% APR (longs crowded)",
+         "text": ("FUNDING ZEC: +42% APR - longs are paying shorts, about $12/day per $10,000 held\n"
+                   "  read: funding this high usually means the crowd is heavily long - a cost if "
+                   "you're long here, more a caution flag than a bearish call\n"
+                   "  the yield is capturable risk-free: hold spot + short an equal perp (delta-"
+                   "neutral) to collect it without taking a market view\n"
+                   "  context only - not backtested, not part of the breakout rule, never pushed to your phone")},
         {"kind": "scanner", "cat": "info", "key": "setup_BTC_LONG_2026-09-18", "push": False, "new": False,
          "first_seen": gen - 7 * H, "status": "live", "meta": {"coin": "BTC"},
          "summary": "BTC 1d breakout - already held, don't add", "text": "BREAKOUT LONG BTC [already in a position - do NOT add]"},

@@ -2,6 +2,18 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-23 (later)
+
+- **Funding alerts rewritten to explain themselves.** The old text was a bare number and a
+  mechanic ("longs pay; carry = long spot + short perp") with no reason to care. Now each alert
+  says what the rate costs in real terms (`$/day per $10,000 held`), the crowd-positioning read
+  behind it (a large one-sided rate usually means the crowd is leaning hard one way — a caution
+  flag, not a directional call), and, only for the side that's actually capturable on Hyperliquid
+  (no spot-short here), how to collect it risk-free. The summary line now says which side is
+  crowded at a glance. Added a standing one-line explainer under the "Info" group ("context only —
+  never pushed, not part of the tested strategy") so the framing doesn't depend on reading one
+  alert's full text. `sw.js` cache bumped (v10 -> v11).
+
 ## 2026-09-23
 
 - **Theme toggle.** The dashboard already had a dark and a light palette but only ever followed

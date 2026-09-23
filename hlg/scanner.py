@@ -426,13 +426,33 @@ def run_once(cfg, inf, notif, state):
         if abs(funding_apr) > S["funding_carry_alert_apr"]:
             # Dashboard only: never backtested and not part of the breakout strategy. Only the
             # positive-funding side is a hedge you can actually hold on HL (long spot, short perp);
-            # the mirror needs a spot short, which HL does not offer.
+            # the mirror needs a spot short, which HL does not offer. The text below is written to
+            # answer "why does this matter" (funding as a crowding signal) and "what could I do
+            # about it" (the one side that's actually capturable here), not just report a number.
+            daily_per_10k = 10_000 * funding_apr / 36_500
             if funding_apr > 0:
-                txt = f"FUNDING {coin}: {funding_apr:+.0f}% APR - longs pay; carry = long spot + short perp"
+                txt = (
+                    f"FUNDING {coin}: {funding_apr:+.0f}% APR - longs are paying shorts, "
+                    f"about ${daily_per_10k:,.0f}/day per $10,000 held\n"
+                    f"  read: funding this high usually means the crowd is heavily long - a cost if "
+                    f"you're long here, more a caution flag than a bearish call\n"
+                    f"  the yield is capturable risk-free: hold spot + short an equal perp (delta-"
+                    f"neutral) to collect it without taking a market view\n"
+                    f"  context only - not backtested, not part of the breakout rule, never pushed to your phone"
+                )
             else:
-                txt = f"FUNDING {coin}: {funding_apr:+.0f}% APR - shorts pay; no spot-short hedge on HL, context only"
+                txt = (
+                    f"FUNDING {coin}: {funding_apr:+.0f}% APR - shorts are paying longs, "
+                    f"about ${-daily_per_10k:,.0f}/day per $10,000 held\n"
+                    f"  read: funding this negative usually means the crowd is heavily short - a cost "
+                    f"if you're short here, more a caution flag than a bullish call\n"
+                    f"  no clean hedge on Hyperliquid (spot can't be shorted), so there's no risk-free "
+                    f"way to collect this side\n"
+                    f"  context only - not backtested, not part of the breakout rule, never pushed to your phone"
+                )
             notif.send(txt, key=f"fund_{coin}_{int(funding_apr // 10)}", cooldown_s=6 * 3600,
-                       push=False, cat="info", summary=f"Funding {coin} {funding_apr:+.0f}% APR", coin=coin)
+                       push=False, cat="info", summary=f"Funding {coin} {funding_apr:+.0f}% APR "
+                       f"({'longs' if funding_apr > 0 else 'shorts'} crowded)", coin=coin)
     momentum(inf, S, U, ctx, coins, mids, state, notif, now_ms)
     if state is not None:
         # follow every breakout signal under the strategy's rules, taken or not (hlg.journal)

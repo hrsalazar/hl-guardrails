@@ -504,6 +504,7 @@ function renderGauges(d){
 // (localStorage) and only hides: a new signal on the same coin has a new key and shows again.
 // Guardrail breaches cannot be cleared, only collapsed -- they are live risk on open positions.
 const GROUPS=[['position','Your positions'],['entry','Entries'],['heads_up','Heads-up'],['info','Info'],['ended','Recently ended']];
+const GROUP_DESC={info:'Context only — never pushed, not part of the tested strategy. Tap a line for what it means and what, if anything, you could do about it.'};
 const store=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
 let cleared=new Set(store('hlgCleared')||[]), collapsed=store('hlgCollapsed')||{info:true,ended:true}, openKeys=new Set(), lastAlerts=null;
 const ago=ms=>{const m=Math.max(0,(Date.now()-ms)/60000);return m<1?'just now':m<60?`${Math.round(m)}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`};
@@ -536,7 +537,7 @@ function renderAlerts(d){
     const col=!!collapsed[c];
     return `<div class="grp" data-cat="${c}"><div class="gh" data-act="collapse"><span class="car" style="transform:rotate(${col?-90:0}deg)">▾</span>${label} <span class="n">${items.length}</span><span class="sp"></span>`
       +(c==='position'?'':`<button data-act="clearall">Clear all</button>`)+`</div>`
-      +(col?'':items.map(a=>row(a,c)).join(''))+`</div>`;
+      +(col?'':(GROUP_DESC[c]?`<div class="desc" style="margin:0 0 8px">${esc(GROUP_DESC[c])}</div>`:'')+items.map(a=>row(a,c)).join(''))+`</div>`;
   }).join('');
   const hidden=all.filter(a=>cleared.has(a.key)).length;
   $('#alerts').innerHTML=(html||'<div class="empty"><span class="ok">✓</span> All rules satisfied. No live signals.</div>')
