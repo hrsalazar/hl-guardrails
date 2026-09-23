@@ -2,6 +2,13 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-23
+
+- **Theme toggle.** The dashboard already had a dark and a light palette but only ever followed
+  the OS setting. A header button now cycles Auto -> Dark -> Light -> Auto; the explicit choice
+  is stored in `localStorage` and applied before first paint (an inline script in `<head>`), so
+  there's no flash of the wrong theme on load or on a reload. `sw.js` cache bumped (v9 -> v10).
+
 ## 2026-09-22 (late night)
 
 - **Correction: missing macro readings were silently coerced to False, not left unknown.**

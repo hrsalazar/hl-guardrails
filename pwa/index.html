@@ -10,6 +10,13 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script>
+// applied before first paint, so an explicit choice never flashes the OS theme first
+try{
+  var t=localStorage.getItem('hlgTheme');
+  if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;
+}catch(e){}
+</script>
 <style>
 /* ---- tokens --------------------------------------------------------------------------------------
    Dark is the primary look; light follows the OS. Chart colours are validated (dataviz method):
@@ -29,7 +36,7 @@
   --r:16px;
 }
 @media (prefers-color-scheme: light){
-  :root{
+  :root:not([data-theme="dark"]){
     color-scheme:light;
     --bg:#f3f4f7; --glow1:rgba(42,120,214,.10); --glow2:rgba(74,58,167,.07);
     --surface:#ffffff; --surface-2:#f6f7f9; --surface-3:#eceef2;
@@ -40,6 +47,29 @@
     --pos:#006300; --neg:#c42f2f;
     --shadow:0 1px 2px rgba(11,11,11,.04), 0 10px 28px -14px rgba(11,11,11,.18);
   }
+}
+/* explicit choice from the theme toggle wins over the OS setting either way */
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3f4f7; --glow1:rgba(42,120,214,.10); --glow2:rgba(74,58,167,.07);
+  --surface:#ffffff; --surface-2:#f6f7f9; --surface-3:#eceef2;
+  --line:rgba(11,11,11,.08); --line-2:rgba(11,11,11,.14);
+  --text:#0b0b0b; --text-2:#46454a; --muted:#6f6d68;
+  --grid:#e8e8e3; --axis:#c3c2b7;
+  --blue:#2a78d6; --blue-wash:rgba(42,120,214,.10); --red:#e34948; --red-wash:rgba(227,73,72,.09);
+  --pos:#006300; --neg:#c42f2f;
+  --shadow:0 1px 2px rgba(11,11,11,.04), 0 10px 28px -14px rgba(11,11,11,.18);
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0a0c11; --glow1:rgba(57,135,229,.18); --glow2:rgba(144,133,233,.12);
+  --surface:#12151c; --surface-2:#181c25; --surface-3:#212632;
+  --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+  --text:#eef1f6; --text-2:#b8c0cf; --muted:#7d8699;
+  --grid:#222733; --axis:#343b49;
+  --blue:#3987e5; --blue-wash:rgba(57,135,229,.13); --red:#e66767; --red-wash:rgba(230,103,103,.12);
+  --pos:#2fbf5b; --neg:#ff7a7a;
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 12px 32px -12px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -169,7 +199,7 @@ pre#sub{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(
     <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#4a3aa7"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lg)"/><path d="M32 12 L50 18 V31 C50 42 42 49 32 53 C22 49 14 42 14 31 V18 Z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/><path d="M24 32 l6 6 l11 -12" stroke="#fff" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <div style="min-width:0"><h1>HL Guardrails</h1><div class="sub"><span class="dot" id="fresh" hidden></span><span id="gen">loading…</span></div></div>
   </div>
-  <div class="hbtns"><button id="notif" class="ghost" title="Browser notifications while this page is open">Alerts</button><button id="push" class="ghost" disabled title="Background push to this device">Push</button><button id="lock" class="ghost" hidden title="Forget the key on this device">Lock</button></div>
+  <div class="hbtns"><button id="theme" class="ghost" title="Switch theme">Theme</button><button id="notif" class="ghost" title="Browser notifications while this page is open">Alerts</button><button id="push" class="ghost" disabled title="Background push to this device">Push</button><button id="lock" class="ghost" hidden title="Forget the key on this device">Lock</button></div>
 </header>
 <main>
   <!-- The published data is AES-256-GCM ciphertext (hlg/vault.py). Nothing below #app exists in
@@ -236,6 +266,17 @@ pre#sub{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(
 <script src="config.js"></script>
 <script>
 const $=s=>document.querySelector(s);
+
+// theme toggle: cycles auto (follows the OS) -> dark -> light -> auto
+const themeLabel=()=>{const t=document.documentElement.dataset.theme;return t?(t==='dark'?'Dark':'Light'):'Auto'};
+$('#theme').textContent=themeLabel();
+$('#theme').onclick=()=>{
+  const cur=document.documentElement.dataset.theme||'auto';
+  const n=cur==='auto'?'dark':(cur==='dark'?'light':null);
+  if(n)document.documentElement.dataset.theme=n;else delete document.documentElement.dataset.theme;
+  try{n?localStorage.setItem('hlgTheme',n):localStorage.removeItem('hlgTheme')}catch(e){}
+  $('#theme').textContent=themeLabel();
+};
 const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
 const cls=n=>n>=0?'pos':'neg';
 const sgn=n=>n>=0?'+':'−';
