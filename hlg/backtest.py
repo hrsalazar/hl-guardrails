@@ -572,6 +572,7 @@ def universe_study(P, iv):
            f"Adoption rule (fixed before running): auto_top30 PF >= 1.4, max DD >= fixed - 5pp, OOS PF > 1.2 -> **{'PASS' if passed else 'FAIL'}**\n"]
     (out / f"universe_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
     print("\n".join(rep))
+    return rows, passed
 
 
 def candidate_study(P, iv, fixed, candidates):

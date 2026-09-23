@@ -52,6 +52,7 @@ read back at the start of the next run.
 | `hlg/report.py` | the one-shot CI entry point that ties the modules together | via the modules above |
 | `hlg/vapid.py` | one-off VAPID key generator for Web Push | – |
 | `hlg/backtest.py`, `hlg/regime.py`, `hlg/miner.py`, `hlg/stablecoin.py` | research tools, run locally; not part of the monitor | HL, FRED, DefiLlama |
+| `scripts/weekly_universe_study.py` | reruns `hlg.backtest --universe-study` weekly (`.github/workflows/universe-study.yml`) and appends the result to `docs/research/`; never edits `config.yaml` | HL |
 | `pwa/` | static dashboard: `index.html` (UI, decryption, tabs), `sw.js` (offline shell, push display), manifest, icons | Pages, OKX (fallback) |
 
 `guardrails` and `scanner` also run as long-lived local processes (`python -m hlg.guardrails`,

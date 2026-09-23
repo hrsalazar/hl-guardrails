@@ -2,6 +2,24 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-23 (night)
+
+- **AVAX added to `scanner.coins` and `rules.allowed_coins`** — on your own read that the market is
+  moving into a different phase than the one the backtest data covers, not because it cleared the
+  candidate-study bar: solo against the other 11 coins it passes 1d on a 4-trade sample (PF 2.03)
+  but fails 4h outright (candidates net -$191 over 23 trades), the same fragile shape as the
+  INJ/TAO/FET candidates already rejected. Documented as an explicit override in README "Universe"
+  so it doesn't read as a backtest result later. Still governed by every existing guardrail and
+  stop-loss rule, same as any other scanned coin.
+- **Weekly universe-study re-run**, so a real regime shift doesn't require remembering to re-check
+  by hand: `.github/workflows/universe-study.yml` (Monday 06:00 UTC + manual dispatch) runs
+  `scripts/weekly_universe_study.py`, which reruns `--universe-study` for 1d and 4h against current
+  history and commits the trend to `docs/research/universe-study.md` /
+  `docs/research/universe-study-history.csv` if the result changed. Pure market backtest output, no
+  account data. **Never edits `config.yaml`** — a pass still needs a human decision.
+- New `hlg/backtest.py::universe_study` now returns `(rows, passed)` instead of only printing, so
+  the weekly script (and anything else) can read the result without re-parsing markdown.
+
 ## 2026-09-23 (evening)
 
 - **Adding specific coins (INJ, AVAX, TAO, FET): tested, not adopted.** New

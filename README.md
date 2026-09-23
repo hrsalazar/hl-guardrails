@@ -418,16 +418,26 @@ small then), so top 30 and top 50 are identical — the cap never binds. `mode: 
 `allowed_coins: auto` remain available for anyone who wants to run it anyway, and the dashboard's
 near-breakout list and volume column work in either mode.
 
-### Adding specific coins (INJ, AVAX, TAO, FET) — tested, not adopted
+**Re-tested weekly, automatically.** A rejection on 2023-2026 history doesn't mean it stays
+rejected forever — the market this trades has visibly changed character more than once already.
+`.github/workflows/universe-study.yml` reruns `--universe-study` every Monday against whatever
+history is current and appends the result to
+[`docs/research/universe-study.md`](../docs/research/universe-study.md), so a real shift shows up
+as a run of passing weeks instead of requiring anyone to remember to re-check by hand. It never
+edits `config.yaml` itself — a pass still needs a human to read it and decide.
+
+### Adding specific coins (INJ, TAO, FET) — tested, not adopted; AVAX — added anyway
 
 The liquidity-ranked universe above answers "should the list rank itself by volume". A different
 question is whether a handful of specific, named coins are worth adding to the live list by hand.
 `python -m hlg.backtest --candidate-study INJ AVAX TAO FET [--interval 4h]` tests that directly:
-breakout_long on the live `scanner.coins` (11 coins — see note below) alone, vs. the same list plus
-the named candidates always eligible, same-day signals filling most-liquid first as in the universe
-study. Adoption rule, fixed before running: combined PF >= 1.4, max DD no worse than the fixed
-list's + 5pp, second-half PF > 1.2, **and** the candidates' own net P&L not negative — riding the
-other 11 coins' shared drawdown protection without contributing doesn't count as pulling weight.
+breakout_long on the live `scanner.coins` alone, vs. the same list plus the named candidates always
+eligible, same-day signals filling most-liquid first as in the universe study. Adoption rule, fixed
+before running: combined PF >= 1.4, max DD no worse than the fixed list's + 5pp, second-half PF >
+1.2, **and** the candidates' own net P&L not negative — riding the other coins' shared drawdown
+protection without contributing doesn't count as pulling weight.
+
+All four together, against the then-11-coin fixed list:
 
 | interval | universe | trades | PF | total | max DD | OOS PF | candidate trades | candidate net |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -436,7 +446,8 @@ other 11 coins' shared drawdown protection without contributing doesn't count as
 | 4h | fixed | 336 | 1.53 | +262% | -26% | 1.61 | — | — |
 | 4h | **fixed + candidates** | 379 | **1.41** | +199% | -32% | 1.50 | 83 | **-$340** |
 
-**Result: not adopted — the two timeframes disagree, and neither pass is convincing on its own.**
+**Result: not adopted for INJ/TAO/FET — the two timeframes disagree, and neither pass is
+convincing on its own.**
 
 - **1d technically clears the bar** (PF 1.92, OOS 1.96, candidates net +$179), but the win is
   fragile: run each candidate alone (no slot competition, same window) and three of the four —
@@ -450,20 +461,33 @@ other 11 coins' shared drawdown protection without contributing doesn't count as
   universe: PF drops (1.53 → 1.41), drawdown worsens by more than the 5pp allowance (-26% → -32%),
   and the candidates lose money outright (-$340 over 83 trades).
 
-Bottom line: none of the four have a standalone edge on this rule: TAO loses money on its own; INJ,
-AVAX and FET show a real-looking edge only inside a sample window that has already passed. Not
-added to `scanner.coins`.
+INJ and FET stay out. TAO stays out too — its only positive showing was the shared-slot artifact
+above, not an edge of its own.
+
+**AVAX — added to `scanner.coins` on 2026-09-23 despite not clearing the bar either.** Re-run solo
+against the same 11-coin baseline (isolating it from the other three candidates):
+
+| interval | universe | trades | PF | max DD | OOS PF | candidate trades | candidate net |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 1d | fixed + AVAX | 109 | 2.03 | -16% | 2.87 | 4 | +$15 |
+| 4h | fixed + AVAX | 347 | 1.47 | -27% | 1.55 | 23 | **-$191** |
+
+1d passes on a 4-trade sample; 4h fails, losing money outright over 23 trades — the same fragile
+pattern as INJ/FET. **This was added on your own read that the market is moving into a different
+phase than the one this data covers, not because the backtest supports it** — worth being explicit
+about, since every other line in this section is a backtest-driven decision and this one isn't.
+It's now covered by the weekly re-test above, and by every guardrail and stop-loss rule the same as
+any other scanned coin; if the phase read is wrong, it costs at most what the position-sizing rules
+already cap any single breakout trade at, not a step outside them.
 
 **Note on which "fixed list" is which.** The backtest's own default research coin list
-(`hlg.backtest.DEF["coins"]`, 15 coins — used for the headline PF 1.67/1.75 numbers above) is not
-the same as the live `scanner.coins` in `config.yaml` (11 coins): UNI, AAVE, AVAX and TON are in the
-research list but not scanned live. Checked here for the first time per-coin: AAVE (PF 0.03) and
-UNI (PF 0.43) were the two worst performers of the 15 — reasonably left out. TON is a thin,
-roughly-breakeven 3-trade sample. AVAX was actually profitable (PF 1.90, 3 trades) and is *not*
-scanned live, while XRP (PF 0.57, a net loser) and NEAR (PF 1.11, barely positive) *are* — so the
-live list isn't a clean "keep the backtest's winners" derivation, it predates this per-coin
-breakdown. Left as-is rather than changed silently; worth a deliberate decision, not a backtest
-side-effect.
+(`hlg.backtest.DEF["coins"]`, 15 coins — used for the headline PF 1.67/1.75 numbers above) still
+does not match the live `scanner.coins` in `config.yaml` (12 coins after adding AVAX): UNI, AAVE
+and TON are in the research list but still not scanned live. AAVE (PF 0.03) and UNI (PF 0.43) were
+the two worst performers of the 15 — reasonably left out. TON is a thin, roughly-breakeven 3-trade
+sample — also reasonable to leave out. XRP (PF 0.57, a net loser) and NEAR (PF 1.11, barely
+positive) are scanned live despite backtesting worse than several excluded coins — the live list
+still doesn't cleanly track the backtest's per-coin winners, left as-is pending a deliberate look.
 
 ### Entries: can failed breakouts be avoided? — tested, nothing adopted yet
 

@@ -1,0 +1,44 @@
+name: universe-study
+
+# Re-runs the liquidity-ranked universe study (README "Universe") weekly against current market
+# history, so a real shift toward it outperforming the fixed coin list shows up as a trend in
+# docs/research/universe-study.md instead of requiring someone to remember to re-check by hand.
+# Pure market backtest output, no account data -- safe to commit to a public repo, same as the
+# figures already published in the README.
+#
+# This workflow never edits config.yaml: adoption stays a human decision either way.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: universe-study
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python scripts/weekly_universe_study.py
+      - name: Commit the updated trend, if anything changed
+        run: |
+          git config user.name "hl-guardrails bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/research/universe-study.md docs/research/universe-study-history.csv
+          if git diff --cached --quiet; then
+            echo "no change in this week's result"
+          else
+            git commit -m "Weekly universe-study trend update"
+            git push
+          fi

@@ -84,6 +84,10 @@ For each phone or computer:
 - **Loss lock:** after a daily or weekly limit is hit, the tool keeps advising "be flat" until the
   next UTC day or ISO week.
 - **Changing rules:** edit `config.yaml` and push. The push itself triggers a run.
+- **Universe study, weekly:** `universe-study` runs every Monday and commits its result to
+  `docs/research/universe-study.md` (a trend table) if the number changed. It only ever writes that
+  file — it never touches `config.yaml`, so a passing week is something to go read, not something
+  that changes what gets scanned by itself.
 
 ## Health checks
 

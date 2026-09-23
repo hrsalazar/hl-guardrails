@@ -20,13 +20,16 @@ rules:
   daily_loss_limit_pct: 3.0      # vs start-of-day value: whole account (spot incl.) when unified,
                                  # perps only on a classic account where spot is a separate wallet
   weekly_loss_limit_pct: 6.0
-  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]   # or: auto (= today's scanner universe)
+  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE, AVAX]   # or: auto (= today's scanner universe)
   no_add_underwater: true
 
 scanner:
   strategy: breakout   # breakout (backtested, long-only) | pullback (legacy, tested negative)
   timeframes: [1d, 4h]  # breakout runs independently on each (both backtested, see README "Timeframe")
-  coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE]   # used when universe.mode = fixed
+  coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE, AVAX]   # used when universe.mode = fixed
+  # AVAX added 2026-09-23 on your own market-phase read, not because it cleared the candidate-study
+  # bar (README "Universe": its out-of-sample profit factor alone was ~0, same fragility as
+  # INJ/TAO/FET) - noted here so a future look at the README doesn't read this as a backtest result
   # Which coins to scan. auto = the top_n perps by 30-day median daily volume (listed >= min_age_days,
   # OI >= min_oi_usd), rebuilt once per UTC day - the rule `python -m hlg.backtest --universe-study`
   # tests (README "Universe"). In auto mode momentum watches every perp >= min_vol_usd, not only top_n.
