@@ -725,9 +725,20 @@ const TILT={'risk-on':['on','▲','Risk-on'],'neutral':['neu','●','Neutral'],'
 const inT=t=>{const m=Math.round((t-Date.now())/60000);if(m<=0)return 'now';const dd=Math.floor(m/1440),h=Math.floor(m%1440/60),mm=m%60;
   return dd?`in ${dd}d ${h}h`:h?`in ${h}h ${String(mm).padStart(2,'0')}m`:`in ${mm}m`};
 const whenL=t=>new Date(t).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-function renderBrief(b){
+// The page can't see repository secrets, so `digest_status` (from the monitor run) is what tells
+// "no key configured" apart from "key found, today's brief not written yet" and "last attempt failed".
+function briefStatus(st){
+  if(!st)return '';
+  if(!st.enabled)return 'The daily brief is switched off in config.yaml (digest.enabled).';
+  if(!st.configured)return 'No API key found: add an <b>OPENROUTER_API_KEY</b> (or <b>ANTHROPIC_API_KEY</b>) repository secret (docs/operations.md).';
+  const when=st.next<=Date.now()?'on the next run (within ~15 min)':`${inT(st.next)} (${whenL(st.next)})`;
+  return `Key found (${esc(st.provider==='openrouter'?'OpenRouter':'Anthropic')}). Next brief ${when}.`
+    +(st.error?` <span class="neg">Last attempt failed ${ago(st.error.t)}: ${esc(st.error.msg)}</span>`:'');
+}
+function renderBrief(b,st){
   if(!b){$('#briefage').textContent='';
-    $('#brief').innerHTML='<div class="empty">No brief yet. One is written each day after 06:00 UTC from ~70 public macro and crypto headlines; it needs an <b>OPENROUTER_API_KEY</b> or <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).</div>';return}
+    $('#brief').innerHTML=`<div class="empty">No brief yet. One is written each day after 06:00 UTC from ~70 public macro and crypto headlines.<br>${
+      st?briefStatus(st):'It needs an <b>OPENROUTER_API_KEY</b> or <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).'}</div>`;return}
   const [c,ic,word]=TILT[b.tilt]||TILT.neutral, age=(Date.now()-b.t)/3600000;
   $('#briefage').textContent=age<24?'today, '+new Date(b.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):`${Math.floor(age/24)}d old`;
   const link=l=>{const u=safeUrl(l.url),t=`${esc(l.src)}: ${esc(l.title)}`;return u?`<a href="${attr(u)}" target="_blank" rel="noopener noreferrer">${t}</a>`:t};
@@ -735,7 +746,8 @@ function renderBrief(b){
     +`<div class="brief-h">${esc(b.headline)}</div><p class="brief-why">${esc(b.why)}</p>`
     +`<ol>${b.points.map(p=>`<li>${esc(p.text)}${(p.links||[]).length?`<span class="src">${p.links.map(link).join('<br>')}</span>`:''}</li>`).join('')}</ol>`
     +((b.watch||[]).length?`<div class="chips" style="margin-top:12px"><span class="mut" style="font-size:12px;align-self:center">Watch</span>${b.watch.map(w=>`<span class="chip">${esc(w)}</span>`).join('')}</div>`:'')
-    +`<div class="foot2">Written by ${esc(b.model)}${b.provider==='openrouter'?' via OpenRouter':''} from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: there's no free headline archive to backtest it against, so it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div></div>`;
+    +`<div class="foot2">Written by ${esc(b.model)}${b.provider==='openrouter'?' via OpenRouter':''} from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: there's no free headline archive to backtest it against, so it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div>`
+    +(st&&st.error&&st.error.t>b.t?`<div class="foot2 neg">Today's update failed ${ago(st.error.t)}: ${esc(st.error.msg)} — showing the last good brief.</div>`:'')+`</div>`;
 }
 function renderCalendar(e){
   if(!e){$('#calcard').hidden=true;return}
@@ -762,7 +774,7 @@ function renderFng(f){
     fmtX:(t,short)=>new Date(t).toLocaleDateString([], {month:'short',day:'numeric'})});
 }
 function renderMacro(d){
-  renderBrief(d.digest);renderCalendar(d.events);renderFng(d.fng);
+  renderBrief(d.digest,d.digest_status);renderCalendar(d.events);renderFng(d.fng);
   const t=d.tradfi&&d.tradfi.rows||[];
   // "N stale hidden" matters: HL lists xyz:DXY, xyz:VIX and friends at zero volume with a frozen
   // mark, so a silently short table would otherwise look like missing data rather than filtering.

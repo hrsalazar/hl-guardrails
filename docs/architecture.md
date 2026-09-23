@@ -170,13 +170,13 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 216 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 218 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (49 tests, ~25s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (51 tests, ~25s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see

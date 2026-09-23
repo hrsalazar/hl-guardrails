@@ -288,6 +288,23 @@ def parse_reply(text, items):
             "watch": [_text(str(w), 120) for w in (d.get("watch") or [])[:4] if str(w).strip()]}
 
 
+def status(state, now_ms, D, keys):
+    """What the dashboard needs to explain a missing brief: is a key configured (the page can't
+    see secrets), when the next attempt is, and why the last one failed, if it did."""
+    chosen = pick(D, keys) if D["enabled"] else None
+    now = dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc)
+    at = now.replace(hour=D["hour_utc"], minute=0, second=0, microsecond=0)
+    if (state.get("digest") or {}).get("day") == now.strftime("%Y-%m-%d"):
+        nxt = at + dt.timedelta(days=1)                   # done for today
+    else:
+        nxt = max(at, dt.datetime.fromtimestamp(((state.get("digest_try") or 0) + D["retry_hours"] * H) / 1000, dt.timezone.utc))
+    nxt = int(nxt.timestamp() * 1000)                     # in the past = on the next run
+    err = state.get("digest_error")
+    return {"enabled": bool(D["enabled"]), "configured": chosen is not None,
+            "provider": chosen[0] if chosen else None, "next": nxt,
+            "error": err if isinstance(err, dict) else None}
+
+
 def due(state, now_ms, D):
     now = dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc)
     cur = state.get("digest") or {}
@@ -310,6 +327,7 @@ def run(state, now_ms, D, ctx, keys, get=requests.get, post=requests.post):
     picked = select(items, now_ms - D["lookback_hours"] * H, D["max_items"], D["per_source"])
     if len(picked) < 5:
         log.error("digest: only %d recent headlines (%d/%d feeds answered), skipped", len(picked), len(ok), len(D["feeds"]))
+        state.set("digest_error", {"t": now_ms, "msg": f"only {len(picked)} recent headlines ({len(ok)}/{len(D['feeds'])} feeds answered)"})
         return None
     system, user = build_prompt(picked, {**ctx, "now_ms": now_ms})
     if provider == "openrouter":
@@ -321,6 +339,7 @@ def run(state, now_ms, D, ctx, keys, get=requests.get, post=requests.post):
               "model": model, "provider": provider, "n_items": len(picked), "sources": sorted(ok),
               "failed": sorted(failed), "fng": (ctx.get("fng") or {}).get("value")}
     state.set("digest", brief)
+    state.set("digest_error", None)
     log.info("digest: %d headlines from %d/%d feeds via %s (%s), %s in / %s out tokens, %.1fs", len(picked), len(ok),
              len(D["feeds"]), provider, model, tin, tout, time.monotonic() - t0, extra={"safe": True})
     return brief

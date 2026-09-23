@@ -25,6 +25,7 @@ SCENARIOS = {
     "full": lambda: (F.build_full(), F.history()),
     "mature": lambda: (F.build_full(journal_closed=34), F.history()),
     "empty": lambda: (F.build_empty(), None),
+    "briefpending": lambda: (F.build_brief_pending(), F.history()),
     "stub": lambda: (F.LOCKED_STUB, None),
 }
 

@@ -282,6 +282,10 @@ def main():
         "events": events.payload(state.get("events"), now_ms) if E["enabled"] else None,
         "fng": state.get("fng"),
         "digest": state.get("digest"),
+        # the page can't see secrets: this is how it tells "no key" from "not written yet"
+        "digest_status": digest.status(state, now_ms, digest.settings(cfg),
+                                       {"openrouter": os.environ.get("OPENROUTER_API_KEY"),
+                                        "anthropic": os.environ.get("ANTHROPIC_API_KEY")}),
     }
     hist = prev_hist if isinstance(prev_hist, list) else []
     hist.append({"t": out["generated"], "equity": out["equity"], "pv": acct.get("portfolio_value"),
@@ -335,10 +339,13 @@ def main():
                                keys)
             if brief:
                 out["digest"] = brief
-                publish("alerts.json", out, vlt, in_ci)
         except Exception as e:  # noqa: BLE001 - reading material; never fails the run
             log.error("digest failed: %s", e)
+            # the message carries status and error code only (hlg.digest._fail), never the key
+            state.set("digest_error", {"t": now_ms, "msg": str(e)[:200]})
         finally:
+            out["digest_status"] = digest.status(state, now_ms, D, keys)
+            publish("alerts.json", out, vlt, in_ci)
             publish("state.json", state.d, vlt, in_ci)
     log.info("run ok: published %s in %.1fs", "encrypted" if vlt else ("locked stub" if in_ci else "plaintext (local)"),
              time.monotonic() - started, extra={"safe": True})

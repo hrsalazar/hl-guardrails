@@ -183,6 +183,30 @@ def test_openrouter_errors_carry_no_key_including_an_upstream_error_inside_a_200
         assert st.get("digest_try") == ms(2026, 9, 23, 6)
 
 
+def test_status_tells_no_key_from_not_yet_written_and_carries_the_last_error():
+    key = {"openrouter": "or-key"}
+    assert digest.status(Mem(), ms(2026, 9, 23, 5), D, {})["configured"] is False
+    s = digest.status(Mem(), ms(2026, 9, 23, 5, 3), D, key)     # the run that confused things: 05:03 UTC
+    assert s["configured"] and s["provider"] == "openrouter" and s["next"] == ms(2026, 9, 23, 6)
+    st = Mem({"digest_try": ms(2026, 9, 23, 7), "digest_error": {"t": ms(2026, 9, 23, 7), "msg": "OpenRouter HTTP 402 (402)"}})
+    s = digest.status(st, ms(2026, 9, 23, 7, 30), D, key)
+    assert s["next"] == ms(2026, 9, 23, 9) and s["error"]["msg"] == "OpenRouter HTTP 402 (402)"  # retry gap
+    st = Mem({"digest": {"day": "2026-09-23"}})
+    assert digest.status(st, ms(2026, 9, 23, 20), D, key)["next"] == ms(2026, 9, 24, 6)   # done for today
+    assert digest.status(Mem(), ms(2026, 9, 23, 8), D, key)["next"] <= ms(2026, 9, 23, 8)  # overdue = next run
+    assert digest.status(Mem(), 0, dict(D, enabled=False), key) | {} == {
+        "enabled": False, "configured": False, "provider": None, "next": digest.status(Mem(), 0, dict(D, enabled=False), key)["next"], "error": None}
+
+
+def test_a_successful_brief_clears_the_previous_error():
+    def post(url, timeout, headers, json):
+        return Resp(js={"choices": [{"message": {"content": reply()}}], "usage": {}})
+
+    st = Mem({"digest_error": {"t": 1, "msg": "old"}})
+    digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"], ["B", "b"]]), {}, {"openrouter": "k"}, get=feeds_get, post=post)
+    assert st.get("digest_error") is None
+
+
 def test_no_key_means_no_attempt_at_all():
     st = Mem()
     assert digest.run(st, ms(2026, 9, 23, 6), D, {}, {}, get=feeds_get, post=None) is None

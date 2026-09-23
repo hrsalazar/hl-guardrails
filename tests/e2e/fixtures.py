@@ -258,7 +258,20 @@ def build_full(*, age_min=2, journal_closed=8):
             ],
             "watch": ["CPI Wednesday 12:30 UTC", "ETF flows"],
         },
+        # a failed refresh after the brief: the last good brief stays, with the failure noted
+        "digest_status": {"enabled": True, "configured": True, "provider": "openrouter", "next": gen + 2 * H,
+                          "error": {"t": gen - 20 * 60_000, "msg": "OpenRouter HTTP 402 (402)"}},
     }
+    return out
+
+
+def build_brief_pending():
+    """Key configured, today's brief not written yet (before 06:00 UTC): must not claim a missing key."""
+    out = build_full()
+    gen = now_ms() - 2 * 60_000
+    out["digest"] = None
+    out["digest_status"] = {"enabled": True, "configured": True, "provider": "openrouter",
+                            "next": gen + 55 * 60_000, "error": None}
     return out
 
 
@@ -279,6 +292,7 @@ def build_empty(*, age_min=95):
         "universe": {"mode": "fixed", "coins": 3, "day": None},
         "liqmap": None,
         "events": None, "fng": None, "digest": None,
+        "digest_status": {"enabled": True, "configured": False, "provider": None, "next": gen, "error": None},
     }
 
 

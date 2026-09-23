@@ -458,9 +458,26 @@ def test_fear_and_greed_card_shows_value_band_and_chart(page, base_url):
 def test_macro_tab_empty_states(page, base_url):
     page.goto(url(base_url, "empty"))
     page.locator('.tab[data-tab="macro"]').click()
-    expect(page.locator("#brief")).to_contain_text("OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
+    expect(page.locator("#brief")).to_contain_text("No API key found: add an OPENROUTER_API_KEY")
     expect(page.locator("#calcard")).to_be_hidden()
     expect(page.locator("#fngcard")).to_be_hidden()
+
+
+def test_brief_pending_with_a_key_says_so_instead_of_asking_for_a_key(page, base_url):
+    """The page can't see secrets; before the first 06:00 UTC run it must not claim the key is missing."""
+    page.goto(url(base_url, "briefpending"))
+    page.locator('.tab[data-tab="macro"]').click()
+    brief = page.locator("#brief")
+    expect(brief).to_contain_text("Key found (OpenRouter). Next brief in 5")
+    expect(brief).not_to_contain_text("No API key found")
+    expect(brief).not_to_contain_text("failed")
+
+
+def test_a_failed_refresh_keeps_the_last_brief_and_says_why(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    expect(page.locator("#brief .brief-h")).to_be_visible()
+    expect(page.locator("#brief")).to_contain_text(re.compile(r"Today's update failed 2\dm ago: OpenRouter HTTP 402 \(402\)"))
 
 
 # ---------------------------------------------------------------------- notifications / push
