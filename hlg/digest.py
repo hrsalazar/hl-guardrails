@@ -25,7 +25,7 @@ Two ways to reach a model, picked by `provider` (auto = whichever key is set, Op
   openrouter  OPENROUTER_API_KEY. `openrouter_models` is an ordered list: OpenRouter tries the
               first and falls back down the list if that model's providers are down, and the
               brief records which model actually wrote it. Default: Claude Opus 5.5 (the strongest
-              at faithful, calibrated summarising; ~6k tokens in / 1k out = ~$0.04 a day at
+              at faithful, calibrated summarising; measured 8.6k tokens in / 0.8k out = ~$0.05 a day at
               OpenRouter's 2026-09 list price), then Claude Sonnet 5, then GPT-6 Sol.
   anthropic   ANTHROPIC_API_KEY, Anthropic's API directly, `model`.
 

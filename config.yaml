@@ -108,7 +108,7 @@ digest:
   hour_utc: 6            # first run after this hour; 06:00 UTC = after Asia, before Europe and US data
   provider: auto         # auto (OpenRouter if its key is set, else Anthropic) | openrouter | anthropic
   # OpenRouter: tried in order, falling back when a model's providers are down. Opus 5.5 is the
-  # strongest at faithful, calibrated summarising; ~$0.04/day at 2026-09 list prices. Any id from
+  # strongest at faithful, calibrated summarising; ~$0.05/day (measured: 8.6k in / 0.8k out). Any id from
   # openrouter.ai/models works, including free ones (weaker; a reply that isn't valid JSON is dropped).
   openrouter_models: [anthropic/claude-opus-5.5, anthropic/claude-sonnet-5, openai/gpt-6-sol]
   model: claude-sonnet-5 # used only for provider anthropic (Anthropic's API directly)

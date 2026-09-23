@@ -220,8 +220,8 @@ are set) or `ANTHROPIC_API_KEY` for Anthropic's API directly. Through OpenRouter
 **Claude Opus 5.5** first — the strongest option at the careful part of this job: staying inside
 the sources, calibrated confidence, valid JSON — and falls back to Claude Sonnet 5, then GPT-6 Sol,
 if a model's providers are down (OpenRouter's documented `models` fallback). The brief records which
-model actually wrote it. Cost at OpenRouter's September 2026 list price: ~6k tokens in and ~1k out
-is about **$0.04 a day (~$1.30 a month)**. The list is `digest.openrouter_models` in `config.yaml`,
+model actually wrote it. Cost, measured on the first live brief: 8.6k tokens in, 0.8k out
+is about **$0.05 a day (~$1.50 a month)**. The list is `digest.openrouter_models` in `config.yaml`,
 so any model from openrouter.ai/models can go first, free ones included (weaker; a reply that isn't
 valid JSON is dropped). Without a key the step is skipped silently. A failed call retries two hours
 later, not every 15 minutes, so a broken key can't run up calls.
@@ -554,6 +554,46 @@ That is what the **signal journal** is for (Technical tab): every breakout signa
 followed under the rule's own mechanics, taken or not, and records its result in R, whether it
 failed early (and whether it recovered), and the breakout bar's close location. After ~30 closed
 signals that is fresh, out-of-sample evidence on exactly these questions.
+
+### Pyramiding: add to a winner on a fresh breakout? — tested, not adopted
+
+When a coin you already hold breaks out again, the scanner says "already held, don't add" —
+because the engine never added (one position per coin), so every tested number assumes it. Adding
+to winners is a real trend-following technique, so it got the same treatment as every other idea
+(`python -m hlg.backtest --pyramid-study [--interval 4h]`). Rules fixed before running: a fresh
+breakout signal on a held coin adds at the next open **only if the position's trailing stop is at or
+above the first entry** (the original unit can no longer lose); the add risks 1.5% of equity to that
+**shared** stop, all units exit together (including the 21-day time stop from the first entry), the
+coin stays within the 3× notional cap, and an add takes no new slot. Candidate `pyramid1` (one add,
+`pyramid2` = sensitivity) had to clear the `--entry-study` bar — PF ≥ base + 0.10, drawdown no more
+than 2pp worse, both halves at least as good — on **both** 1d and 4h.
+
+| interval | variant | adds | PF | total | max DD | Sharpe | IS / OOS PF | adds' own PF | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 1d | base | — | 1.67 | +78% | −18.4% | 0.98 | 1.18 / 2.71 | — | — |
+| 1d | `pyramid1` | 42 | 1.72 | +108% | −22.3% | 0.99 | 1.21 / 2.68 | 1.92 | fail |
+| 1d | `pyramid2` | 69 | 1.64 | +114% | −25.3% | 0.93 | 1.18 / 2.45 | 1.56 | — |
+| 4h | base | — | 1.38 | +199% | −40.4% | 1.21 | 1.09 / 1.54 | — | — |
+| 4h | `pyramid1` | 121 | 1.41 | +321% | −48.2% | 1.29 | 1.10 / 1.57 | 1.61 | fail |
+| 4h | `pyramid2` | 205 | 1.36 | +315% | −53.8% | 1.20 | 1.04 / 1.53 | 1.35 | — |
+
+**Not adopted.** The adds make money on their own (PF 1.92 on 1d, 1.61 on 4h), but mostly by adding
+exposure: return and drawdown rise together, and PF moves only +0.05 / +0.03 against the +0.10
+required. A second add makes everything worse.
+
+**A diagnostic run after seeing those results** (so it informs, it doesn't decide): is adding better
+than simply risking more on every trade, at the same drawdown? Base re-run at higher risk until its
+drawdown matched `pyramid1`'s:
+
+| interval | `pyramid1` @ 1.5% | base @ 1.9% | 
+|---|---|---|
+| 1d | +108%, DD −22.3%, Sharpe 0.99 | +103%, DD −22.8%, Sharpe 0.99 |
+| 4h | **+321%**, DD −48.2%, Sharpe **1.29** | +269%, DD −48.2%, Sharpe 1.21 |
+
+On 4h the adds genuinely beat sizing up; on 1d it's a wash. That makes 4h pyramiding the one variant
+worth a proper, pre-registered test of its own ("beats equal-drawdown sizing") before anything
+changes. Until then the alert keeps saying "don't add" — and a 4h drawdown near −48% is a reminder of
+what any extra exposure on that timeframe costs.
 
 ### Momentum heads-up
 

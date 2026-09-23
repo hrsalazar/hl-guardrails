@@ -2,6 +2,18 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-23 (morning)
+
+- **Pyramiding: tested, not adopted** (`--pyramid-study`, README "Pyramiding"). One add on a fresh
+  breakout, only once the shared trailing stop is at or above the first entry, 1.5% risk to that
+  stop, all units exit together. Fails the pre-set bar on both 1d (PF 1.67 -> 1.72, DD -18.4% ->
+  -22.3%) and 4h (1.38 -> 1.41, -40.4% -> -48.2%): the adds are profitable on their own but mostly add
+  exposure. A post-hoc check at equal drawdown shows 4h adds beating plain bigger sizing (+321% vs
+  +269%, Sharpe 1.29 vs 1.21) and 1d a wash: 4h pyramiding is flagged for its own pre-registered test.
+  The engine now carries adds as units of one position (one trade row per unit); the baseline
+  reproduces exactly (126 trades, PF 1.67).
+- Daily brief cost corrected from the first live run: 8.6k tokens in / 0.8k out = ~$0.05/day.
+
 ## 2026-09-23 (late night)
 
 - **Daily brief: JSON enforced by the provider.** The first live brief (06:01 UTC) was dropped: the

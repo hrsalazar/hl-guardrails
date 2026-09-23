@@ -29,7 +29,7 @@ value in the **Secret** box.
 | `VAPID_SUBJECT` | Secrets | `mailto:you@example.com` or `https://<you>.github.io` (host only, no path) |
 | `VAPID_PUBLIC_KEY` | **Variables** tab | from `python -m hlg.vapid` |
 | `PUSH_SUBSCRIPTIONS` | Secrets | added in step 5 |
-| `OPENROUTER_API_KEY` | Secrets | optional, for the daily brief: openrouter.ai → *Keys* → *Create key* (buy a few dollars of credit first; ~$0.04 a day). Without it (or the next one) the brief is skipped and everything else works |
+| `OPENROUTER_API_KEY` | Secrets | optional, for the daily brief: openrouter.ai → *Keys* → *Create key* (buy a few dollars of credit first; ~$0.05 a day). Without it (or the next one) the brief is skipped and everything else works |
 | `ANTHROPIC_API_KEY` | Secrets | optional alternative: a key from console.anthropic.com (API credits are separate from a Claude Pro plan). Used only if no OpenRouter key is set |
 
 To set them from a terminal, use the GitHub CLI; it prompts for the value without showing it:
@@ -132,7 +132,7 @@ For each phone or computer:
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 echo "account: '0x…'" > config.local.yaml
-pytest -q                          # 221 tests, no network
+pytest -q                          # 225 tests, no network
 python -m hlg.guardrails           # continuous, console / Telegram
 python -m hlg.scanner
 python -m hlg.report               # one CI-style run; writes plaintext site/*.json (gitignored)

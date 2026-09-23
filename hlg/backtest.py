@@ -287,6 +287,42 @@ def signal(k, V):
 
 
 # ----------------------------------------------------------------------------- engine
+def _pyramid_add(p, px, d, V, P, eq):
+    """Add a unit to an open long (README "Pyramiding", rules fixed before running): only while the
+    shared trailing stop is at or above the first entry (the original unit can no longer lose), at
+    most V["pyramid"] adds, each risking risk_pct to that shared stop, the coin's combined notional
+    within max_lev x equity. Returns the entry fee (0.0 when no add is made)."""
+    if p is None or p["side"] != "L" or len(p["adds"]) >= V.get("pyramid", 0) or p["stop"] < p["entry"]:
+        return 0.0
+    dist = px - p["stop"]
+    if dist <= 0:  # gapped to or through the stop: the position exits today anyway
+        return 0.0
+    held = p["sz"] + sum(a["sz"] for a in p["adds"])
+    sz = min(eq * P["risk_pct"] / 100 / dist, eq * P["max_lev"] / px - held)
+    if sz <= 0:
+        return 0.0
+    fee = sz * px * P["maker_fee"]
+    p["adds"].append(dict(entry=px, sz=sz, fee=fee, fund=0.0, start=d))
+    return fee
+
+
+def _close(p, exit_px, end, why, P, eq):
+    """Every unit of a position exits together at one price; one trade row per unit (unit 0 = the
+    original entry, 1.. = adds). Returns (rows, equity after)."""
+    sgn = 1 if p["side"] == "L" else -1
+    rows = []
+    for u, unit in enumerate([p] + p.get("adds", [])):
+        fee = unit["sz"] * exit_px * P["taker_fee"]
+        pnl = sgn * (exit_px - unit["entry"]) * unit["sz"]
+        net = pnl - fee - unit["fee"] + unit["fund"]
+        eq += pnl - fee + unit["fund"]
+        rows.append(dict(coin=p["coin"], side=p["side"], entry=unit["entry"], exit=exit_px, start=unit["start"], end=end,
+                         days=(end - unit["start"]).total_seconds() / 86400, why=why, gross=pnl, fees=fee + unit["fee"],
+                         fund=unit["fund"], net=net, net_pct=net / (eq - net) * 100, notional=unit["sz"] * unit["entry"],
+                         unit=u))
+    return rows, eq
+
+
 def run(V, data, fund, P):
     days = sorted(set().union(*[set(d.index) for d in data.values()]))
     days = [d for d in days if d >= pd.Timestamp(P["start"], tz="UTC")]
@@ -323,6 +359,9 @@ def run(V, data, fund, P):
             else:
                 px, intrabar = k.o, False
             del pending[coin]
+            if q.get("add"):
+                eq -= _pyramid_add(open_pos.get(coin), px, d, V, P, eq)
+                continue
             if coin in open_pos or len(open_pos) >= P["max_positions"]:
                 continue
             stop = q["stop"] if entry == "open" else px - V["stop_atr"] * q["atr"]
@@ -335,29 +374,21 @@ def run(V, data, fund, P):
             eq -= fee
             open_pos[coin] = dict(coin=coin, side=q["side"], entry=px, sz=sz, stop=stop, tgt=q["tgt"], start=d, fee=fee,
                                   fund=0.0, best=px, sig_day=q["sd"], level=q["level"], bars=0,
-                                  intrabar_day=d if intrabar else None)
+                                  intrabar_day=d if intrabar else None, adds=[])
         # 2) manage open positions on today's bar
         for coin, p in list(open_pos.items()):
             df = data[coin]
             if d not in df.index:
                 if coin in P.get("delisted", ()) and d > df.index[-1]:  # delisted: close at the last traded price
-                    k = df.iloc[-1]
-                    sgn = 1 if p["side"] == "L" else -1
-                    exit_px = k.c
-                    fee = p["sz"] * exit_px * P["taker_fee"]
-                    pnl = sgn * (exit_px - p["entry"]) * p["sz"]
-                    net = pnl - fee - p["fee"] + p["fund"]
-                    eq += pnl - fee + p["fund"]
-                    trades.append(dict(coin=coin, side=p["side"], entry=p["entry"], exit=exit_px, start=p["start"], end=df.index[-1],
-                                       days=(df.index[-1] - p["start"]).total_seconds() / 86400, why="delisted", gross=pnl,
-                                       fees=fee + p["fee"], fund=p["fund"], net=net, net_pct=net / (eq - net) * 100,
-                                       notional=p["sz"] * p["entry"]))
+                    rows, eq = _close(p, df.iloc[-1].c, df.index[-1], "delisted", P, eq)
+                    trades += rows
                     del open_pos[coin]
                 continue
             k = df.loc[d]
             sgn = 1 if p["side"] == "L" else -1
             fr = fund[coin].get(d, 0.0)
-            p["fund"] += -sgn * fr * p["sz"] * k.c  # longs pay positive funding
+            for unit in [p] + p.get("adds", []):
+                unit["fund"] += -sgn * fr * unit["sz"] * k.c  # longs pay positive funding
             exit_px, why = None, None
             if p["side"] == "L":
                 if k.l <= p["stop"]:
@@ -379,17 +410,12 @@ def run(V, data, fund, P):
                 new_stop = p["best"] - sgn * V["trail_atr"] * k.atr
                 p["stop"] = max(p["stop"], new_stop) if sgn > 0 else min(p["stop"], new_stop)
             if exit_px is not None:
-                fee = p["sz"] * exit_px * P["taker_fee"]
-                pnl = sgn * (exit_px - p["entry"]) * p["sz"]
-                net = pnl - fee - p["fee"] + p["fund"]
-                eq += pnl - fee + p["fund"]
-                trades.append(dict(coin=coin, side=p["side"], entry=p["entry"], exit=exit_px, start=p["start"], end=d,
-                                   days=(d - p["start"]).total_seconds() / 86400, why=why, gross=pnl, fees=fee + p["fee"], fund=p["fund"],
-                                   net=net, net_pct=net / (eq - net) * 100, notional=p["sz"] * p["entry"]))
+                rows, eq = _close(p, exit_px, d, why, P, eq)
+                trades += rows
                 del open_pos[coin]
         # 3) mark to market + signals at close
-        mtm = eq + sum((1 if p["side"] == "L" else -1) * (data[c].loc[d].c - p["entry"]) * p["sz"]
-                       for c, p in open_pos.items() if d in data[c].index)
+        mtm = eq + sum((1 if p["side"] == "L" else -1) * (data[c].loc[d].c - u["entry"]) * u["sz"]
+                       for c, p in open_pos.items() if d in data[c].index for u in [p] + p.get("adds", []))
         peak = max(peak, mtm)
         dd = min(dd, mtm / peak - 1)
         curve.append((d, mtm))
@@ -403,7 +429,16 @@ def run(V, data, fund, P):
         elig = P.get("elig_by_day")
         for coin in (elig.get(d.floor("D"), ()) if elig is not None else data):
             df = data[coin]
-            if d not in df.index or coin in open_pos:
+            if d not in df.index:
+                continue
+            if coin in open_pos:
+                # pyramiding: a fresh breakout on a coin already held becomes an add order for the
+                # next open; _pyramid_add decides at the fill whether the rules allow it
+                if V.get("pyramid") and entry == "open":
+                    s = signal(df.loc[d], V)
+                    if s and s[0] == "L":
+                        pending[coin] = dict(side="L", stop=s[1], tgt=None, sd=d, level=df.loc[d].hi20,
+                                             atr=df.loc[d].atr, mode="open", add=True)
                 continue
             if coin in pending and pending[coin]["mode"] in ("fib", "await"):
                 continue  # a retrace order or a confirmation is already working
@@ -938,6 +973,57 @@ def event_study(P, iv):
     print("\n".join(rep))
 
 
+PYRAMID_STUDY = {"base": 0, "pyramid1": 1, "pyramid2": 2}  # pyramid1 is the candidate; pyramid2 sensitivity only
+
+
+def pyramid_study(P, iv):
+    """python -m hlg.backtest --pyramid-study [--interval 4h]
+
+    Should a fresh breakout on a coin already held add to the position? Rules fixed before running
+    (README "Pyramiding"): add only while the shared trailing stop is at or above the first entry,
+    the add risks risk_pct to that shared stop, all units exit together, the coin's notional stays
+    within max_lev x equity, an add takes no new slot. Candidate `pyramid1` (one add) must beat the
+    base by the --entry-study bar -- PF >= base + 0.10, max DD no worse than base - 2pp, PF in each
+    half >= the base's -- on BOTH 1d and 4h. (No random-subset control: adds create trades rather
+    than select from the baseline's, so the second timeframe is the stand-in for a second test.)"""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    start = pd.Timestamp(P["start"], tz="UTC")
+    data, fund = {}, {}
+    for c in DEF["coins"]:
+        df = bars(c, cache, iv)
+        if df is None or len(df) < 80:
+            continue
+        data[c] = features(df, 1)
+        fund[c] = funding(c, int(start.timestamp() * 1000), cache, iv)
+    days = [d for d in sorted(set().union(*[set(d.index) for d in data.values()])) if d >= start]
+    mid = days[len(days) // 2]
+    rows = {}
+    for name, n in PYRAMID_STUDY.items():
+        V = {**VARIANTS["breakout_long"], "pyramid": n}
+        T, C, dd = run(V, data, fund, P)
+        s = stats(T, C, dd, P) | halves(T, mid)
+        adds = T[T.unit > 0]
+        g, l = adds.net[adds.net > 0].sum(), -adds.net[adds.net < 0].sum()
+        s |= {"positions": int((T.unit == 0).sum()), "adds": len(adds), "adds_net": round(adds.net.sum(), 1),
+              "adds_pf": round(g / l, 2) if l else (float("inf") if g else 0.0)}
+        rows[name] = s
+        T.to_csv(out / f"pyramid_{iv}_{name}.csv", index=False)
+        log.info("%s: positions %d adds %d pf %.2f dd %.1f", name, s["positions"], s["adds"], s["pf"], s["max_dd_pct"])
+    b, c = rows["base"], rows["pyramid1"]
+    ok = (c["pf"] >= b["pf"] + 0.10 and c["max_dd_pct"] >= b["max_dd_pct"] - 2
+          and c["IS_pf"] >= b["IS_pf"] and c["OOS_pf"] >= b["OOS_pf"])
+    S = pd.DataFrame(rows).T
+    cols = ["positions", "adds", "trades", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf", "adds_pf", "adds_net"]
+    rep = [f"# Pyramiding study ({iv}, breakout_long, {P['start']} -> now)\n",
+           S[cols].astype(float).round(2).to_markdown() + "\n",
+           f"pyramid1 vs base on this interval (rule fixed before running): **{'PASS' if ok else 'FAIL'}** "
+           "(adoption needs a pass on both 1d and 4h)\n"]
+    (out / f"pyramid_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return rows, ok
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -955,6 +1041,7 @@ def main():
     ap.add_argument("--entry-study", action="store_true", help="failed-breakout study: fast exit, confirmation, fib retrace entries, bar-quality filters")
     ap.add_argument("--sentiment-study", action="store_true", help="Fear & Greed vs forward returns, plus the two extreme-band entry filters")
     ap.add_argument("--event-study", action="store_true", help="skip breakout entries that fill within 24h before an FOMC decision?")
+    ap.add_argument("--pyramid-study", action="store_true", help="add to a held coin on a fresh breakout once its stop is at breakeven?")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
     a = ap.parse_args()
@@ -982,6 +1069,8 @@ def main():
         return sentiment_study(P, iv)
     if a.event_study:
         return event_study(P, iv)
+    if a.pyramid_study:
+        return pyramid_study(P, iv)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
