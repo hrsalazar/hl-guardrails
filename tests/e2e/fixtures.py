@@ -216,6 +216,8 @@ def build_full(*, age_min=2, journal_closed=8):
             "summary": {
                 "closed": journal_closed, "open": 2, "win_rate": 3 / 8, "avg_r": 0.34, "pf": 1.59,
                 "failed_early": 3, "failed_early_recovered": 1,
+                "adds": {"4h": {"closed": 3, "open": 1, "skipped": 2, "r_sum": 1.4, "pf": 2.1,
+                                "base_r_sum": 2.0, "with_add_r_sum": 3.4}},
                 "curve": [{"t": gen - (journal_closed - i) * 3 * D, "r": r, "coin": "SOL", "tf": "1d"}
                           for i, r in enumerate([-1, -1, 2.4, -0.6, -1, 4.1, -1, 0.8][:journal_closed])],
             },

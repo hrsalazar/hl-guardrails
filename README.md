@@ -591,9 +591,14 @@ drawdown matched `pyramid1`'s:
 | 4h | **+321%**, DD −48.2%, Sharpe **1.29** | +269%, DD −48.2%, Sharpe 1.21 |
 
 On 4h the adds genuinely beat sizing up; on 1d it's a wash. That makes 4h pyramiding the one variant
-worth a proper, pre-registered test of its own ("beats equal-drawdown sizing") before anything
-changes. Until then the alert keeps saying "don't add" — and a 4h drawdown near −48% is a reminder of
-what any extra exposure on that timeframe costs.
+worth a test of its own before anything changes — and re-testing on the same history wouldn't be
+independent, so **the test runs live**: the signal journal (`hlg/journal.py`) now records a
+hypothetical add on every signal, under exactly the rule above (armed by a fresh breakout on an open
+entry, filled at the next open only if the trailing stop is at or above the first entry, sharing the
+stop and exiting with the entry). The Technical tab's journal card shows the tally per timeframe:
+the adds' own R and PF, and what those trades made with and without the add. Judge it at ~30 closed
+adds on 4h. Until then the alert keeps saying "don't add" — and a 4h drawdown near −48% is a reminder
+of what any extra exposure on that timeframe costs.
 
 ### Momentum heads-up
 
@@ -885,7 +890,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-51 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+52 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

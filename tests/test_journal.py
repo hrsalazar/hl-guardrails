@@ -79,3 +79,59 @@ def test_summary_and_prune():
     s = journal.summary(jr)
     assert s["closed"] == 2 and s["win_rate"] == 0.5 and s["pf"] > 1
     assert journal.prune(jr, 24 * D + journal.KEEP_CLOSED_MS + 1) == []
+
+
+# ---- hypothetical pyramid adds (README "Pyramiding": the live half of the test)
+def _winner():
+    """Entry 101 (risk 4, stop 96), trailing up to 104 by bar 3: the first unit can no longer lose."""
+    jr = new_entry()
+    e = journal.update(jr[0], [bar(0, 99, 101, 97, 100), bar(1, 101, 103, 100, 102),
+                               bar(2, 102, 108, 101, 107), bar(3, 107, 110, 106, 109)], S, 21)
+    assert e["stop"] == 104 and e["entry"] == 101
+    return jr, e
+
+
+def test_add_fills_at_the_next_open_shares_the_stop_and_exits_with_the_entry():
+    jr, e = _winner()
+    journal.arm_add(jr, row(signal_day="2026-09-04", sig_t=3 * D))
+    journal.update(e, [bar(4, 110, 113, 109, 112)], S, 21)
+    a = e["add"]
+    assert a["status"] == "open" and a["entry"] == 110 and a["risk"] == 6  # 110 - the shared stop (104)
+    assert abs(a["r"] - 2 / 6) < 1e-9                                      # marked at the close
+    journal.update(e, [bar(5, 111, 111, 106, 107)], S, 21)                  # trail is now 107: stopped
+    assert e["status"] == "stopped" and abs(e["r"] - 1.5) < 1e-9
+    assert a["status"] == "closed" and abs(a["r"] + 0.5) < 1e-9             # (107 - 110) / 6
+    s = journal.summary(jr)["adds"]["1d"]
+    assert s["closed"] == 1 and abs(s["r_sum"] + 0.5) < 1e-9 and abs(s["with_add_r_sum"] - 1.0) < 1e-9
+
+
+def test_no_add_while_the_stop_is_below_the_entry_and_a_skip_can_be_rearmed_by_a_new_signal():
+    jr = new_entry()
+    e = journal.update(jr[0], [bar(0, 99, 101, 97, 100), bar(1, 101, 103, 100, 102)], S, 21)  # stop 97 < 101
+    journal.arm_add(jr, row(signal_day="2026-09-02", sig_t=1 * D))
+    journal.update(e, [bar(2, 102, 108, 101, 107)], S, 21)
+    assert e["add"]["status"] == "skipped" and "below the first entry" in e["add"]["why"]
+    journal.arm_add(jr, row(signal_day="2026-09-02", sig_t=1 * D))  # same signal again (next run): no re-arm
+    assert e["add"]["status"] == "skipped"
+    journal.arm_add(jr, row(signal_day="2026-09-03", sig_t=2 * D))  # a later signal: stop is now 102 >= 101
+    journal.update(e, [bar(3, 107, 110, 106, 109)], S, 21)
+    assert e["add"]["status"] == "open" and e["add"]["entry"] == 107
+
+
+def test_arming_is_idempotent_and_scoped_to_coin_and_timeframe():
+    jr, e = _winner()
+    journal.arm_add(jr, row(signal_day="2026-09-04", sig_t=3 * D))
+    first = dict(e["add"])
+    journal.arm_add(jr, row(signal_day="2026-09-05", sig_t=4 * D))  # one add per entry
+    journal.arm_add(jr, row(signal_day="2026-09-01", sig_t=0))      # its own signal never arms itself
+    assert e["add"] == first
+    other = new_entry(tf="4h")
+    journal.arm_add(other, row(signal_day="2026-09-04", sig_t=3 * D))
+    assert "add" not in other[0]  # still pending (not open): nothing to add to
+
+
+def test_an_armed_add_is_skipped_if_the_entry_closes_first():
+    jr, e = _winner()
+    journal.arm_add(jr, row(signal_day="2026-09-04", sig_t=4 * D))      # signal on bar 4: fills at bar 5's open
+    journal.update(e, [bar(4, 104, 105, 103, 104)], S, 21)                # stopped at 104 on bar 4
+    assert e["status"] == "stopped" and e["add"]["status"] == "skipped"

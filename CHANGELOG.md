@@ -4,6 +4,11 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-23 (morning)
 
+- **Pyramiding, live half:** the signal journal records a hypothetical add on every signal under the
+  backtested rule (fresh breakout on an open entry, fills at the next open only once the stop is at
+  or above the first entry, shares the stop, exits with the entry), with its own R. The journal card
+  shows the per-timeframe tally, labelled "tracking only, not advice". No alert text changes.
+
 - **Pyramiding: tested, not adopted** (`--pyramid-study`, README "Pyramiding"). One add on a fresh
   breakout, only once the shared trailing stop is at or above the first entry, 1.5% risk to that
   stop, all units exit together. Fails the pre-set bar on both 1d (PF 1.67 -> 1.72, DD -18.4% ->

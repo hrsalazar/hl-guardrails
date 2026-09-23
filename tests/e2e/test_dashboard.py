@@ -387,6 +387,18 @@ def test_macro_backdrop_card_only_shows_when_macro_data_exists(page, base_url):
     expect(page.locator("#macro")).to_contain_text("context only, not part of any rule")
 
 
+def test_journal_shows_hypothetical_adds_as_tracking_not_advice(page, base_url):
+    page.goto(url(base_url, "full"))
+    adds = page.locator("#jadds")
+    expect(adds).to_contain_text("tracking only, not advice")
+    expect(adds).to_contain_text("4h 3 closed · 1 open · 2 skipped · adds +1.40R (PF 2.10)")
+    expect(adds).to_contain_text("those trades +2.00R without, +3.40R with")
+    expect(adds).to_contain_text("1d none yet")
+    expect(adds).to_contain_text("judge at ~30 closed")
+    page.goto(url(base_url, "empty"))
+    expect(page.locator("#jadds")).to_contain_text("4h none yet")
+
+
 def test_daily_brief_shows_tilt_points_and_source_links(page, base_url):
     page.goto(url(base_url, "full"))
     page.locator('.tab[data-tab="macro"]').click()

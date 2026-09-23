@@ -468,6 +468,7 @@ def run_once(cfg, inf, notif, state):
         jr = list(state.get("journal") or [])
         for r in rows:
             if r.get("signal_close") is not None and not r.get("watch"):
+                journal.arm_add(jr, r)  # a fresh breakout on an open entry: hypothetical add (README "Pyramiding")
                 journal.add(jr, r, f"setup_{r['coin']}_LONG_{r['signal_day']}|{r['tf']}", now_ms, S)
         for e in jr:
             b = bars_out.get(f"{e['coin']}|{e['tf']}")
