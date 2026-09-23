@@ -82,6 +82,8 @@ For each phone or computer:
   once per release. Funding notes and breakouts on coins you already hold stay on the dashboard.
 - **The daily brief** (Macro tab) appears on the first run after 06:00 UTC. It's reading material:
   never pushed, not backtested. Its source links let you check any point before relying on it.
+  To regenerate it now (one paid call): *Actions → monitor → Run workflow*, tick **"Regenerate the
+  daily brief now"**.
 - **The alert list** groups by your positions, entries, heads-up, info and recently ended. Tap a
   line to expand it; ✕ or *Clear all* hides alerts on that device (position warnings cannot be
   cleared). A signal that passed shows for 24h as missed, failed or expired.
@@ -130,7 +132,7 @@ For each phone or computer:
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 echo "account: '0x…'" > config.local.yaml
-pytest -q                          # 218 tests, no network
+pytest -q                          # 221 tests, no network
 python -m hlg.guardrails           # continuous, console / Telegram
 python -m hlg.scanner
 python -m hlg.report               # one CI-style run; writes plaintext site/*.json (gitignored)

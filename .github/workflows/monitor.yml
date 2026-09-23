@@ -15,6 +15,10 @@ on:
         description: "Also send a test notification to every subscribed device"
         type: boolean
         default: false
+      force_digest:
+        description: "Regenerate the daily brief now (one paid model call)"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -60,6 +64,7 @@ jobs:
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
           PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
           HLG_TEST_PUSH: ${{ inputs.test_push }}
+          HLG_FORCE_DIGEST: ${{ inputs.force_digest }}
           # Daily macro brief (hlg.digest). Optional: either key works (OpenRouter preferred when both
           # are set); with neither, that step is skipped. Only public headlines and market data are
           # sent, never account data.

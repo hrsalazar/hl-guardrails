@@ -4,6 +4,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-23 (late night)
 
+- **Daily brief: JSON enforced by the provider.** The first live brief (06:01 UTC) was dropped: the
+  model's reply had an unescaped quote inside a string, so it wasn't valid JSON. OpenRouter calls now
+  send a strict `json_schema` with `provider.require_parameters` (only endpoints that enforce it),
+  the prompt says how to quote, and a malformed reply is reported as "model reply wasn't valid JSON".
+  New manual workflow input **force_digest** regenerates the brief without waiting for the 2h retry.
+
 - **Daily brief via OpenRouter.** `OPENROUTER_API_KEY` (preferred) or `ANTHROPIC_API_KEY`. Through
   OpenRouter it asks Claude Opus 5.5 first, falling back to Claude Sonnet 5 then GPT-6 Sol via
   OpenRouter's documented `models` fallback; the brief shows which model wrote it. ~$0.04/day at

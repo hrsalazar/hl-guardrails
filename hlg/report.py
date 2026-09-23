@@ -330,7 +330,8 @@ def main():
     # reply didn't parse) retries hours later, not on every 15-minute run.
     D = digest.settings(cfg)
     keys = {"openrouter": os.environ.get("OPENROUTER_API_KEY"), "anthropic": os.environ.get("ANTHROPIC_API_KEY")}
-    if D["enabled"] and digest.pick(D, keys) and digest.due(state, now_ms, D):
+    force = os.environ.get("HLG_FORCE_DIGEST") == "true"
+    if D["enabled"] and digest.pick(D, keys) and digest.due(state, now_ms, D, force=force):
         try:
             tape = ([{"name": r["coin"], "chg24h_pct": r.get("chg24h_pct")} for r in market_rows if r["coin"] in ("BTC", "ETH", "SOL")]
                     + [{"name": r["coin"].replace("xyz:", ""), "chg24h_pct": r.get("chg24h_pct")} for r in tradfi_rows])

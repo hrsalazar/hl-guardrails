@@ -184,7 +184,28 @@ Reply with only a JSON object, no text before or after it:
  "why": "one or two sentences: what drives the tilt",
  "points": [{"text": "...", "refs": [headline ids]}],
  "watch": ["short phrase"]}
-"points": 3 to 6, most important first, each citing the headline ids it rests on. "watch": 0 to 4 things coming up, from the calendar or the news. "tilt" is the balance of the news for crypto over the next few days."""
+"points": 3 to 6, most important first, each citing the headline ids it rests on. "watch": 0 to 4 things coming up, from the calendar or the news. "tilt" is the balance of the news for crypto over the next few days.
+Inside JSON strings, use single quotes when quoting something; a double quote must be escaped as \\"."""
+
+# Enforced by OpenRouter (strict json_schema, routed only to endpoints that support it): the model
+# cannot return malformed JSON or stray fields. parse_reply still validates -- enforcement varies by
+# provider, and the Anthropic-direct path relies on the prompt alone.
+SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["headline", "tilt", "confidence", "why", "points", "watch"],
+    "properties": {
+        "headline": {"type": "string", "description": "one sentence, at most 160 characters"},
+        "tilt": {"type": "string", "enum": list(TILTS)},
+        "confidence": {"type": "string", "enum": list(CONF)},
+        "why": {"type": "string", "description": "one or two sentences: what drives the tilt"},
+        "points": {"type": "array", "description": "3 to 6, most important first",
+                   "items": {"type": "object", "additionalProperties": False, "required": ["text", "refs"],
+                             "properties": {"text": {"type": "string"},
+                                            "refs": {"type": "array", "items": {"type": "integer"},
+                                                     "description": "headline ids this point rests on"}}}},
+        "watch": {"type": "array", "items": {"type": "string"}, "description": "0 to 4 things coming up"},
+    },
+}
 
 
 def build_prompt(items, ctx):
@@ -237,8 +258,12 @@ def call_openrouter(api_key, models, system, user, max_tokens=1500, timeout=120,
     r = post(OPENROUTER_URL, timeout=timeout,
              headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json",
                       "HTTP-Referer": REPO_URL, "X-Title": "hl-guardrails"},
-             # `models` alone, as in OpenRouter's documented fallback example (docs: "Model Fallbacks")
+             # `models` alone, as in OpenRouter's documented fallback example (docs: "Model Fallbacks");
+             # strict json_schema + require_parameters per their "Structured Outputs" guide
              json={"models": list(models), "max_tokens": max_tokens,
+                   "response_format": {"type": "json_schema",
+                                       "json_schema": {"name": "daily_brief", "strict": True, "schema": SCHEMA}},
+                   "provider": {"require_parameters": True},
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
     if r.status_code != 200:
         raise _fail("OpenRouter", r, lambda js: (js.get("error") or {}).get("code"))
@@ -267,7 +292,10 @@ def parse_reply(text, items):
     a, b = text.find("{"), text.rfind("}")
     if a < 0 or b <= a:
         raise ValueError("no JSON object in reply")
-    d = json.loads(text[a: b + 1])
+    try:
+        d = json.loads(text[a: b + 1])
+    except json.JSONDecodeError as e:
+        raise ValueError(f"model reply wasn't valid JSON ({e.msg} at char {e.pos})") from None
     if not isinstance(d, dict):
         raise ValueError("reply is not an object")
     by_id = {i["id"]: i for i in items}
@@ -305,7 +333,11 @@ def status(state, now_ms, D, keys):
             "error": err if isinstance(err, dict) else None}
 
 
-def due(state, now_ms, D):
+def due(state, now_ms, D, force=False):
+    """force: the monitor workflow's manual `force_digest` input -- regenerate now, whatever the
+    schedule says (one paid call, started by hand)."""
+    if force:
+        return True
     now = dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc)
     cur = state.get("digest") or {}
     if cur.get("day") == now.strftime("%Y-%m-%d") or now.hour < D["hour_utc"]:

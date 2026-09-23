@@ -167,9 +167,38 @@ def test_openrouter_request_uses_the_fallback_list_and_records_the_model_that_an
     assert sent["url"] == digest.OPENROUTER_URL and sent["headers"]["Authorization"] == "Bearer or-key"
     assert sent["body"]["models"] == D["openrouter_models"] and sent["body"]["models"][0] == "anthropic/claude-opus-5.5"
     assert "model" not in sent["body"]
+    rf = sent["body"]["response_format"]
+    assert rf["type"] == "json_schema" and rf["json_schema"]["strict"] is True and rf["json_schema"]["schema"] is digest.SCHEMA
+    assert sent["body"]["provider"] == {"require_parameters": True}  # only endpoints that enforce the schema
     assert [m["role"] for m in sent["body"]["messages"]] == ["system", "user"]
     assert "untrusted" in sent["body"]["messages"][0]["content"]
     assert b["model"] == "anthropic/claude-sonnet-5" and b["provider"] == "openrouter"
+
+
+def test_schema_satisfies_strict_mode_at_every_level():
+    """Strict json_schema needs every object closed and every property required, all the way down."""
+    def check(s):
+        if s.get("type") == "object":
+            assert s["additionalProperties"] is False and set(s["required"]) == set(s["properties"])
+            for p in s["properties"].values():
+                check(p)
+        if s.get("type") == "array":
+            check(s["items"])
+    check(digest.SCHEMA)
+    assert digest.SCHEMA["properties"]["tilt"]["enum"] == list(digest.TILTS)
+
+
+def test_the_failure_seen_live_an_unescaped_quote_is_reported_readably():
+    items = [{"id": 1, "src": "Fed", "title": "t", "url": None, "t": 1, "summary": ""}]
+    bad = '{"headline": "Fed says "patience"", "tilt": "neutral"}'
+    with pytest.raises(ValueError, match=r"model reply wasn't valid JSON \(Expecting ',' delimiter at char \d+\)"):
+        digest.parse_reply(bad, items)
+
+
+def test_force_regenerates_regardless_of_schedule():
+    st = Mem({"digest": {"day": "2026-09-23"}, "digest_try": ms(2026, 9, 23, 7)})
+    assert not digest.due(st, ms(2026, 9, 23, 7, 5), D)
+    assert digest.due(st, ms(2026, 9, 23, 7, 5), D, force=True)
 
 
 def test_openrouter_errors_carry_no_key_including_an_upstream_error_inside_a_200():
