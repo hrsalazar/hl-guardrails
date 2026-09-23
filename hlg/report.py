@@ -325,14 +325,14 @@ def main():
     # account. The attempt time is published whatever happens, so a failure (or a paid call whose
     # reply didn't parse) retries hours later, not on every 15-minute run.
     D = digest.settings(cfg)
-    api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
-    if D["enabled"] and api_key and digest.due(state, now_ms, D):
+    keys = {"openrouter": os.environ.get("OPENROUTER_API_KEY"), "anthropic": os.environ.get("ANTHROPIC_API_KEY")}
+    if D["enabled"] and digest.pick(D, keys) and digest.due(state, now_ms, D):
         try:
             tape = ([{"name": r["coin"], "chg24h_pct": r.get("chg24h_pct")} for r in market_rows if r["coin"] in ("BTC", "ETH", "SOL")]
                     + [{"name": r["coin"].replace("xyz:", ""), "chg24h_pct": r.get("chg24h_pct")} for r in tradfi_rows])
             brief = digest.run(state, now_ms, D, {"fng": state.get("fng"), "tape": tape,
                                                   "events": events.groups(state.get("events"), now_ms, now_ms + 7 * 86_400_000)},
-                               api_key)
+                               keys)
             if brief:
                 out["digest"] = brief
                 publish("alerts.json", out, vlt, in_ci)

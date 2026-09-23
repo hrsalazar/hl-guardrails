@@ -1,4 +1,4 @@
-"""Daily macro + crypto brief: public headlines digested by Claude into a few short points.
+"""Daily macro + crypto brief: public headlines digested by a model (Claude by default) into a few short points.
 
 Once per UTC day (first run after `hour_utc`), after alerts are published and pushed, so it can
 never delay a notification:
@@ -20,7 +20,16 @@ Headlines are untrusted third-party text going into a model. The prompt tells th
 them as data, the reply is parsed as strict JSON with every field length-capped, and links shown
 on the dashboard come from the feeds (never from the model's text), http(s) only.
 
-Needs ANTHROPIC_API_KEY; without it the step is skipped silently.
+Two ways to reach a model, picked by `provider` (auto = whichever key is set, OpenRouter first):
+
+  openrouter  OPENROUTER_API_KEY. `openrouter_models` is an ordered list: OpenRouter tries the
+              first and falls back down the list if that model's providers are down, and the
+              brief records which model actually wrote it. Default: Claude Opus 5.5 (the strongest
+              at faithful, calibrated summarising; ~6k tokens in / 1k out = ~$0.04 a day at
+              OpenRouter's 2026-09 list price), then Claude Sonnet 5, then GPT-6 Sol.
+  anthropic   ANTHROPIC_API_KEY, Anthropic's API directly, `model`.
+
+With neither key set the step is skipped silently.
 """
 import concurrent.futures as cf
 import datetime as dt
@@ -36,6 +45,8 @@ import requests
 from .common import log
 
 API_URL = "https://api.anthropic.com/v1/messages"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+REPO_URL = "https://github.com/hrsalazar/hl-guardrails"
 UA = {"User-Agent": "Mozilla/5.0 (hl-guardrails; github.com/hrsalazar/hl-guardrails)"}
 H = 3_600_000
 MAX_FEED_BYTES = 3_000_000
@@ -52,8 +63,10 @@ FEEDS = [
     ["Cointelegraph", "https://cointelegraph.com/rss"],
     ["Decrypt", "https://decrypt.co/feed"],
 ]
-DEFAULTS = dict(enabled=True, hour_utc=6, model="claude-sonnet-5", max_items=70, per_source=8,
-                lookback_hours=30, budget_s=30, max_tokens=1500, retry_hours=2, feeds=FEEDS)
+DEFAULTS = dict(enabled=True, hour_utc=6, provider="auto", model="claude-sonnet-5",
+                openrouter_models=["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5", "openai/gpt-6-sol"],
+                max_items=70, per_source=8, lookback_hours=30, budget_s=30, max_tokens=1500, retry_hours=2,
+                feeds=FEEDS)
 TILTS = ("risk-on", "neutral", "risk-off")
 CONF = ("low", "medium", "high")
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -195,20 +208,57 @@ def build_prompt(items, ctx):
     return SYSTEM, "\n".join(lines)
 
 
-def call(api_key, model, system, user, max_tokens=1500, timeout=90, post=requests.post):
+def _fail(name, r, kind_of):
+    # status and the API's own error type only: never the request, which carries the key header
+    try:
+        kind = kind_of(r.json())
+    except (ValueError, AttributeError):
+        kind = None
+    return RuntimeError(f"{name} HTTP {r.status_code}" + (f" ({kind})" if kind else ""))
+
+
+def call_anthropic(api_key, model, system, user, max_tokens=1500, timeout=90, post=requests.post):
+    """-> (text, input_tokens, output_tokens, model used)"""
     r = post(API_URL, timeout=timeout, headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                                                 "content-type": "application/json"},
              json={"model": model, "max_tokens": max_tokens, "system": system,
                    "messages": [{"role": "user", "content": user}]})
     if r.status_code != 200:
-        # status and the API's own error type only: never the request, which carries the key header
-        try:
-            kind = r.json().get("error", {}).get("type")
-        except ValueError:
-            kind = None
-        raise RuntimeError(f"Claude API HTTP {r.status_code}" + (f" ({kind})" if kind else ""))
+        raise _fail("Claude API", r, lambda js: js.get("error", {}).get("type"))
     js = r.json()
-    return "".join(b.get("text", "") for b in js.get("content") or [] if b.get("type") == "text"), js.get("usage") or {}
+    u = js.get("usage") or {}
+    text = "".join(b.get("text", "") for b in js.get("content") or [] if b.get("type") == "text")
+    return text, u.get("input_tokens"), u.get("output_tokens"), js.get("model") or model
+
+
+def call_openrouter(api_key, models, system, user, max_tokens=1500, timeout=120, post=requests.post):
+    """OpenAI-style chat completion through OpenRouter. `models` is tried in order: OpenRouter falls
+    back to the next when a model's providers are down or reject the request."""
+    r = post(OPENROUTER_URL, timeout=timeout,
+             headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json",
+                      "HTTP-Referer": REPO_URL, "X-Title": "hl-guardrails"},
+             # `models` alone, as in OpenRouter's documented fallback example (docs: "Model Fallbacks")
+             json={"models": list(models), "max_tokens": max_tokens,
+                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
+    if r.status_code != 200:
+        raise _fail("OpenRouter", r, lambda js: (js.get("error") or {}).get("code"))
+    js = r.json()
+    if js.get("error"):  # OpenRouter can report an upstream failure inside a 200
+        raise RuntimeError(f"OpenRouter upstream error ({(js['error'] or {}).get('code')})")
+    choice = (js.get("choices") or [{}])[0]
+    u = js.get("usage") or {}
+    return ((choice.get("message") or {}).get("content") or "", u.get("prompt_tokens"), u.get("completion_tokens"),
+            js.get("model") or models[0])
+
+
+def pick(D, keys):
+    """(provider, key) for the configured provider, or None if its key isn't set. auto prefers
+    OpenRouter, then Anthropic direct."""
+    order = {"auto": ("openrouter", "anthropic"), "openrouter": ("openrouter",), "anthropic": ("anthropic",)}
+    for p in order.get(D["provider"], ()):
+        if (keys.get(p) or "").strip():
+            return p, keys[p].strip()
+    return None
 
 
 def parse_reply(text, items):
@@ -246,9 +296,14 @@ def due(state, now_ms, D):
     return now_ms - (state.get("digest_try") or 0) >= D["retry_hours"] * H
 
 
-def run(state, now_ms, D, ctx, api_key, get=requests.get, post=requests.post):
-    """Fetch, digest, store. Returns the brief, or None (logged) if anything failed; the previous
-    day's brief then stays on the dashboard with its date showing."""
+def run(state, now_ms, D, ctx, keys, get=requests.get, post=requests.post):
+    """Fetch, digest, store. `keys`: {"openrouter": ..., "anthropic": ...}. Returns the brief, or
+    None (logged) if anything failed; the previous day's brief then stays on the dashboard with its
+    date showing."""
+    chosen = pick(D, keys)
+    if chosen is None:
+        return None
+    provider, key = chosen
     state.set("digest_try", now_ms)
     t0 = time.monotonic()
     items, ok, failed = fetch_feeds(D["feeds"], D["budget_s"], get)
@@ -257,13 +312,15 @@ def run(state, now_ms, D, ctx, api_key, get=requests.get, post=requests.post):
         log.error("digest: only %d recent headlines (%d/%d feeds answered), skipped", len(picked), len(ok), len(D["feeds"]))
         return None
     system, user = build_prompt(picked, {**ctx, "now_ms": now_ms})
-    text, usage = call(api_key, D["model"], system, user, D["max_tokens"], post=post)
+    if provider == "openrouter":
+        text, tin, tout, model = call_openrouter(key, D["openrouter_models"], system, user, D["max_tokens"], post=post)
+    else:
+        text, tin, tout, model = call_anthropic(key, D["model"], system, user, D["max_tokens"], post=post)
     brief = parse_reply(text, picked)
     brief |= {"t": now_ms, "day": dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc).strftime("%Y-%m-%d"),
-              "model": D["model"], "n_items": len(picked), "sources": sorted(ok), "failed": sorted(failed),
-              "fng": (ctx.get("fng") or {}).get("value")}
+              "model": model, "provider": provider, "n_items": len(picked), "sources": sorted(ok),
+              "failed": sorted(failed), "fng": (ctx.get("fng") or {}).get("value")}
     state.set("digest", brief)
-    log.info("digest: %d headlines from %d/%d feeds, %s in / %s out tokens, %.1fs", len(picked), len(ok),
-             len(D["feeds"]), usage.get("input_tokens"), usage.get("output_tokens"), time.monotonic() - t0,
-             extra={"safe": True})
+    log.info("digest: %d headlines from %d/%d feeds via %s (%s), %s in / %s out tokens, %.1fs", len(picked), len(ok),
+             len(D["feeds"]), provider, model, tin, tout, time.monotonic() - t0, extra={"safe": True})
     return brief

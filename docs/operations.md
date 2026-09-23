@@ -29,7 +29,8 @@ value in the **Secret** box.
 | `VAPID_SUBJECT` | Secrets | `mailto:you@example.com` or `https://<you>.github.io` (host only, no path) |
 | `VAPID_PUBLIC_KEY` | **Variables** tab | from `python -m hlg.vapid` |
 | `PUSH_SUBSCRIPTIONS` | Secrets | added in step 5 |
-| `ANTHROPIC_API_KEY` | Secrets | optional: an API key from console.anthropic.com, for the daily brief (a few cents a day). Without it the brief is skipped and everything else works |
+| `OPENROUTER_API_KEY` | Secrets | optional, for the daily brief: openrouter.ai → *Keys* → *Create key* (buy a few dollars of credit first; ~$0.04 a day). Without it (or the next one) the brief is skipped and everything else works |
+| `ANTHROPIC_API_KEY` | Secrets | optional alternative: a key from console.anthropic.com (API credits are separate from a Claude Pro plan). Used only if no OpenRouter key is set |
 
 To set them from a terminal, use the GitHub CLI; it prompts for the value without showing it:
 
@@ -100,7 +101,7 @@ For each phone or computer:
 | data is encrypted | open `https://<you>.github.io/hl-guardrails/alerts.json` | `"alg": "AES-256-GCM"`, no readable numbers |
 | logs are quiet | open any run's *Run guardrails + scanner* step | ~3 lines: market, liquidations, `run ok: published encrypted` |
 | push works | manual run with the test box ticked | notification received; `push: N/N` |
-| daily brief works | the first run after 06:00 UTC | a `digest: N headlines from M/11 feeds, … tokens` line; the Macro tab says "today" |
+| daily brief works | the first run after 06:00 UTC | a `digest: N headlines from M/11 feeds via openrouter (model), … tokens` line; the Macro tab says "today" |
 
 ## Troubleshooting
 
@@ -117,8 +118,10 @@ For each phone or computer:
 | Day/week PnL restarted | the passphrase changed, so previous state was unreadable | expected once; it recovers the next day or week |
 | `gh` "not recognised as a cmdlet" | PATH not refreshed in that terminal | open a new terminal, or use the full path |
 | Stale UI after an update | service-worker cache | reload once; `sw.js` bumps its cache version on UI changes |
-| Macro tab: "No brief yet" | `ANTHROPIC_API_KEY` not set, or before 06:00 UTC | set the secret; the next run after 06:00 UTC writes one |
-| Log: `digest failed: Claude API HTTP 401` / `400` | the key is wrong or revoked (401), or the model name in `config.yaml` → `digest.model` is not available to it (400/404) | re-set the secret / fix the model; it retries two hours later, not every run |
+| Macro tab: "No brief yet" | no `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`, or before 06:00 UTC | set a secret; the next run after 06:00 UTC writes one |
+| Log: `digest failed: OpenRouter HTTP 402` | out of OpenRouter credit | top up at openrouter.ai; it retries two hours later |
+| Log: `digest failed: OpenRouter HTTP 401` / `Claude API HTTP 401` | the key is wrong or revoked | re-set the secret |
+| Log: `digest failed: … HTTP 400` / `404` | a model id in `digest.openrouter_models` (or `digest.model`) doesn't exist | check the id on openrouter.ai/models; it retries two hours later, not every run |
 | Log: `events: calendar fetch failed: HTTP 429` | the weekly calendar feed rate-limits shared IPs | nothing: the last week's list is kept and it retries in an hour |
 
 ## Local use
@@ -127,7 +130,7 @@ For each phone or computer:
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 echo "account: '0x…'" > config.local.yaml
-pytest -q                          # 212 tests, no network
+pytest -q                          # 216 tests, no network
 python -m hlg.guardrails           # continuous, console / Telegram
 python -m hlg.scanner
 python -m hlg.report               # one CI-style run; writes plaintext site/*.json (gitignored)

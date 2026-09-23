@@ -78,8 +78,9 @@ upgrade can't change behaviour. GitHub Actions are pinned to major versions.
 
 ### 6. What goes to third parties, and untrusted input (`hlg/digest.py`, `hlg/events.py`)
 
-The daily brief is the only place data is *sent* anywhere beyond fetching public endpoints. What
-goes to the Anthropic API is public by construction: the day's headlines, the Fear & Greed
+The daily brief is the only place data is *sent* anywhere beyond fetching public endpoints: to
+OpenRouter (which forwards it to the model's provider, e.g. Anthropic or OpenAI) or to Anthropic's
+API directly, whichever key is set. What goes is public by construction: the day's headlines, the Fear & Greed
 reading, the 24h change of BTC/ETH/SOL and the TradFi perps, and the release calendar. The
 address, positions, balances, PnL and alerts are never in the prompt (a unit test checks that a
 value planted in state does not reach the request body).
@@ -108,6 +109,7 @@ later rather than every 15 minutes.
 | `VAPID_SUBJECT` | secret | low | – |
 | `PUSH_SUBSCRIPTIONS` | secret | medium: device push endpoints | re-subscribe the devices |
 | `VAPID_PUBLIC_KEY` | variable | public by design | – |
+| `OPENROUTER_API_KEY` | secret | medium: spend on your OpenRouter credit | delete it at openrouter.ai → Keys, set a new one; give the key a credit limit when creating it |
 | `ANTHROPIC_API_KEY` | secret | medium: spend on your Anthropic account | revoke it in the Anthropic console, set a new one; consider a spend limit on that key |
 | scheduler token | external | low: can only trigger the workflow | revoke it in GitHub settings |
 

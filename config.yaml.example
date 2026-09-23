@@ -53,10 +53,12 @@ events:
   enabled: true
   warn_hours: 24
 
-# Daily AI brief of public macro/crypto headlines. Needs the ANTHROPIC_API_KEY secret; skipped without it.
+# Daily AI brief of public macro/crypto headlines. Needs OPENROUTER_API_KEY or ANTHROPIC_API_KEY; skipped without either.
 digest:
   enabled: true
   hour_utc: 6
+  provider: auto
+  openrouter_models: [anthropic/claude-opus-5.5, anthropic/claude-sonnet-5, openai/gpt-6-sol]
   model: claude-sonnet-5
 
 telegram:

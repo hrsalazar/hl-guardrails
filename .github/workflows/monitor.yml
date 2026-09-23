@@ -60,8 +60,10 @@ jobs:
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
           PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
           HLG_TEST_PUSH: ${{ inputs.test_push }}
-          # Daily macro brief (hlg.digest). Optional: without it that step is skipped. Only public
-          # headlines and market data are sent to the API, never account data.
+          # Daily macro brief (hlg.digest). Optional: either key works (OpenRouter preferred when both
+          # are set); with neither, that step is skipped. Only public headlines and market data are
+          # sent, never account data.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m hlg.report
       - name: Stamp site

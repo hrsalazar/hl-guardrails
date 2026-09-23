@@ -49,7 +49,7 @@ read back at the start of the next run.
 | `hlg/liquidations.py` | recent liquidation events from OKX, time-boxed and fail-soft | OKX |
 | `hlg/events.py` | scheduled high-impact releases: weekly calendar + FOMC schedule, pushed 24h heads-up, breakout-alert note | FairEconomy, federalreserve.gov |
 | `hlg/sentiment.py` | Crypto Fear & Greed: live reading for the dashboard, daily history for the backtest | alternative.me |
-| `hlg/digest.py` | daily brief: public RSS headlines digested by Claude into a tilt and cited points (needs `ANTHROPIC_API_KEY`) | RSS feeds, Anthropic API |
+| `hlg/digest.py` | daily brief: public RSS headlines digested by a model into a tilt and cited points (`OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`) | RSS feeds, OpenRouter / Anthropic API |
 | `hlg/macro.py` | FRED macro series for research and backtests (off in CI, see below) | FRED |
 | `hlg/vault.py` | AES-256-GCM encryption of everything published | – |
 | `hlg/report.py` | the one-shot CI entry point that ties the modules together | via the modules above |
@@ -91,7 +91,7 @@ read back at the start of the next run.
    `test_push` input was set. Push is skipped when the previous state couldn't be read, since every
    alert would look new.
 9. **After the push**, the slow context: liquidation levels every 4h, then once a UTC day the
-   daily brief (`hlg/digest.py`: RSS fetch plus one Claude call, ~1 min). Each republishes if it
+   daily brief (`hlg/digest.py`: RSS fetch plus one model call, ~1 min). Each republishes if it
    produced something, so neither can delay a notification.
 10. The workflow then copies `pwa/` into `site/`, stamps `config.js` with the public VAPID key, and
    deploys Pages.
@@ -150,7 +150,7 @@ only for bars that have closed since the last run.
 | federalreserve.gov | FOMC meeting schedule, years ahead | HTML page, parsed; a parse returning < 6 meetings keeps the old list |
 | alternative.me | Crypto Fear & Greed | daily, back to 2018 |
 | RSS feeds (11) | headlines for the daily brief | list in `hlg/digest.py`; each fail-soft, 30s total budget |
-| Anthropic API | the daily brief | one call a day; public data only; `ANTHROPIC_API_KEY` |
+| OpenRouter or Anthropic API | the daily brief | one call a day; public data only; Claude Opus 5.5 first via OpenRouter, with fallbacks |
 
 ## Design decisions
 
@@ -170,7 +170,7 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 212 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 216 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config

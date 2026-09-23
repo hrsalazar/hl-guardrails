@@ -125,7 +125,7 @@ def test_run_stores_a_brief_and_sends_only_public_data():
 
     st = Mem({"positions_secret": "0xabc"})
     cfg = dict(D, feeds=[["A", "a"], ["B", "b"]])
-    b = digest.run(st, ms(2026, 9, 23, 6), cfg, {"fng": None, "tape": [], "events": []}, "sk-test", get=feeds_get, post=post)
+    b = digest.run(st, ms(2026, 9, 23, 6), cfg, {"fng": None, "tape": [], "events": []}, {"anthropic": "sk-test"}, get=feeds_get, post=post)
     assert b["day"] == "2026-09-23" and st.get("digest") == b and st.get("digest_try") == ms(2026, 9, 23, 6)
     assert b["n_items"] == 8 and b["sources"] == ["A", "B"]
     assert sent["headers"]["x-api-key"] == "sk-test" and sent["body"]["model"] == D["model"]
@@ -138,9 +138,55 @@ def test_api_errors_report_status_only_and_still_record_the_attempt():
 
     st = Mem()
     with pytest.raises(RuntimeError) as e:
-        digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"], ["B", "b"]]), {}, "sk-secret", get=feeds_get, post=post)
+        digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"], ["B", "b"]]), {}, {"anthropic": "sk-secret"}, get=feeds_get, post=post)
     assert str(e.value) == "Claude API HTTP 401 (authentication_error)" and "sk-secret" not in str(e.value)
     assert st.get("digest_try") == ms(2026, 9, 23, 6) and st.get("digest") is None
+
+
+def test_provider_choice_follows_config_and_the_keys_actually_set():
+    both = {"openrouter": "or-key", "anthropic": "an-key"}
+    assert digest.pick(D, both) == ("openrouter", "or-key")                       # auto prefers OpenRouter
+    assert digest.pick(D, {"openrouter": "  ", "anthropic": "an-key\n"}) == ("anthropic", "an-key")  # blank = unset
+    assert digest.pick(dict(D, provider="anthropic"), both) == ("anthropic", "an-key")
+    assert digest.pick(dict(D, provider="openrouter"), {"anthropic": "an-key"}) is None
+    assert digest.pick(D, {}) is None
+
+
+def test_openrouter_request_uses_the_fallback_list_and_records_the_model_that_answered():
+    sent = {}
+
+    def post(url, timeout, headers, json):
+        sent.update(url=url, headers=headers, body=json)
+        return Resp(js={"model": "anthropic/claude-sonnet-5",  # the first choice was down: fallback answered
+                        "choices": [{"message": {"role": "assistant", "content": reply()}}],
+                        "usage": {"prompt_tokens": 5000, "completion_tokens": 700}})
+
+    st = Mem()
+    b = digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"], ["B", "b"]]), {}, {"openrouter": "or-key"},
+                   get=feeds_get, post=post)
+    assert sent["url"] == digest.OPENROUTER_URL and sent["headers"]["Authorization"] == "Bearer or-key"
+    assert sent["body"]["models"] == D["openrouter_models"] and sent["body"]["models"][0] == "anthropic/claude-opus-5.5"
+    assert "model" not in sent["body"]
+    assert [m["role"] for m in sent["body"]["messages"]] == ["system", "user"]
+    assert "untrusted" in sent["body"]["messages"][0]["content"]
+    assert b["model"] == "anthropic/claude-sonnet-5" and b["provider"] == "openrouter"
+
+
+def test_openrouter_errors_carry_no_key_including_an_upstream_error_inside_a_200():
+    for resp, msg in ((Resp(js={"error": {"code": 402, "message": "Insufficient credits"}}, status=402), "OpenRouter HTTP 402 (402)"),
+                      (Resp(js={"error": {"code": 502, "message": "upstream"}}), "OpenRouter upstream error (502)")):
+        st = Mem()
+        with pytest.raises(RuntimeError) as e:
+            digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"], ["B", "b"]]), {}, {"openrouter": "or-secret"},
+                       get=feeds_get, post=lambda url, timeout, headers, json, r=resp: r)
+        assert str(e.value) == msg and "or-secret" not in str(e.value)
+        assert st.get("digest_try") == ms(2026, 9, 23, 6)
+
+
+def test_no_key_means_no_attempt_at_all():
+    st = Mem()
+    assert digest.run(st, ms(2026, 9, 23, 6), D, {}, {}, get=feeds_get, post=None) is None
+    assert st.get("digest_try") is None
 
 
 def test_too_few_headlines_skips_without_calling_the_api():
@@ -148,5 +194,5 @@ def test_too_few_headlines_skips_without_calling_the_api():
         raise AssertionError("must not call the API")
 
     st = Mem()
-    assert digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"]]), {}, "k",
+    assert digest.run(st, ms(2026, 9, 23, 6), dict(D, feeds=[["A", "a"]]), {}, {"anthropic": "k"},
                       get=lambda url, headers, timeout: Resp(RSS), post=post) is None

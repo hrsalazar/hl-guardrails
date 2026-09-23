@@ -399,6 +399,7 @@ def test_daily_brief_shows_tilt_points_and_source_links(page, base_url):
     expect(brief.locator(".chip")).to_have_text(["CPI Wednesday 12:30 UTC", "ETF flows"])
     expect(brief).to_contain_text("Reading material, not a signal")
     expect(brief).to_contain_text("1 unreachable")
+    expect(brief).to_contain_text("Written by anthropic/claude-opus-5.5 via OpenRouter")
 
 
 def test_hostile_text_in_the_brief_is_inert(page, base_url):
@@ -457,7 +458,7 @@ def test_fear_and_greed_card_shows_value_band_and_chart(page, base_url):
 def test_macro_tab_empty_states(page, base_url):
     page.goto(url(base_url, "empty"))
     page.locator('.tab[data-tab="macro"]').click()
-    expect(page.locator("#brief")).to_contain_text("ANTHROPIC_API_KEY")
+    expect(page.locator("#brief")).to_contain_text("OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
     expect(page.locator("#calcard")).to_be_hidden()
     expect(page.locator("#fngcard")).to_be_hidden()
 

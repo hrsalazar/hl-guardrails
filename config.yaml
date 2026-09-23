@@ -99,14 +99,19 @@ events:
   refresh_hours: 6       # the weekly feed rate-limits hard; a failed fetch retries after an hour
 
 # Daily macro + crypto brief (hlg.digest): ~70 public headlines from central-bank, markets and crypto
-# RSS feeds, summarised by Claude once a UTC day into a few points and a risk tilt. Needs the
-# ANTHROPIC_API_KEY secret (skipped without it); ~a few cents a day. Only public data goes into the
-# prompt - never the address, positions or PnL. Reading material: not backtestable (no free
-# headline archive), never pushed, gates nothing. Feeds: see hlg/digest.py FEEDS.
+# RSS feeds, summarised once a UTC day into a few points and a risk tilt. Needs OPENROUTER_API_KEY or
+# ANTHROPIC_API_KEY (skipped without either). Only public data goes into the prompt - never the
+# address, positions or PnL. Reading material: not backtestable (no free headline archive), never
+# pushed, gates nothing. Feeds: see hlg/digest.py FEEDS.
 digest:
   enabled: true
   hour_utc: 6            # first run after this hour; 06:00 UTC = after Asia, before Europe and US data
-  model: claude-sonnet-5
+  provider: auto         # auto (OpenRouter if its key is set, else Anthropic) | openrouter | anthropic
+  # OpenRouter: tried in order, falling back when a model's providers are down. Opus 5.5 is the
+  # strongest at faithful, calibrated summarising; ~$0.04/day at 2026-09 list prices. Any id from
+  # openrouter.ai/models works, including free ones (weaker; a reply that isn't valid JSON is dropped).
+  openrouter_models: [anthropic/claude-opus-5.5, anthropic/claude-sonnet-5, openai/gpt-6-sol]
+  model: claude-sonnet-5 # used only for provider anthropic (Anthropic's API directly)
   lookback_hours: 30
 
 telegram:

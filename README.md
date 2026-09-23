@@ -215,9 +215,16 @@ edge. Safeguards, because headlines are untrusted text going into a model:
 - **only public data goes in the prompt** (headlines, the index, the 24h tape, the calendar): never
   the address, a position, a balance or PnL.
 
-It needs an `ANTHROPIC_API_KEY` repository secret (docs/operations.md) and costs a few cents a day
-(~70 headlines ≈ 5-6k input tokens, one call). Without the secret the step is skipped silently. A
-failed call retries two hours later, not every 15 minutes, so a broken key can't run up calls.
+It needs one repository secret (docs/operations.md): **`OPENROUTER_API_KEY`** (preferred when both
+are set) or `ANTHROPIC_API_KEY` for Anthropic's API directly. Through OpenRouter it asks for
+**Claude Opus 5.5** first — the strongest option at the careful part of this job: staying inside
+the sources, calibrated confidence, valid JSON — and falls back to Claude Sonnet 5, then GPT-6 Sol,
+if a model's providers are down (OpenRouter's documented `models` fallback). The brief records which
+model actually wrote it. Cost at OpenRouter's September 2026 list price: ~6k tokens in and ~1k out
+is about **$0.04 a day (~$1.30 a month)**. The list is `digest.openrouter_models` in `config.yaml`,
+so any model from openrouter.ai/models can go first, free ones included (weaker; a reply that isn't
+valid JSON is dropped). Without a key the step is skipped silently. A failed call retries two hours
+later, not every 15 minutes, so a broken key can't run up calls.
 
 **Liquidation risk is account-level.** Per-position `liquidationPx` is `null` for cross-margined
 positions — the normal case — because Hyperliquid assesses liquidation on the whole account. The

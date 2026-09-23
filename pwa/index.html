@@ -727,7 +727,7 @@ const inT=t=>{const m=Math.round((t-Date.now())/60000);if(m<=0)return 'now';cons
 const whenL=t=>new Date(t).toLocaleString([], {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
 function renderBrief(b){
   if(!b){$('#briefage').textContent='';
-    $('#brief').innerHTML='<div class="empty">No brief yet. Claude writes one each day after 06:00 UTC from ~70 public macro and crypto headlines; it needs the <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).</div>';return}
+    $('#brief').innerHTML='<div class="empty">No brief yet. One is written each day after 06:00 UTC from ~70 public macro and crypto headlines; it needs an <b>OPENROUTER_API_KEY</b> or <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).</div>';return}
   const [c,ic,word]=TILT[b.tilt]||TILT.neutral, age=(Date.now()-b.t)/3600000;
   $('#briefage').textContent=age<24?'today, '+new Date(b.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):`${Math.floor(age/24)}d old`;
   const link=l=>{const u=safeUrl(l.url),t=`${esc(l.src)}: ${esc(l.title)}`;return u?`<a href="${attr(u)}" target="_blank" rel="noopener noreferrer">${t}</a>`:t};
@@ -735,7 +735,7 @@ function renderBrief(b){
     +`<div class="brief-h">${esc(b.headline)}</div><p class="brief-why">${esc(b.why)}</p>`
     +`<ol>${b.points.map(p=>`<li>${esc(p.text)}${(p.links||[]).length?`<span class="src">${p.links.map(link).join('<br>')}</span>`:''}</li>`).join('')}</ol>`
     +((b.watch||[]).length?`<div class="chips" style="margin-top:12px"><span class="mut" style="font-size:12px;align-self:center">Watch</span>${b.watch.map(w=>`<span class="chip">${esc(w)}</span>`).join('')}</div>`:'')
-    +`<div class="foot2">Written by Claude (${esc(b.model)}) from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: there's no free headline archive to backtest it against, so it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div></div>`;
+    +`<div class="foot2">Written by ${esc(b.model)}${b.provider==='openrouter'?' via OpenRouter':''} from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: there's no free headline archive to backtest it against, so it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div></div>`;
 }
 function renderCalendar(e){
   if(!e){$('#calcard').hidden=true;return}

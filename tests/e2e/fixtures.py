@@ -243,7 +243,7 @@ def build_full(*, age_min=2, journal_closed=8):
         "fng": {"t": gen, "value": 71, "label": "Greed", "as_of": gen - 6 * H,
                 "series": [[gen - (90 - i) * D, 40 + (i * 7) % 45] for i in range(90)]},
         "digest": {
-            "t": gen - 3 * H, "day": "2026-09-23", "model": "claude-sonnet-5", "n_items": 64,
+            "t": gen - 3 * H, "day": "2026-09-23", "model": "anthropic/claude-opus-5.5", "provider": "openrouter", "n_items": 64,
             "sources": ["CoinDesk", "ECB", "Federal Reserve"], "failed": ["MarketWatch"], "fng": 71,
             "tilt": "risk-off", "confidence": "medium",
             "headline": "Hot inflation print risk and ETF outflows weigh on crypto into CPI",
