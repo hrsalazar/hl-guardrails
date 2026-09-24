@@ -4,6 +4,16 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-24
 
+- **Earlier entries into 1d trends: tested, neither adopted** (`python -m hlg.reversal`, README
+  "Earlier entries"). Binance 1h data since 2023-06, 15 coins, one simulator for every entry, rules
+  fixed before running. The 1h->4h reversal **cascade** does worse than random entries in the same
+  uptrends (PF 0.90, 9th percentile); the **failed breakdown** makes PF 1.28 but random entries with
+  the same stops make ~1.2 (75th percentile). The cascade raises the odds of a 1d breakout within 10
+  days to 45.8% from 31.9% (lift 1.44, bar was 1.5): not enough for a notification. Same verdicts
+  with an engine-like daily trail.
+- Found along the way: the breakout's headline PF 1.67 is the capped 3-slot book; on every signal it
+  is 1.33 (R). Documented in README.
+
 - **Risk rules revised** (README "Position sizing"), after testing the defaults for the first time:
   - `risk_per_trade_pct` 1.5 -> **1.0**: risk % doesn't change the edge (1d PF 1.66-1.67 from 0.75% to
     2%), only drawdown; and 3 stops on one correlated day were 4.5%, past the 3% daily limit.

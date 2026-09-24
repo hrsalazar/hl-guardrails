@@ -629,6 +629,48 @@ followed under the rule's own mechanics, taken or not, and records its result in
 failed early (and whether it recovered), and the breakout bar's close location. After ~30 closed
 signals that is fresh, out-of-sample evidence on exactly these questions.
 
+### Earlier entries: 1h→4h reversal cascade and failed breakdown — tested, neither adopted
+
+Can the same trends be entered earlier, at a better price, than the 1d close above the 20-day high?
+`python -m hlg.reversal` (research only) tests two ideas, rules fixed before running (module
+docstring has them in full):
+
+- **Cascade** — in a 1d uptrend with no 1d breakout yet: a 1h change of character (a lower high, a
+  higher low after it, then a 1h close above that lower high), confirmed within 48h by a 4h close
+  above its last swing high; entry at the next 4h open, stop at the 1h higher low.
+- **Failed breakdown ("spring")** — in a 1d uptrend: a 4h close below the prior 20-bar low, reclaimed
+  by a close back above it within two bars; stop at the shakeout's low.
+
+Data: Binance USDT-M perps, 1h since 2023-06 (Hyperliquid serves only ~7 months of 1h), 4h/1d built
+from it, 15 coins. Every entry — the live 1d breakout included, recomputed on the same data — runs
+through one 1h simulator (3×ATR trail, 21-day stop, fees, one position per coin), results in R. Pass
+needed all three: beat 200 random-entry draws at the 95th percentile (same context, same stop
+sizes), match the breakout's PF and average R, and PF > 1.2 in both halves.
+
+| entry | trades | win | PF (R) | avg R | 1st / 2nd half PF | median stop | vs random | verdict |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 1d breakout (reference) | 213 | 36% | 1.06 | +0.03 | 0.99 / 1.15 | 2.0 ATR | — | — |
+| cascade | 347 | 20% | 0.90 | −0.08 | 0.97 / 0.83 | 0.86 ATR | **9th pctile** | **fail** |
+| spring | 565 | 19% | 1.28 | +0.23 | 1.33 / 1.25 | 0.43 ATR | 75th pctile | **fail** |
+
+- **The cascade does worse than entering at random** in the same uptrends (random PF median 1.20). A
+  tight stop under the 1h higher low gets hit by ordinary noise before the trend resumes.
+- **The spring looks profitable (PF 1.28, stable in both halves) but isn't better than random**:
+  random entries in a 1d uptrend with the same tight stops made PF ~1.15-1.22. What pays is being
+  long while the 1d trend is up; the spring pattern adds nothing measurable on top.
+- **As an early warning, the cascade comes close but misses.** A confirmed cascade was followed by a
+  1d breakout within 10 days 45.8% of the time vs 31.9% from any bar in the same context — a 1.44×
+  lift against the 1.5× bar set in advance. Not enough to push a notification on.
+- **Robustness:** the simulator tightens its trail on every 1h high, harsher than the engine's daily
+  trail. Re-run with a daily trail: same verdicts (cascade 7th percentile, spring 63rd, lift 1.43).
+
+**Why the breakout reference is PF 1.06 here, not 1.67.** Most of the gap is the 3-slot cap. Run in
+the main engine on every signal (no cap) the breakout makes PF 1.33 in R over 244 trades; with the
+live 3 slots, 1.64 over 126. The cap keeps the *first* signals of each market-wide move and skips the
+late ones, and that selection is worth a lot — so the headline 1.67 describes the capped book, not the
+average signal. The rest (1.33 → 1.06-1.14) is Binance vs Hyperliquid prices and this study's harsher
+exits. The comparisons above are like-for-like, so the verdicts don't depend on it.
+
 ### Pyramiding: add to a winner on a fresh breakout? — tested, not adopted
 
 When a coin you already hold breaks out again, the scanner says "already held, don't add" —

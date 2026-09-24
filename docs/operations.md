@@ -132,7 +132,7 @@ For each phone or computer:
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 echo "account: '0x…'" > config.local.yaml
-pytest -q                          # 230 tests, no network
+pytest -q                          # 235 tests, no network
 python -m hlg.guardrails           # continuous, console / Telegram
 python -m hlg.scanner
 python -m hlg.report               # one CI-style run; writes plaintext site/*.json (gitignored)
