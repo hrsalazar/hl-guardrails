@@ -16,6 +16,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
   slots, so live behaves mostly like the 4h strategy (PF 1.41, not 1d's 1.67).
 - Engine: instruments can be coin|timeframe streams sharing coins (`coin_of`) and marked on a finer
   grid (`mark`); single-timeframe results unchanged.
+- **1d priority over 4h: tested, not adopted** (`--priority-study`, README "Position sizing").
+  Candidate `reserve1` (4h at most 2 of 3 slots) fails: PF 1.42 -> 1.44, DD -18.5% -> -20.5%, weaker
+  second half. Filling 1d first at the same moment changes nothing (1d fills only at 00:00 UTC).
+  Preempting a 4h trade for a 1d signal is clearly worse (return -40%, Sharpe 0.83). Recorded as a
+  lead, not a result: `reserve2` (4h gets 1 slot) scored PF 1.62, Sharpe 1.29, DD -15.8% for ~10%
+  less return, but it was one of six variants, not the candidate.
 
 ## 2026-09-23 (morning)
 

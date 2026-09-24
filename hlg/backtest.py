@@ -330,6 +330,10 @@ def run(V, data, fund, P):
     per-coin closes on the finest grid for marking open positions to market between coarser bars."""
     coin_of, mark = P.get("coin_of") or {}, P.get("mark")
     base = lambda c: coin_of.get(c, c)  # noqa: E731
+    # timeframe allocation (priority_study): tf_rank orders same-moment fills, tf_max caps the slots a
+    # timeframe may hold, preempt lets a 1d fill close the worst open 4h position when slots are full
+    tf_of = lambda c: c.split("|")[1] if "|" in c else None  # noqa: E731
+    tf_rank, tf_max, preempt = P.get("tf_rank") or {}, P.get("tf_max") or {}, P.get("preempt", False)
 
     def px_at(c, d):
         if mark is not None and base(c) in mark and d in mark[base(c)].index:
@@ -350,7 +354,7 @@ def run(V, data, fund, P):
         # Same-day signals compete for max_positions slots. Fill the most liquid first (trailing
         # 30d median notional, as of the signal day): fixed in advance, and the order the live
         # scanner lists them in. Dict order used to decide this, i.e. the config file's coin order.
-        for coin, q in sorted(pending.items(), key=lambda kv: -_prio(P, kv[0], kv[1]["sd"])):
+        for coin, q in sorted(pending.items(), key=lambda kv: (-tf_rank.get(tf_of(kv[0]), 0), -_prio(P, kv[0], kv[1]["sd"]))):
             df = data[coin]
             if d not in df.index:
                 continue
@@ -374,10 +378,22 @@ def run(V, data, fund, P):
             if q.get("add"):
                 eq -= _pyramid_add(open_pos.get(coin), px, d, V, P, eq)
                 continue
-            if coin in open_pos or len(open_pos) >= P["max_positions"]:
+            if coin in open_pos:
                 continue
             if coin_of and base(coin) in {base(k) for k in open_pos}:
                 continue  # held on the other timeframe: no second position in the same coin
+            tf = tf_of(coin)
+            if tf in tf_max and sum(tf_of(k) == tf for k in open_pos) >= tf_max[tf]:
+                continue
+            if len(open_pos) >= P["max_positions"]:
+                victims = [k for k in open_pos if preempt and tf == "1d" and tf_of(k) == "4h" and d in data[k].index]
+                if not victims:
+                    continue
+                # the 4h position doing worst at this open makes room, closed at that open
+                v = min(victims, key=lambda k: data[k].loc[d].o / open_pos[k]["entry"])
+                rows, eq = _close(open_pos[v], data[v].loc[d].o, d, "preempted", P, eq)
+                trades += rows
+                del open_pos[v]
             stop = q["stop"] if entry == "open" else px - V["stop_atr"] * q["atr"]
             dist = abs(px - stop)
             if dist <= 0:
@@ -1038,18 +1054,9 @@ def pyramid_study(P, iv):
     return rows, ok
 
 
-def combined_study(P, risks=(1.5, 1.0)):
-    """python -m hlg.backtest --combined-study
-
-    The book as it actually runs live: 1d and 4h breakout signals on the same coins, sharing
-    max_positions slots, one position per coin whichever timeframe opened it. Every other study
-    runs one timeframe alone. Descriptive (no adoption rule): it measures the drawdown and the
-    daily-loss exposure of the live configuration at each risk level.
-
-    Approximation, stated rather than hidden: a 1d stream is simulated once a day at 00:00 UTC with
-    its whole daily bar, 4h streams every 4h; open positions are marked on 4h closes. Slot contention
-    within a day is therefore approximate for 1d stops and fills."""
-    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+def _combined_book(P):
+    """1d and 4h streams per DEF coin, keyed "COIN|tf"; returns (data, fund, run extras, mid-date)."""
+    cache = Path(P["cache_dir"])
     start = pd.Timestamp(P["start"], tz="UTC")
     data, fund, coin_of, mark = {}, {}, {}, {}
     for c in DEF["coins"]:
@@ -1063,18 +1070,79 @@ def combined_study(P, risks=(1.5, 1.0)):
             if iv == "4h":
                 mark[c] = df.c
     days = [d for d in sorted(set().union(*[set(d.index) for d in data.values()])) if d >= start]
-    mid = days[len(days) // 2]
+    return data, fund, {"coin_of": coin_of, "mark": mark}, days[len(days) // 2]
+
+
+def _combined_run(data, fund, Q, mid):
+    T, C, dd = run(VARIANTS["breakout_long"], data, fund, Q)
+    s = stats(T, C, dd, Q) | halves(T, mid)
+    daily = C.resample("1D").last().dropna().pct_change().dropna() * 100
+    tf = T.coin.str.split("|").str[1]
+    return T, dict(trades=len(T), trades_1d=int((tf == "1d").sum()), trades_4h=int((tf == "4h").sum()),
+                   pf=s["pf"], total_return_pct=s["total_return_pct"], max_dd_pct=s["max_dd_pct"], sharpe=s["sharpe"],
+                   IS_pf=s["IS_pf"], OOS_pf=s["OOS_pf"], worst_day_pct=daily.min(),
+                   days_below_3pct=int((daily < -3).sum()), days_below_4_5pct=int((daily < -4.5).sum()),
+                   preempted=int((T.why == "preempted").sum()) if len(T) else 0)
+
+
+PRIORITY_STUDY = {
+    # fixed before running: reserve1 is the candidate; the rest are sensitivity / reference only
+    "shared (live)": {},
+    "reserve1": {"tf_max": {"4h": 2}},
+    "same_bar": {"tf_rank": {"1d": 1}},
+    "reserve2": {"tf_max": {"4h": 1}},
+    "preempt": {"tf_rank": {"1d": 1}, "preempt": True},
+    "1d only": {"tf_max": {"4h": 0}},
+    "4h only": {"tf_max": {"1d": 0}},
+}
+
+
+def priority_study(P, risk=1.0):
+    """python -m hlg.backtest --priority-study
+
+    Should 1d signals get priority over 4h in the live book? In the combined book 4h signals take
+    ~80% of the slots simply by firing more often, while 1d is the stronger rule (PF 1.67 vs 1.38
+    alone). Candidate, fixed before running: `reserve1` -- 4h may hold at most 2 of the 3 slots.
+    Passes on the --entry-study bar against the live shared book: PF >= base + 0.10, max DD no worse
+    than base - 2pp, PF in each half >= the base's. Run at the live 1.0% risk."""
+    out = Path(P["out_dir"])
+    data, fund, extra, mid = _combined_book(P)
+    rows = {}
+    for name, cfg in PRIORITY_STUDY.items():
+        T, s = _combined_run(data, fund, {**P, "risk_pct": risk, **extra, **cfg}, mid)
+        rows[name] = s
+        T.to_csv(out / f"priority_{name.split()[0]}.csv", index=False)
+        log.info("%s: trades %d (1d %d / 4h %d) pf %.2f dd %.1f", name, s["trades"], s["trades_1d"], s["trades_4h"],
+                 s["pf"], s["max_dd_pct"])
+    b, c = rows["shared (live)"], rows["reserve1"]
+    ok = (c["pf"] >= b["pf"] + 0.10 and c["max_dd_pct"] >= b["max_dd_pct"] - 2
+          and c["IS_pf"] >= b["IS_pf"] and c["OOS_pf"] >= b["OOS_pf"])
+    S = pd.DataFrame(rows).T.astype(float).round(2)
+    rep = [f"# 1d vs 4h slot priority (combined book, {risk}% risk, max {P['max_positions']} positions, {P['start']} -> now)\n",
+           S.to_markdown() + "\n",
+           f"reserve1 vs the live shared book (rule fixed before running): **{'PASS' if ok else 'FAIL'}**\n"]
+    (out / "priority_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return rows, ok
+
+
+def combined_study(P, risks=(1.5, 1.0)):
+    """python -m hlg.backtest --combined-study
+
+    The book as it actually runs live: 1d and 4h breakout signals on the same coins, sharing
+    max_positions slots, one position per coin whichever timeframe opened it. Every other study
+    runs one timeframe alone. Descriptive (no adoption rule): it measures the drawdown and the
+    daily-loss exposure of the live configuration at each risk level.
+
+    Approximation, stated rather than hidden: a 1d stream is simulated once a day at 00:00 UTC with
+    its whole daily bar, 4h streams every 4h; open positions are marked on 4h closes. Slot contention
+    within a day is therefore approximate for 1d stops and fills."""
+    out = Path(P["out_dir"])
+    data, fund, extra, mid = _combined_book(P)
     rows = {}
     for r in risks:
-        Q = {**P, "risk_pct": r, "coin_of": coin_of, "mark": mark}
-        T, C, dd = run(VARIANTS["breakout_long"], data, fund, Q)
-        s = stats(T, C, dd, Q) | halves(T, mid)
-        daily = C.resample("1D").last().dropna().pct_change().dropna() * 100
-        tf = T.coin.str.split("|").str[1]
-        rows[f"combined @ {r}%"] = dict(trades=len(T), trades_1d=int((tf == "1d").sum()), trades_4h=int((tf == "4h").sum()),
-                                        pf=s["pf"], total_return_pct=s["total_return_pct"], max_dd_pct=s["max_dd_pct"],
-                                        sharpe=s["sharpe"], IS_pf=s["IS_pf"], OOS_pf=s["OOS_pf"], worst_day_pct=daily.min(),
-                                        days_below_3pct=int((daily < -3).sum()), days_below_4_5pct=int((daily < -4.5).sum()))
+        T, s = _combined_run(data, fund, {**P, "risk_pct": r, **extra}, mid)
+        rows[f"combined @ {r}%"] = s
         T.to_csv(out / f"combined_{r}.csv", index=False)
     S = pd.DataFrame(rows).T.astype(float).round(2)
     rep = [f"# Combined 1d + 4h book (live configuration), {P['start']} -> now, max {P['max_positions']} positions\n",
@@ -1103,6 +1171,7 @@ def main():
     ap.add_argument("--event-study", action="store_true", help="skip breakout entries that fill within 24h before an FOMC decision?")
     ap.add_argument("--pyramid-study", action="store_true", help="add to a held coin on a fresh breakout once its stop is at breakeven?")
     ap.add_argument("--combined-study", action="store_true", help="the live book: 1d + 4h signals sharing the position slots, at 1.5% and 1.0% risk")
+    ap.add_argument("--priority-study", action="store_true", help="should 1d signals get slot priority over 4h in the live book?")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
     a = ap.parse_args()
@@ -1134,6 +1203,8 @@ def main():
         return pyramid_study(P, iv)
     if a.combined_study:
         return combined_study(P)
+    if a.priority_study:
+        return priority_study(P)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

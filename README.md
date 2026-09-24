@@ -330,8 +330,36 @@ So at the old 1.5% the daily loss lock would have fired on 44 days; at 1.0% on 8
 streams are simulated once a day with the whole daily bar (4h every 4h), so slot contention within a
 day is approximate; and **4h signals take ~80% of the slots** — they fire far more often and get
 there first — which makes the live book behave mostly like the 4h strategy (PF 1.41) rather than the
-stronger 1d one (1.67). Whether 1d signals should get priority or reserved slots is the next
-question worth testing.
+stronger 1d one (1.67).
+
+**Should 1d signals get priority?** (`--priority-study`, live 1.0% risk, 3 slots.) "Fill 1d first"
+alone can't matter — 1d fills only happen at 00:00 UTC, when 4h trades already hold the slots — so
+priority has to mean reserving slots or displacing a 4h trade. Candidate fixed before running:
+`reserve1`, 4h may hold at most 2 of the 3 slots; passes on the `--entry-study` bar against the live
+shared book. The others are sensitivity only. Engine check: the shared row reproduces
+`--combined-study` exactly, and "1d only" / "4h only" reproduce the single-timeframe grid (126 trades
+PF 1.66; 405 trades PF 1.41).
+
+| allocation | trades (1d / 4h) | PF | total | max DD | Sharpe | IS / OOS PF | days < −3% |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| shared (live) | 406 (82 / 324) | 1.42 | +114% | −18.5% | 1.06 | 1.21 / 1.57 | 8 |
+| **`reserve1`**: 4h ≤ 2 slots | 358 (90 / 268) | 1.44 | +106% | −20.5% | 1.07 | 1.32 / 1.53 | 7 |
+| same-moment fills: 1d first | identical to shared | | | | | | |
+| `reserve2`: 4h ≤ 1 slot | 251 (103 / 148) | 1.62 | +104% | −15.8% | 1.29 | 1.38 / 1.87 | 4 |
+| `preempt`: 1d closes the worst 4h | 403 (117 / 286) | 1.31 | +71% | −18.8% | 0.83 | 1.05 / 1.56 | 7 |
+| 1d only | 126 (126 / 0) | 1.66 | +48% | −12.7% | 0.95 | 1.36 / 2.42 | 2 |
+| 4h only | 405 (0 / 405) | 1.41 | +113% | −29.1% | 1.02 | 1.16 / 1.55 | 8 |
+
+**`reserve1` fails** (PF +0.02, drawdown worse, second half weaker) — the live book stays shared.
+What the rest says:
+
+- **Preempting is clearly worse.** Closing a 4h trade to make room cut return by 40% and Sharpe to 0.83:
+  the displaced 4h trades were worth more than the 1d entries that replaced them, on average.
+- **The 4h share is a dial between two books**: all-4h is more return at lower quality, all-1d is
+  higher PF and half the return. `reserve2` (4h gets one slot) sits at the best point on it here —
+  PF 1.62, Sharpe 1.29, the lowest drawdown short of 1d-only, half the bad days, for about 10% less
+  return. That is a real-looking lead, but it's one of six variants and wasn't the candidate, so
+  picking it now would be choosing the winner after the race. It's recorded here, not adopted.
 
 The research tables elsewhere in this README keep their 1.5% risk (`hlg.backtest.DEF`) so they stay
 reproducible and comparable; at 1.0% their drawdowns and returns scale down, PF does not.
