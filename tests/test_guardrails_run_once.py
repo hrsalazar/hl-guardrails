@@ -187,10 +187,10 @@ def test_position_open_while_locked_is_flagged_every_tick(tmp_path):
     assert "still open" in problems[0]
 
 
-def test_leverage_over_cap(tmp_path):
+def _lev_run(tmp_path, margin):
     cfg = base_cfg()
     state = State(tmp_path / "state.json")
-    pos = make_position("BTC", sz=1.0, entry=100, upnl=0, leverage=10)  # cap is 5
+    pos = make_position("BTC", sz=1.0, entry=100, upnl=0, leverage=10, margin=margin)  # cap is 5
     order = make_stop_order("BTC", "A", 1.0, trigger_px=99)
     info = FakeInfo(
         user_state=make_user_state(10000, [pos]),
@@ -198,9 +198,18 @@ def test_leverage_over_cap(tmp_path):
         open_orders=[order],
         mids={"BTC": "100"},
     )
-    problems, notif = run(cfg, info, state)
-    assert len(problems) == 1
-    assert "leverage 10x > max 5x" in problems[0]
+    return run(cfg, info, state)[0]
+
+
+def test_isolated_leverage_over_cap_is_flagged(tmp_path):
+    problems = _lev_run(tmp_path, "isolated")
+    assert len(problems) == 1 and "isolated leverage 10x > max 5x" in problems[0]
+
+
+def test_cross_leverage_setting_is_not_a_breach(tmp_path):
+    """On cross margin the per-position setting only reserves margin; account leverage (here 0.01x,
+    capped by max_gross_exposure_x) is what carries the risk -- the live false alarm this fixes."""
+    assert _lev_run(tmp_path, "cross") == []
 
 
 def test_coin_outside_allowed_list(tmp_path):

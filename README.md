@@ -282,13 +282,59 @@ enforced automatically. Acting on it is up to you.
 | Existing stop risks > 1.25× allowed | warn |
 | Added to a position while underwater | warn — averaging down |
 | Position older than `max_hold_days` | warn — time stop |
-| Leverage > `max_leverage` | warn |
+| Leverage > `max_leverage` on an **isolated** position | warn (cross positions: account leverage, next row, is what counts) |
 | > `max_positions`, > `max_same_direction`, account leverage > `max_gross_exposure_x` | warn |
 | Net perp + spot in one coin > `max_coin_exposure_x` × base (unified only) | warn — one concentrated bet across spot and perp |
 | Coin not in `allowed_coins` | warn |
 | Daily / weekly loss limit (whole account when unified, perps when classic) | warn that you should be flat; the advice stays "locked" until the next period, and re-fires if a position is still open |
 
 State (day/week start equity, lock, last position snapshot) lives in `state.json`.
+
+### Position sizing: why 1.0% and 3 positions (revised 2026-09-24)
+
+1.5% risk and 3 positions started as defaults, and every backtest used them without testing
+alternatives. A grid over both (same history, one timeframe at a time, `hlg.backtest.run` with
+`risk_pct` / `max_positions` varied) says:
+
+- **Risk % doesn't change the edge, only the size of the swings.** At 3 positions, 1d PF is 1.66-1.67
+  from 0.75% to 2%; return and drawdown scale together. So it's a choice of drawdown, not of edge.
+- **3 positions sits on a plateau.** 3-4 did best on both timeframes; 2 and 5-6 did worse (1d PF 1.53
+  at 2 and at 5-6 vs 1.66 at 3). 4 scored best on 4h, but picking the best of 40 cells is how you
+  overfit, so it stays 3.
+
+| 1d, 3 positions | 0.75% | **1.0%** | 1.5% | 2.0% |
+|---|---:|---:|---:|---:|
+| max drawdown | −9.7% | **−12.7%** | −18.4% | −23.8% |
+| worst day | −3.2% | **−4.2%** | −6.2% | −8.0% |
+| days below −3% | 2 | **2** | 9 | 23 |
+
+Four rules contradicted each other or the strategy, and were changed:
+
+| rule | was | now | why |
+|---|---|---|---|
+| `risk_per_trade_pct` | 1.5 | **1.0** | three stops on one correlated day were 4.5%, past the 3% daily limit; at 1.0% they equal it |
+| `max_same_direction` | 2 | **3** | the strategy is long-only with 3 slots, so following it exactly tripped this rule |
+| `max_leverage` | every position | **isolated only** | on cross margin the per-position setting only reserves margin; the risk is account leverage, capped by `max_gross_exposure_x`. It was flagging a 10× *setting* at 1.4× real account leverage |
+| `max_positions` | 3 | 3 | on the plateau |
+
+**The live book, measured for the first time** (`--combined-study`). Live, 1d and 4h signals share
+the same 3 slots and a coin held on one timeframe blocks the other — every other study runs one
+timeframe alone:
+
+| combined 1d + 4h | trades (1d / 4h) | PF | total | max DD | worst day | days < −3% | days < −4.5% |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1.5% | 406 (82 / 324) | 1.41 | +193% | −26.5% | −6.5% | 44 | 7 |
+| **1.0%** | 406 (82 / 324) | 1.42 | +114% | **−18.5%** | **−4.8%** | **8** | 1 |
+
+So at the old 1.5% the daily loss lock would have fired on 44 days; at 1.0% on 8. Two caveats: 1d
+streams are simulated once a day with the whole daily bar (4h every 4h), so slot contention within a
+day is approximate; and **4h signals take ~80% of the slots** — they fire far more often and get
+there first — which makes the live book behave mostly like the 4h strategy (PF 1.41) rather than the
+stronger 1d one (1.67). Whether 1d signals should get priority or reserved slots is the next
+question worth testing.
+
+The research tables elsewhere in this README keep their 1.5% risk (`hlg.backtest.DEF`) so they stay
+reproducible and comparable; at 1.0% their drawdowns and returns scale down, PF does not.
 
 ## Scanner (config.yaml → `scanner`)
 

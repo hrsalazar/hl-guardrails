@@ -324,6 +324,18 @@ def _close(p, exit_px, end, why, P, eq):
 
 
 def run(V, data, fund, P):
+    """Portfolio simulation. Keys of `data` are instruments -- normally coins. For a combined book
+    (combined_study) they are "COIN|tf" streams: P["coin_of"] maps each to its coin, so a coin held
+    on one timeframe blocks an entry on the other (as the live scanner does), and P["mark"] gives
+    per-coin closes on the finest grid for marking open positions to market between coarser bars."""
+    coin_of, mark = P.get("coin_of") or {}, P.get("mark")
+    base = lambda c: coin_of.get(c, c)  # noqa: E731
+
+    def px_at(c, d):
+        if mark is not None and base(c) in mark and d in mark[base(c)].index:
+            return mark[base(c)].at[d]
+        return data[c].loc[d].c if d in data[c].index else None
+
     days = sorted(set().union(*[set(d.index) for d in data.values()]))
     days = [d for d in days if d >= pd.Timestamp(P["start"], tz="UTC")]
     eq, peak, dd = P["equity0"], P["equity0"], 0.0
@@ -364,6 +376,8 @@ def run(V, data, fund, P):
                 continue
             if coin in open_pos or len(open_pos) >= P["max_positions"]:
                 continue
+            if coin_of and base(coin) in {base(k) for k in open_pos}:
+                continue  # held on the other timeframe: no second position in the same coin
             stop = q["stop"] if entry == "open" else px - V["stop_atr"] * q["atr"]
             dist = abs(px - stop)
             if dist <= 0:
@@ -414,8 +428,8 @@ def run(V, data, fund, P):
                 trades += rows
                 del open_pos[coin]
         # 3) mark to market + signals at close
-        mtm = eq + sum((1 if p["side"] == "L" else -1) * (data[c].loc[d].c - u["entry"]) * u["sz"]
-                       for c, p in open_pos.items() if d in data[c].index for u in [p] + p.get("adds", []))
+        mtm = eq + sum((1 if p["side"] == "L" else -1) * (px_at(c, d) - u["entry"]) * u["sz"]
+                       for c, p in open_pos.items() if px_at(c, d) is not None for u in [p] + p.get("adds", []))
         peak = max(peak, mtm)
         dd = min(dd, mtm / peak - 1)
         curve.append((d, mtm))
@@ -1024,6 +1038,52 @@ def pyramid_study(P, iv):
     return rows, ok
 
 
+def combined_study(P, risks=(1.5, 1.0)):
+    """python -m hlg.backtest --combined-study
+
+    The book as it actually runs live: 1d and 4h breakout signals on the same coins, sharing
+    max_positions slots, one position per coin whichever timeframe opened it. Every other study
+    runs one timeframe alone. Descriptive (no adoption rule): it measures the drawdown and the
+    daily-loss exposure of the live configuration at each risk level.
+
+    Approximation, stated rather than hidden: a 1d stream is simulated once a day at 00:00 UTC with
+    its whole daily bar, 4h streams every 4h; open positions are marked on 4h closes. Slot contention
+    within a day is therefore approximate for 1d stops and fills."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    start = pd.Timestamp(P["start"], tz="UTC")
+    data, fund, coin_of, mark = {}, {}, {}, {}
+    for c in DEF["coins"]:
+        for iv in ("1d", "4h"):
+            df = bars(c, cache, iv)
+            if df is None or len(df) < 80:
+                continue
+            k = f"{c}|{iv}"
+            data[k], coin_of[k] = features(df, 1), c
+            fund[k] = funding(c, int(start.timestamp() * 1000), cache, iv)
+            if iv == "4h":
+                mark[c] = df.c
+    days = [d for d in sorted(set().union(*[set(d.index) for d in data.values()])) if d >= start]
+    mid = days[len(days) // 2]
+    rows = {}
+    for r in risks:
+        Q = {**P, "risk_pct": r, "coin_of": coin_of, "mark": mark}
+        T, C, dd = run(VARIANTS["breakout_long"], data, fund, Q)
+        s = stats(T, C, dd, Q) | halves(T, mid)
+        daily = C.resample("1D").last().dropna().pct_change().dropna() * 100
+        tf = T.coin.str.split("|").str[1]
+        rows[f"combined @ {r}%"] = dict(trades=len(T), trades_1d=int((tf == "1d").sum()), trades_4h=int((tf == "4h").sum()),
+                                        pf=s["pf"], total_return_pct=s["total_return_pct"], max_dd_pct=s["max_dd_pct"],
+                                        sharpe=s["sharpe"], IS_pf=s["IS_pf"], OOS_pf=s["OOS_pf"], worst_day_pct=daily.min(),
+                                        days_below_3pct=int((daily < -3).sum()), days_below_4_5pct=int((daily < -4.5).sum()))
+        T.to_csv(out / f"combined_{r}.csv", index=False)
+    S = pd.DataFrame(rows).T.astype(float).round(2)
+    rep = [f"# Combined 1d + 4h book (live configuration), {P['start']} -> now, max {P['max_positions']} positions\n",
+           S.to_markdown() + "\n"]
+    (out / "combined_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return rows
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -1042,6 +1102,7 @@ def main():
     ap.add_argument("--sentiment-study", action="store_true", help="Fear & Greed vs forward returns, plus the two extreme-band entry filters")
     ap.add_argument("--event-study", action="store_true", help="skip breakout entries that fill within 24h before an FOMC decision?")
     ap.add_argument("--pyramid-study", action="store_true", help="add to a held coin on a fresh breakout once its stop is at breakeven?")
+    ap.add_argument("--combined-study", action="store_true", help="the live book: 1d + 4h signals sharing the position slots, at 1.5% and 1.0% risk")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
     a = ap.parse_args()
@@ -1071,6 +1132,8 @@ def main():
         return event_study(P, iv)
     if a.pyramid_study:
         return pyramid_study(P, iv)
+    if a.combined_study:
+        return combined_study(P)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

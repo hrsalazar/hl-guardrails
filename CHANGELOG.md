@@ -2,6 +2,21 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-24
+
+- **Risk rules revised** (README "Position sizing"), after testing the defaults for the first time:
+  - `risk_per_trade_pct` 1.5 -> **1.0**: risk % doesn't change the edge (1d PF 1.66-1.67 from 0.75% to
+    2%), only drawdown; and 3 stops on one correlated day were 4.5%, past the 3% daily limit.
+  - `max_same_direction` 2 -> **3**: the long-only strategy with 3 slots tripped it when followed exactly.
+  - `max_leverage` now checks **isolated** positions only: on cross margin the per-position setting just
+    reserves margin, and account leverage is already capped by `max_gross_exposure_x`.
+  - `max_positions` stays 3: 3-4 is the plateau on both timeframes.
+- **The live book measured** (`--combined-study`): 1d + 4h sharing 3 slots, one position per coin.
+  At 1.5%: max DD -26.5%, 44 days below -3%. At 1.0%: -18.5%, 8 days. 4h signals take ~80% of the
+  slots, so live behaves mostly like the 4h strategy (PF 1.41, not 1d's 1.67).
+- Engine: instruments can be coin|timeframe streams sharing coins (`coin_of`) and marked on a finer
+  grid (`mark`); single-timeframe results unchanged.
+
 ## 2026-09-23 (morning)
 
 - **Pyramiding, live half:** the signal journal records a hypothetical add on every signal under the

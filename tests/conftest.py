@@ -52,14 +52,14 @@ def base_cfg():
     }
 
 
-def make_position(coin, sz, entry, upnl, position_value=None, leverage=3):
+def make_position(coin, sz, entry, upnl, position_value=None, leverage=3, margin="cross"):
     return {
         "coin": coin,
         "szi": str(sz),
         "entryPx": str(entry),
         "unrealizedPnl": str(upnl),
         "positionValue": str(position_value if position_value is not None else abs(sz) * entry),
-        "leverage": {"value": leverage},
+        "leverage": {"value": leverage, "type": margin},
     }
 
 

@@ -240,8 +240,12 @@ def run_once(cfg, inf, notif, state):
         if coin not in allowed:
             what = "today's liquid universe (allowed_coins: auto)" if R["allowed_coins"] == "auto" else f"allowed list {R['allowed_coins']}"
             breach(f"{tag}: {coin} not in {what}", f"coin_{coin}")
-        if lev > R["max_leverage"]:
-            breach(f"{tag}: leverage {lev}x > max {R['max_leverage']}x. Lower it.", f"lev_{coin}")
+        # Isolated only. On cross margin the per-position setting just decides how much margin is
+        # reserved: the loss at the stop and the liquidation point are account-level, and the
+        # account's real leverage is already capped by max_gross_exposure_x. Warning about a 10x
+        # *setting* on a cross position at 1.4x account leverage is a false alarm.
+        if p["leverage"].get("type") == "isolated" and lev > R["max_leverage"]:
+            breach(f"{tag}: isolated leverage {lev}x > max {R['max_leverage']}x - it sets where this position liquidates. Lower it.", f"lev_{coin}")
 
         # stop-loss coverage
         cov, trig = stop_coverage(oo, coin, sz)
