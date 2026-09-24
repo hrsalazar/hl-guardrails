@@ -4,6 +4,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-24
 
+- **Cascade early warning, tracked live** (`hlg/cascade_watch.py`): the study's detector runs hourly
+  on each scanned coin after the push (12 candle requests an hour, 12 a day for 1d context), records
+  confirmed cascades with a stop within 2 daily ATRs, and resolves each from the signal journal
+  within 10 days. Journal card: hit rate vs the backtest's 45.8% / 31.9%, lead days, entry advantage.
+  Tracking only - no alert.
+
 - **Earlier entries into 1d trends: tested, neither adopted** (`python -m hlg.reversal`, README
   "Earlier entries"). Binance 1h data since 2023-06, 15 coins, one simulator for every entry, rules
   fixed before running. The 1h->4h reversal **cascade** does worse than random entries in the same

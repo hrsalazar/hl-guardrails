@@ -44,6 +44,7 @@ read back at the start of the next run.
 | `hlg/universe.py` | which coins are scanned: `scanner.coins`, or the top N perps by 30-day median volume, rebuilt once per UTC day | – |
 | `hlg/liqmap.py` | liquidation clusters per coin from the public positions of ~560 large and active HL accounts; refreshed every 4h after the push | HL, HL leaderboard |
 | `hlg/journal.py` | live signal journal: each breakout signal followed under the strategy's rules, result in R, plus a hypothetical pyramid add (README "Pyramiding") | – |
+| `hlg/cascade_watch.py` | live tracking of the 1h->4h reversal cascade as an early warning of 1d breakouts (README "Earlier entries"); hourly, after the push; evidence only | HL |
 | `hlg/alerts.py` | alert lifecycle: first seen, valid until, live/missed/failed/expired, what gets pushed | – |
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
 | `hlg/liquidations.py` | recent liquidation events from OKX, time-boxed and fail-soft | OKX |
@@ -90,7 +91,8 @@ read back at the start of the next run.
    not funding notes or breakouts on coins already held) to every subscription, plus a test message if the manual
    `test_push` input was set. Push is skipped when the previous state couldn't be read, since every
    alert would look new.
-9. **After the push**, the slow context: liquidation levels every 4h, then once a UTC day the
+9. **After the push**, the slow context: liquidation levels every 4h, the hourly cascade check
+   (`hlg/cascade_watch.py`, 1h candles per scanned coin once an hour), then once a UTC day the
    daily brief (`hlg/digest.py`: RSS fetch plus one model call, ~1 min). Each republishes if it
    produced something, so neither can delay a notification.
 10. The workflow then copies `pwa/` into `site/`, stamps `config.js` with the public VAPID key, and
@@ -170,13 +172,13 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 235 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 240 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (52 tests, ~25s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (53 tests, ~25s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see

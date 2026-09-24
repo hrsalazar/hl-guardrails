@@ -660,7 +660,13 @@ sizes), match the breakout's PF and average R, and PF > 1.2 in both halves.
   long while the 1d trend is up; the spring pattern adds nothing measurable on top.
 - **As an early warning, the cascade comes close but misses.** A confirmed cascade was followed by a
   1d breakout within 10 days 45.8% of the time vs 31.9% from any bar in the same context — a 1.44×
-  lift against the 1.5× bar set in advance. Not enough to push a notification on.
+  lift against the 1.5× bar set in advance. Not enough to push a notification on — so it is
+  **tracked live instead** (`hlg/cascade_watch.py`): the study's own detector runs on each scanned
+  coin once an hour (after alerts are pushed), records every confirmed cascade with a stop within 2
+  daily ATRs (the study's population), and resolves it from the signal journal as "breakout" or "no
+  breakout" after 10 days, with the lead in days and the entry advantage in ATRs. The journal card
+  shows the running hit rate next to the backtest's 45.8% / 31.9%. Nothing is alerted from it; if the
+  live lift clears 1.5× over enough cascades, it becomes a candidate heads-up.
 - **Robustness:** the simulator tightens its trail on every 1h high, harsher than the engine's daily
   trail. Re-run with a daily trail: same verdicts (cascade 7th percentile, spring 63rd, lift 1.43).
 
@@ -1006,7 +1012,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-52 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+53 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

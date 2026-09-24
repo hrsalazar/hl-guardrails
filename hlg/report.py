@@ -25,7 +25,8 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import account, digest, events, guardrails, journal, liqmap, liquidations, market, scanner, sentiment, universe, vault
+from . import (account, cascade_watch, digest, events, guardrails, journal, liqmap, liquidations, market, scanner,
+               sentiment, universe, vault)
 from . import alerts as lifecycle
 from .common import (
     Notifier,
@@ -282,6 +283,7 @@ def main():
         "events": events.payload(state.get("events"), now_ms) if E["enabled"] else None,
         "fng": state.get("fng"),
         "digest": state.get("digest"),
+        "cascades": cascade_watch.summary(state),  # early-warning tracking, as of the previous run
         # the page can't see secrets: this is how it tells "no key" from "not written yet"
         "digest_status": digest.status(state, now_ms, digest.settings(cfg),
                                        {"openrouter": os.environ.get("OPENROUTER_API_KEY"),
@@ -324,6 +326,16 @@ def main():
                 publish("state.json", state.d, vlt, in_ci)
         except Exception as e:  # noqa: BLE001 - context data; never fails the run
             log.error("liqmap failed: %s", e)
+    # Cascade early-warning tracking (hlg.cascade_watch): hourly 1h candles per scanned coin, after
+    # the push for the same reason as liqmap. Evidence only -- nothing is alerted from it.
+    try:
+        r0 = scanner.CANDLE_REQUESTS[0]
+        if cascade_watch.update(inf, scanned, state, now_ms):
+            publish("state.json", state.d, vlt, in_ci)
+        if scanner.CANDLE_REQUESTS[0] > r0:
+            log.info("cascade watch: %d candle requests", scanner.CANDLE_REQUESTS[0] - r0, extra={"safe": True})
+    except Exception as e:  # noqa: BLE001
+        log.error("cascade watch failed: %s", e)
     # Daily brief (hlg.digest): once per UTC day, last, for the same reason as liqmap. Only public
     # data goes into the prompt -- the tape, the calendar, the index, headlines; nothing from the
     # account. The attempt time is published whatever happens, so a failure (or a paid call whose

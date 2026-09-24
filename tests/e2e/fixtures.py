@@ -260,6 +260,9 @@ def build_full(*, age_min=2, journal_closed=8):
             ],
             "watch": ["CPI Wednesday 12:30 UTC", "ETF flows"],
         },
+        "cascades": {"resolved": 7, "hits": 3, "hit_rate": 3 / 7, "median_lead_days": 3.0, "median_better_atr": 1.5,
+                     "watching": [{"coin": "SOL", "t": gen - 5 * H}, {"coin": "BTC", "t": gen - 9 * H}],
+                     "backtest": {"hit_rate": 0.458, "base_rate": 0.319, "lift_bar": 1.5}},
         # a failed refresh after the brief: the last good brief stays, with the failure noted
         "digest_status": {"enabled": True, "configured": True, "provider": "openrouter", "next": gen + 2 * H,
                           "error": {"t": gen - 20 * 60_000, "msg": "OpenRouter HTTP 402 (402)"}},

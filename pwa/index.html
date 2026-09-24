@@ -720,6 +720,16 @@ function renderJournal(j){
   html+=`<div class="foot2" id="jadds" style="font-size:12.5px;color:var(--text-2);margin-top:12px;border-top:1px solid var(--line);padding-top:10px">`
     +`<b>Hypothetical adds</b> <span class="mut">— tracking only, not advice.</span> The backtest found 4h adds beating bigger sizing only in a check made after the fact, so it's being tested live: one add when a held signal breaks out again with its stop at or above entry. `
     +`${['4h','1d'].map(adLine).join(' &nbsp;·&nbsp; ')}${Object.values(ad).reduce((n,a)=>n+a.closed,0)<30?' <span class="mut">(judge at ~30 closed)</span>':''}</div>`;
+  // 1h->4h cascade as an early warning of a 1d breakout (hlg.cascade_watch): evidence, not advice
+  const cz=D&&D.cascades;
+  if(cz){const bt=cz.backtest||{},w=(cz.watching||[]).map(e=>esc(e.coin));
+    html+=`<div class="foot2" id="jcascade" style="font-size:12.5px;color:var(--text-2);margin-top:8px">`
+      +`<b>Early warning</b> <span class="mut">— tracking only, not advice.</span> Confirmed 1h→4h reversals followed by a 1d breakout within 10 days: `
+      +(cz.resolved?`<b>${cz.hits} of ${cz.resolved}</b> (${fmt(100*cz.hit_rate)}%)`
+        +(cz.median_lead_days!=null?` · median ${fmt(cz.median_lead_days,1)}d ahead`:'')
+        +(cz.median_better_atr!=null?`, entry ${fmt(cz.median_better_atr,1)} ATR better`:''):'<span class="mut">none resolved yet</span>')
+      +` · backtest ${fmt(100*(bt.hit_rate||0),1)}% vs ${fmt(100*(bt.base_rate||0),1)}% base, needs ${bt.lift_bar||1.5}× to become an alert`
+      +(w.length?` · watching: ${[...new Set(w)].join(', ')}`:'')+`</div>`}
   $('#journal').innerHTML=html;
   if(s.closed&&curve.length){let c=0;const pts=[[curve[0].t-1,0],...curve.map(x=>[x.t,c+=x.r])];
     lineChart($('#jchart'),pts,{h:120,fmtY:v=>(v>=0?'+':'')+fmt(v,1)+'R',refs:[{y:0,label:'',color:'--axis'}],

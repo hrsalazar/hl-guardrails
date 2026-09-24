@@ -399,6 +399,17 @@ def test_journal_shows_hypothetical_adds_as_tracking_not_advice(page, base_url):
     expect(page.locator("#jadds")).to_contain_text("4h none yet")
 
 
+def test_journal_shows_cascade_early_warning_tracking(page, base_url):
+    page.goto(url(base_url, "full"))
+    cz = page.locator("#jcascade")
+    expect(cz).to_contain_text("tracking only, not advice")
+    expect(cz).to_contain_text("3 of 7 (43%) · median 3.0d ahead, entry 1.5 ATR better")
+    expect(cz).to_contain_text("backtest 45.8% vs 31.9% base, needs 1.5× to become an alert")
+    expect(cz).to_contain_text("watching: SOL, BTC")
+    page.goto(url(base_url, "empty"))
+    expect(page.locator("#jcascade")).to_have_count(0)   # no tracking data yet: no line
+
+
 def test_daily_brief_shows_tilt_points_and_source_links(page, base_url):
     page.goto(url(base_url, "full"))
     page.locator('.tab[data-tab="macro"]').click()
