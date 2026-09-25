@@ -297,7 +297,11 @@ dialog#urge::backdrop{background:rgba(5,7,12,.55);backdrop-filter:blur(3px)}
   .card{padding:14px;margin:10px 0}
   .hero .big{font-size:36px}
   /* tabs become a thumb-reach bottom bar */
-  .tabs{position:fixed;z-index:40;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));margin:0;
+  /* WebKit (iOS) mis-places a fixed element during momentum scroll and toolbar resizes when it is also
+     a scroll container, is centred with a transform, or sits on an offset that moves with the safe
+     area -- so none of those: no overflow, centred with auto margins, a bottom that doesn't shift */
+  .tabs{position:fixed;z-index:40;left:0;right:0;margin:0 auto;transform:none;overflow:visible;
+    bottom:max(12px,env(safe-area-inset-bottom));
     width:min(92vw,380px);max-width:none;justify-content:space-between;padding:5px;
     background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:saturate(1.4) blur(16px);-webkit-backdrop-filter:saturate(1.4) blur(16px);
     border:1px solid var(--line-2);box-shadow:0 12px 30px -8px rgba(0,0,0,.45)}
