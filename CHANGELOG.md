@@ -2,6 +2,22 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-25
+
+- **Dashboard, phone-first pass** (audited at 390px in both themes, before and after):
+  - the freshness line ("updated N min ago") was cut off on phones; the header now uses icon buttons
+    (labels kept for screen readers) and folds the address away instead;
+  - Technical / Macro / Flow become a fixed bottom tab bar on phones; a tap brings the tab into view;
+  - six wide tables were clipped (Funding, Setup, Longs...): on phones every table turns into
+    labelled cards, generically, so new tables get it for free;
+  - long card explanations fold to two lines (tap to open); 40px+ touch targets on touch screens;
+    focus rings; a loading skeleton while data fetches and decrypts;
+  - equity axis showed "$12k" on every line: labels now carry the digits the tick step needs.
+- **New visual aids** (each encodes something, no decoration): distance-to-trigger bar on every
+  scanner row (in ATR), R-multiple bars in the journal, a fear-to-greed scale with today's marker,
+  and a bullet chart for the cascade tracker (live hit rate vs base rate, backtest and alert bar),
+  plus a progress bar toward 30 closed hypothetical adds.
+
 ## 2026-09-24
 
 - **Cascade early warning, tracked live** (`hlg/cascade_watch.py`): the study's detector runs hourly

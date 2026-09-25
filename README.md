@@ -141,7 +141,7 @@ old is worse than no guardrail.
 
 ### Dashboard sections
 
-The top of the page is the act-now layer: portfolio value with today / this week, an **equity curve** (24h / 7d / 30d / all, from `history.json`, which keeps every run for 3 days, hourly to 90 days, daily after) with the loss-lock level drawn in, and **risk gauges** for the daily and weekly loss limits, account leverage and account ratio - each with an icon and a word, never colour alone. Positions show a **price ladder** (liquidation, stop, entry, mark; a missing stop is called out), an expanded breakout alert shows its **last 40 candles** with the breakout level and stop, the journal draws **cumulative R**, and the Flow tab has a **liquidation map** per coin. Charts are hand-written SVG (no library, nothing loaded from anywhere else), 2px lines and hairline grids, colours validated for colour-blind separation and contrast; dark by default, light when the OS is light.
+The top of the page is the act-now layer: portfolio value with today / this week, an **equity curve** (24h / 7d / 30d / all, from `history.json`, which keeps every run for 3 days, hourly to 90 days, daily after) with the loss-lock level drawn in, and **risk gauges** for the daily and weekly loss limits, account leverage and account ratio - each with an icon and a word, never colour alone. Positions show a **price ladder** (liquidation, stop, entry, mark; a missing stop is called out), an expanded breakout alert shows its **last 40 candles** with the breakout level and stop, the journal draws **cumulative R**, and the Flow tab has a **liquidation map** per coin. Charts are hand-written SVG (no library, nothing loaded from anywhere else), 2px lines and hairline grids, colours validated for colour-blind separation and contrast; dark by default, light when the OS is light, or pick one with the header toggle. On a phone the tabs become a bottom bar, wide tables turn into labelled cards, long explanations fold to two lines, and the header keeps the data's age visible above everything else.
 
 Equity/PnL and the alert list sit at the top and are never behind a tab — they are the act-now
 layer. Everything else is grouped into three tabs (the last one you used is remembered):
@@ -1012,7 +1012,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-53 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+61 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

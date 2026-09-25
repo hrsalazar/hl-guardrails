@@ -399,6 +399,88 @@ def test_journal_shows_hypothetical_adds_as_tracking_not_advice(page, base_url):
     expect(page.locator("#jadds")).to_contain_text("4h none yet")
 
 
+# ---------------------------------------------------------------------- phone layout
+PHONE = {"width": 390, "height": 844}
+
+
+def test_phone_header_keeps_the_freshness_visible_with_icon_buttons(page, base_url):
+    page.set_viewport_size(PHONE)
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#gen")).to_contain_text("updated")
+    expect(page.locator("#gen .acct")).to_be_hidden()          # the address folds away, the age doesn't
+    box = page.locator("#notif").bounding_box()
+    assert box["width"] <= 44 and box["height"] >= 36            # icon-sized, still a proper target
+    expect(page.locator("#notif")).to_contain_text("Alerts")   # label kept for screen readers
+    right = page.evaluate("(()=>{const g=document.querySelector('#gen').getBoundingClientRect();return g.right})()")
+    assert right <= PHONE["width"]
+
+
+def test_phone_tabs_are_a_bottom_bar_and_a_tap_brings_the_pane_into_view(page, base_url):
+    page.set_viewport_size(PHONE)
+    page.goto(url(base_url, "full"))
+    tabs = page.locator(".tabs")
+    assert tabs.evaluate("e=>getComputedStyle(e).position") == "fixed"
+    box = tabs.bounding_box()
+    assert box["y"] + box["height"] <= PHONE["height"] and box["y"] > PHONE["height"] / 2
+    page.locator('.tab[data-tab="macro"]').click()
+    page.wait_for_timeout(700)                                   # smooth scroll
+    top = page.locator("#pane-macro").bounding_box()["y"]
+    header = page.locator("header").bounding_box()["height"]
+    assert header - 2 <= top <= header + 60, (top, header)
+
+
+def test_phone_tables_become_labelled_cards(page, base_url):
+    page.set_viewport_size(PHONE)
+    page.goto(url(base_url, "full"))
+    table = page.locator("#scan table").first
+    expect(table).to_have_class(re.compile(r"\bcardable\b"))
+    expect(table.locator("tr.thead")).to_be_hidden()
+    cell = page.locator("#scan tr", has_text="TAO").locator("td[data-label='Funding']")
+    expect(cell).to_be_visible()
+    assert cell.evaluate("e=>getComputedStyle(e,'::before').content") == '"Funding"'
+    assert page.evaluate("document.documentElement.scrollWidth - innerWidth") <= 1
+
+
+def test_phone_long_descriptions_fold_and_open_on_tap(page, base_url):
+    page.set_viewport_size(PHONE)
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    desc = page.locator("#calcard > .desc")
+    folded = desc.bounding_box()["height"]
+    desc.click()
+    expect(desc).to_have_class(re.compile(r"\bopen\b"))
+    assert desc.bounding_box()["height"] > folded
+
+
+def test_desktop_keeps_tables_and_inline_tabs(page, base_url):
+    page.goto(url(base_url, "full"))                              # default 1280 wide
+    assert page.locator(".tabs").evaluate("e=>getComputedStyle(e).position") != "fixed"
+    expect(page.locator("#scan tr.thead").first).to_be_visible()
+
+
+def test_skeleton_clears_once_data_renders(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#hval")).not_to_have_text("—")
+    expect(page.locator("#skel")).to_be_hidden()
+    page.goto(url(base_url, "stub"))                              # locked: the gate replaces it
+    expect(page.locator("#skel")).to_be_hidden()
+
+
+def test_equity_axis_labels_are_all_distinct(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#eqchart svg")).to_be_visible()          # all_text_contents doesn't wait
+    labels = [t for t in page.locator("#eqchart svg text").all_text_contents() if t.startswith("$")]
+    assert len(labels) >= 3 and len(set(labels)) == len(labels), labels
+
+
+def test_scanner_shows_distance_to_trigger_and_fng_marks_its_reading(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#scan tr", has_text="TAO").locator(".trig")).to_contain_text("ATR")
+    expect(page.locator("#scan tr", has_text="ENA").locator(".trig")).to_contain_text("signal")
+    page.locator('.tab[data-tab="macro"]').click()
+    assert page.locator("#fng .scale i").get_attribute("style") == "left:71%"
+
+
 def test_journal_shows_cascade_early_warning_tracking(page, base_url):
     page.goto(url(base_url, "full"))
     cz = page.locator("#jcascade")
