@@ -1029,7 +1029,7 @@ def event_study(P, iv):
     print("\n".join(rep))
 
 
-def ma_study(P):
+def ma_study(P, filters=None, adoptable=None, title="Long-term moving averages as entry filters", name="ma_study"):
     """python -m hlg.backtest --ma-study
 
     Benjamin Cowen's long-term lines -- 50-week and 200-day SMA/EMA -- as breakout entry filters,
@@ -1038,8 +1038,10 @@ def ma_study(P):
     passes on BOTH intervals (12 tests; one lone pass is expected by chance)."""
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
     cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
-    filters = tuple(f"{w}_above_{ln}" for w in ("btc", "coin") for ln in MA_LINES if not (w == "coin" and ln.startswith("ema")))
-    rep = [f"# Long-term moving averages as entry filters ({P['start']} -> now)\n"]
+    filters = filters or tuple(f"{w}_above_{ln}" for w in ("btc", "coin") for ln in ("sma50w", "ema50w", "sma200d", "ema200d")
+                               if not (w == "coin" and ln.startswith("ema")))
+    adoptable = adoptable or filters
+    rep = [f"# {title} ({P['start']} -> now)\n"]
     passed = {}
     for iv in ("1d", "4h"):
         rep.append(f"\n# {iv}\n")
@@ -1061,11 +1063,22 @@ def ma_study(P):
                     split.append(dict(filter=f, side=side, trades=len(n), win_rate=round((n > 0).mean(), 2),
                                       pf=round(min(n[n > 0].sum() / max(-n[n < 0].sum(), 1e-9), 99), 2), net=round(n.sum())))
         rep.append(f"\n### {iv}: base trades by side of each line (signal bar)\n\n" + pd.DataFrame(split).to_markdown(index=False) + "\n")
-    adopted = [f for f, v in passed.items() if all(v) and len(v) == 2]
+    adopted = [f for f, v in passed.items() if all(v) and len(v) == 2 and f in adoptable]
     rep.append(f"\n**Adopted (passes on both 1d and 4h):** {', '.join(adopted) if adopted else 'none'}\n")
-    (out / "ma_study.md").write_text("\n".join(rep), encoding="utf-8")
+    (out / f"{name}.md").write_text("\n".join(rep), encoding="utf-8")
     print("\n".join(rep))
     return passed
+
+
+def bmsb_study(P):
+    """python -m hlg.backtest --bmsb-study
+
+    The bull market support band (20-week SMA / 21-week EMA) as a breakout entry filter, with the
+    50-week SMA alongside for comparison. Pre-registered in docs/research/bmsb-study.md: only
+    btc_above_bmsb and coin_above_bmsb can be adopted, and only with a pass on both 1d and 4h."""
+    cand = ("btc_above_bmsb", "coin_above_bmsb")
+    return ma_study(P, filters=cand + ("btc_above_sma20w", "coin_above_sma20w", "btc_above_sma50w", "coin_above_sma50w"),
+                    adoptable=cand, title="Bull market support band vs the 50-week SMA", name="bmsb_study")
 
 
 PYRAMID_STUDY = {"base": 0, "pyramid1": 1, "pyramid2": 2}  # pyramid1 is the candidate; pyramid2 sensitivity only
@@ -1361,6 +1374,7 @@ def main():
     ap.add_argument("--combined-study", action="store_true", help="the live book: 1d + 4h signals sharing the position slots, at 1.5% and 1.0% risk")
     ap.add_argument("--priority-study", action="store_true", help="should 1d signals get slot priority over 4h in the live book?")
     ap.add_argument("--ma-study", action="store_true", help="50-week / 200-day SMA/EMA (BTC and each coin) as breakout entry filters")
+    ap.add_argument("--bmsb-study", action="store_true", help="bull market support band (20w SMA / 21w EMA) vs the 50-week SMA as entry filters")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
@@ -1399,6 +1413,8 @@ def main():
         return regime_study(P)
     if a.ma_study:
         return ma_study(P)
+    if a.bmsb_study:
+        return bmsb_study(P)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

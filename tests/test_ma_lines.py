@@ -52,3 +52,12 @@ def test_live_signal_reads_its_own_lines_and_a_young_coin_has_none():
     assert lines.at_signal(d, t, 86_400_000, 99.97) == {"sma50w": False, "sma200d": True}
     young = _daily(np.full(60, 100.0))
     assert lines.at_signal(young, int(young.index[-1].timestamp() * 1000), 86_400_000, 105.0) == {"sma50w": None, "sma200d": None}
+
+
+def test_the_band_is_its_upper_edge_and_needs_both_lines_warm():
+    d = _daily(np.r_[np.full(210, 100.0), np.full(7, 200.0)])        # 31 weeks, then a jump
+    L = bt.ma_lines(d)
+    both = pd.concat([L["sma20w"], L["ema21w"]], axis=1).dropna()
+    assert (L["bmsb"].dropna() == both.max(axis=1)).all()             # above the band = above both
+    assert L["bmsb"].iloc[:20].isna().all()                           # the 21-week EMA isn't warm yet
+    assert "btc_above_bmsb" in bt.FILTERS and "coin_above_bmsb" in bt.FILTERS

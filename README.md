@@ -934,6 +934,18 @@ no lookahead. A filter needed to pass on both timeframes.
 The earlier `btc_bull` row above used a 200-*bar* EMA, which on 4h bars spans about 33 days. This
 study re-ran it on real 200-day bars, with the same result: worse.
 
+### Bull market support band (20-week SMA / 21-week EMA) vs the 50-week — tested, not adopted
+
+`python -m hlg.backtest --bmsb-study`, pre-registered in [docs/research/bmsb-study.md](docs/research/bmsb-study.md).
+Neither `btc_above_bmsb` nor `coin_above_bmsb` passed on either timeframe.
+
+- **For BTC, the band is neutral.** Breakouts did the same with BTC above or below it (4h PF 1.36 vs
+  1.36). That still beats BTC's 50-week SMA, which was harmful as a gate.
+- **For the coin, the band and the 50-week SMA are the same signal.** Both measure "the coin is in a
+  long-term uptrend", and on 4h both split breakouts ~1.6 vs ~1.1 PF. As a filter only the 50-week
+  version held up, and only just.
+- **So neither is clearly more relevant.** The coin's 50-week SMA stays the one line tracked live.
+
 ### Stablecoins: does supply growth predict returns? — tested, and the opposite of the claim
 
 The common trading claim is that stablecoin dominance and crypto prices move inversely: money

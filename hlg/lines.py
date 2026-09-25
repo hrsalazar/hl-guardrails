@@ -9,7 +9,8 @@ import pandas as pd
 
 from .scanner import ema
 
-MA_LINES = ("sma50w", "ema50w", "sma200d", "ema200d")
+# the ma-lines study's four, then the bull market support band (docs/research/bmsb-study.md)
+MA_LINES = ("sma50w", "ema50w", "sma200d", "ema200d", "sma20w", "ema21w", "bmsb")
 
 
 def ma_lines(daily):
@@ -23,8 +24,11 @@ def ma_lines(daily):
     wk = wk[wk.index <= day_close.index[-1]]                          # drop a week still in progress
     ema_w = ema(wk, 50).where(np.arange(len(wk)) >= 49)
     ema_d = ema(day_close, 200).where(np.arange(len(day_close)) >= 199)
+    sma20w, ema21w = wk.rolling(20).mean(), ema(wk, 21).where(np.arange(len(wk)) >= 20)
     return {"sma50w": wk.rolling(50).mean(), "ema50w": ema_w,
-            "sma200d": day_close.rolling(200).mean(), "ema200d": ema_d}
+            "sma200d": day_close.rolling(200).mean(), "ema200d": ema_d,
+            # bull market support band: "above the band" = above both lines, i.e. its upper edge
+            "sma20w": sma20w, "ema21w": ema21w, "bmsb": pd.concat([sma20w, ema21w], axis=1).max(axis=1, skipna=False)}
 
 
 def above(bars_df, lines, step):
