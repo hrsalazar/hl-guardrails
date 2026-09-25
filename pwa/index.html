@@ -8,8 +8,9 @@
 <meta name="color-scheme" content="dark light">
 <title>HL Guardrails</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script>
 // applied before first paint, so an explicit choice never flashes the OS theme first
 try{
@@ -31,7 +32,7 @@ try{
   --grid:#222733; --axis:#343b49;
   --blue:#3987e5; --blue-wash:rgba(57,135,229,.13); --red:#e66767; --red-wash:rgba(230,103,103,.12);
   --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
-  --pos:#2fbf5b; --neg:#ff7a7a;
+  --pos:#2fbf5b; --neg:#ff7a7a; --violet:#a28ff2; --teal:#3cc4b2; --amber:#f0b44a;
   --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 12px 32px -12px rgba(0,0,0,.6);
   --r:16px;
 }
@@ -44,7 +45,7 @@ try{
     --text:#0b0b0b; --text-2:#46454a; --muted:#6f6d68;
     --grid:#e8e8e3; --axis:#c3c2b7;
     --blue:#2a78d6; --blue-wash:rgba(42,120,214,.10); --red:#e34948; --red-wash:rgba(227,73,72,.09);
-    --pos:#006300; --neg:#c42f2f;
+    --pos:#006300; --neg:#c42f2f; --violet:#6a55c9; --teal:#0e8a7b; --amber:#b0741a;
     --shadow:0 1px 2px rgba(11,11,11,.04), 0 10px 28px -14px rgba(11,11,11,.18);
   }
 }
@@ -57,7 +58,7 @@ try{
   --text:#0b0b0b; --text-2:#46454a; --muted:#6f6d68;
   --grid:#e8e8e3; --axis:#c3c2b7;
   --blue:#2a78d6; --blue-wash:rgba(42,120,214,.10); --red:#e34948; --red-wash:rgba(227,73,72,.09);
-  --pos:#006300; --neg:#c42f2f;
+  --pos:#006300; --neg:#c42f2f; --violet:#6a55c9; --teal:#0e8a7b; --amber:#b0741a;
   --shadow:0 1px 2px rgba(11,11,11,.04), 0 10px 28px -14px rgba(11,11,11,.18);
 }
 :root[data-theme="dark"]{
@@ -68,7 +69,7 @@ try{
   --text:#eef1f6; --text-2:#b8c0cf; --muted:#7d8699;
   --grid:#222733; --axis:#343b49;
   --blue:#3987e5; --blue-wash:rgba(57,135,229,.13); --red:#e66767; --red-wash:rgba(230,103,103,.12);
-  --pos:#2fbf5b; --neg:#ff7a7a;
+  --pos:#2fbf5b; --neg:#ff7a7a; --violet:#a28ff2; --teal:#3cc4b2; --amber:#f0b44a;
   --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 12px 32px -12px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box}
@@ -289,6 +290,33 @@ dialog#urge{max-height:88vh;overflow:auto}
   border:1px solid color-mix(in srgb,var(--blue) 30%,transparent);font-size:14px;font-weight:600;line-height:1.35;color:var(--text)}
 button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-size:13.5px;font-weight:600}
 
+/* ---- section icons and quiet colour: each area has its own hue (Technical blue, Macro violet, Flow
+   teal, alerts amber) on a soft wash. Decorative only -- the title text says what the card is. */
+.hic{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:8px;flex:none;margin-right:2px;
+  color:var(--ic,var(--blue));background:color-mix(in srgb,var(--ic,var(--blue)) 15%,transparent);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--ic,var(--blue)) 22%,transparent) inset}
+.hic svg,.gic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#pane-tech{--ic:var(--blue)} #pane-macro{--ic:var(--violet)} #pane-flow{--ic:var(--teal)} .card.alerts{--ic:var(--amber)}
+.pane .card,.card.alerts{border-top-color:color-mix(in srgb,var(--ic) 38%,var(--line))}
+.gic{display:inline-grid;place-items:center;color:var(--gc,var(--muted))}
+.gic svg{width:14px;height:14px}
+.grp[data-cat="position"]{--gc:var(--crit)} .grp[data-cat="entry"]{--gc:var(--blue)} .grp[data-cat="heads_up"]{--gc:var(--warn)}
+.tab[data-tab="tech"]{--ic:var(--blue)} .tab[data-tab="macro"]{--ic:var(--violet)} .tab[data-tab="flow"]{--ic:var(--teal)}
+.tab{display:inline-flex;align-items:center;gap:7px;transition:background-color .2s,color .2s}
+.tab svg{width:16px;height:16px;flex:none}
+.tab[aria-selected="true"] svg{color:var(--ic)}
+.mark{display:block;border-radius:9px;box-shadow:0 6px 16px -6px color-mix(in srgb,var(--blue) 60%,transparent)}
+/* smooth, never showy: short fades and colour transitions; all off under reduced motion (below) */
+.pane:not([hidden]){animation:fi .28s ease both}
+button{transition:background-color .15s,border-color .15s,color .15s,transform .1s}
+.card{transition:border-color .2s,box-shadow .2s}
+.al{transition:border-color .15s,background-color .15s}
+.car{display:inline-block;transition:transform .2s}
+@media (hover:hover) and (pointer:fine){
+  .card:hover{border-color:var(--line-2)}
+  .al:hover{border-color:var(--line-2)}
+}
+
 /* ---- touch screens: 40px+ targets ------------------------------------------------------------- */
 @media (pointer:coarse){
   .seg button{padding:9px 13px}
@@ -318,7 +346,7 @@ button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-siz
     border:1px solid var(--line-2);box-shadow:0 12px 30px -8px rgba(0,0,0,.45)}
   .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 4px;font-size:11.5px}
   .tab svg{width:20px;height:20px}
-  .tab[aria-selected="true"]{background:var(--blue-wash);color:var(--blue)}
+  .tab[aria-selected="true"]{background:color-mix(in srgb,var(--ic) 14%,transparent);color:var(--ic)}
   /* long explanations fold to two lines; tap to open */
   .pane .card>.desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
   .pane .card>.desc.open{display:block}
@@ -335,15 +363,14 @@ button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-siz
   table.cardable td.span2{grid-column:span 2}
   .tw{margin:0;overflow:visible}
 }
-.tab svg{display:none}
-@media (max-width:640px){.tab svg{display:block}}
+
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <header>
   <div class="brand">
-    <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#4a3aa7"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lg)"/><path d="M32 12 L50 18 V31 C50 42 42 49 32 53 C22 49 14 42 14 31 V18 Z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/><path d="M24 32 l6 6 l11 -12" stroke="#fff" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <img src="icon.svg" width="30" height="30" alt="" aria-hidden="true" class="mark">
     <div style="min-width:0"><h1>HL Guardrails</h1><div class="sub"><span class="dot" id="fresh" hidden></span><span id="gen">loading…</span></div></div>
   </div>
   <div class="hbtns">
@@ -385,7 +412,7 @@ button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-siz
     <div class="chart" id="eqchart"></div>
   </section>
   <section class="gauges" id="gauges"></section>
-  <section class="card"><h3>Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></section>
+  <section class="card alerts"><h3 data-ic="bell">Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></section>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="tech" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16M6 15l4-5 3 3 5-7"/></svg>Technical</button>
@@ -393,31 +420,31 @@ button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-siz
     <button class="tab" role="tab" data-tab="flow" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12c3-5 6 5 9 0s6 5 9 0M3 18c3-5 6 5 9 0s6 5 9 0" opacity=".5"/><path d="M3 6c3-5 6 5 9 0s6 5 9 0"/></svg>Flow</button>
   </div>
   <div class="pane" id="pane-tech">
-    <section class="card"><h3>Positions <span class="badge" id="poscount"></span></h3><div id="positions"></div></section>
-    <section class="card" id="nearcard" hidden><h3>Near breakout <span class="badge" id="nearcount"></span></h3>
+    <section class="card"><h3 data-ic="layers">Positions <span class="badge" id="poscount"></span></h3><div id="positions"></div></section>
+    <section class="card" id="nearcard" hidden><h3 data-ic="target">Near breakout <span class="badge" id="nearcount"></span></h3>
       <p class="desc">Uptrend and within 0.5 ATR of the level the bar has to close above. A watch list, not a signal — nothing here alerts.</p><div id="near"></div></section>
-    <section class="card"><h3>Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></section>
-    <section class="card"><h3>Signal journal <span class="badge" id="jcount"></span></h3>
+    <section class="card"><h3 data-ic="radar">Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></section>
+    <section class="card"><h3 data-ic="book">Signal journal <span class="badge" id="jcount"></span></h3>
       <p class="desc">Every breakout signal, followed under the strategy's rules whether or not you took it: entry at the next open, 2×ATR stop, 3×ATR trail, 21-day time stop. R = multiples of the initial risk.</p><div id="journal"></div></section>
   </div>
   <div class="pane" id="pane-macro" hidden>
-    <section class="card" id="briefcard"><h3>Daily brief <span class="badge" id="briefage"></span></h3><div id="brief"></div></section>
-    <section class="card" id="calcard"><h3>Calendar <span class="badge" id="calnext"></span></h3>
+    <section class="card" id="briefcard"><h3 data-ic="news">Daily brief <span class="badge" id="briefage"></span></h3><div id="brief"></div></section>
+    <section class="card" id="calcard"><h3 data-ic="calendar">Calendar <span class="badge" id="calnext"></span></h3>
       <p class="desc">High-impact scheduled US releases. Crypto often moves sharply in the minutes after one, and a stop that isn't on the book can be gapped through. You get a push 24h before each.</p><div id="cal"></div></section>
-    <section class="card" id="fngcard"><h3>Crowd sentiment <span class="badge">Fear &amp; Greed</span></h3><div id="fng"></div></section>
-    <section class="card"><h3>Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></section>
-    <section class="card" id="macrocard" hidden><h3>Macro backdrop</h3><div id="macro" style="font-size:13px;margin-top:8px"></div></section>
+    <section class="card" id="fngcard"><h3 data-ic="gauge">Crowd sentiment <span class="badge">Fear &amp; Greed</span></h3><div id="fng"></div></section>
+    <section class="card"><h3 data-ic="bank">Traditional finance <span class="badge" id="tfcount"></span></h3><div id="tradfi"></div></section>
+    <section class="card" id="macrocard" hidden><h3 data-ic="globe">Macro backdrop</h3><div id="macro" style="font-size:13px;margin-top:8px"></div></section>
   </div>
   <div class="pane" id="pane-flow" hidden>
-    <section class="card"><h3>Liquidation risk <span class="badge">your account</span></h3><div id="liqrisk"></div></section>
-    <section class="card" id="lmcard" hidden><h3>Liquidation levels <span class="badge" id="lmage"></span></h3>
+    <section class="card"><h3 data-ic="shield">Liquidation risk <span class="badge">your account</span></h3><div id="liqrisk"></div></section>
+    <section class="card" id="lmcard" hidden><h3 data-ic="levels">Liquidation levels <span class="badge" id="lmage"></span></h3>
       <p class="desc">Where the largest and most active Hyperliquid accounts would be force-closed, from their public positions — not an estimate. Shorts liquidate above the price (forced buying), longs below (forced selling). Clusters are often read as magnets; that is a hypothesis the signal journal is recording, not a rule.</p>
       <div class="coins" id="lmcoins"></div><div class="chart" id="lmchart"></div><div id="lm" style="margin-top:14px"></div></section>
-    <section class="card"><h3>Volume &amp; open interest</h3><div id="market"></div></section>
-    <section class="card"><h3>Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></section>
+    <section class="card"><h3 data-ic="bars">Volume &amp; open interest</h3><div id="market"></div></section>
+    <section class="card"><h3 data-ic="zap">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></section>
   </div>
   </div>
-  <section class="card" id="pushbox" hidden><h3>Push subscription</h3>
+  <section class="card" id="pushbox" hidden><h3 data-ic="radio">Push subscription</h3>
     <p class="desc">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
       <a id="secretslink" href="#" target="_blank" rel="noopener">the repo's Actions secrets</a>,
       and save it as <code>PUSH_SUBSCRIPTIONS</code>. For several devices, put their entries in one list: <code>[{...},{...}]</code>.</p>
@@ -1005,6 +1032,32 @@ let cleared=new Set(store('hlgCleared')||[]), collapsed=store('hlgCollapsed')||{
 const ago=ms=>{const m=Math.max(0,(Date.now()-ms)/60000);return m<1?'just now':m<60?`${Math.round(m)}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`};
 const left=ms=>{const m=Math.floor((ms-Date.now())/60000);return m<=0?'window closing':m<60?`valid ${m}m`:`valid ${Math.floor(m/60)}h ${m%60}m`};
 function catOf(a){return a.cat||(a.kind==='guardrail'?'position':'entry')}  // payloads from before categories existed
+// Small line icons for card titles and alert groups: drawn here (no icon font, no request), inherit
+// the area's colour. aria-hidden -- every one sits next to a text label that already says it.
+const IC={
+  bell:'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0',
+  layers:'M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5',
+  target:'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z',
+  radar:'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M20 20l-4-4',
+  book:'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z M5 17a3 3 0 0 1 3-3h11',
+  news:'M5 5h11v14H7a2 2 0 0 1-2-2z M16 9h3v8a2 2 0 0 1-2 2 M8 9h5 M8 13h5',
+  calendar:'M5 6h14v14H5z M5 10h14 M9 3v5 M15 3v5',
+  gauge:'M4 16a8 8 0 0 1 16 0 M12 16l4-5',
+  bank:'M4 20h16 M5 10h14 M12 4l8 5H4z M7 10v8 M12 10v8 M17 10v8',
+  globe:'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M4 12h16 M12 4c2.5 2.2 3.5 5 3.5 8s-1 5.8-3.5 8c-2.5-2.2-3.5-5-3.5-8s1-5.8 3.5-8z',
+  shield:'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z M12 8v5 M12 16h.01',
+  levels:'M4 6h10 M4 12h16 M4 18h7',
+  bars:'M5 20v-8 M10 20V6 M15 20v-9 M20 20V9',
+  zap:'M13 3L5 14h6l-1 7 8-11h-6z',
+  radio:'M12 11a2 2 0 1 0 0 4a2 2 0 1 0 0-4z M8.5 16.5a5 5 0 0 1 0-7 M15.5 9.5a5 5 0 0 1 0 7',
+  guard:'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z',
+  up:'M7 17L17 7 M9 7h8v8',
+  info:'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M12 11v5 M12 8h.01',
+  clock:'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M12 8v4l3 2',
+};
+const icon=k=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[k]}"/></svg>`;
+for(const h of document.querySelectorAll('h3[data-ic]'))h.insertAdjacentHTML('afterbegin',`<span class="hic" aria-hidden="true">${icon(h.dataset.ic)}</span>`);
+const GROUP_IC={position:'guard',entry:'up',heads_up:'zap',info:'info',ended:'clock'};
 function renderAlerts(d){
   lastAlerts=d;
   const all=[...(d.alerts||[]),...(d.ended||[])];
@@ -1030,7 +1083,7 @@ function renderAlerts(d){
   const html=GROUPS.map(([c,label])=>{
     const items=vis(c);if(!items.length)return '';
     const col=!!collapsed[c];
-    return `<div class="grp" data-cat="${c}"><div class="gh" data-act="collapse"><span class="car" style="transform:rotate(${col?-90:0}deg)">▾</span>${label} <span class="n">${items.length}</span><span class="sp"></span>`
+    return `<div class="grp" data-cat="${c}"><div class="gh" data-act="collapse"><span class="car" style="transform:rotate(${col?-90:0}deg)">▾</span><span class="gic" aria-hidden="true">${icon(GROUP_IC[c])}</span>${label} <span class="n">${items.length}</span><span class="sp"></span>`
       +(c==='position'?'':`<button data-act="clearall">Clear all</button>`)+`</div>`
       +(col?'':(GROUP_DESC[c]?`<div class="desc" style="margin:0 0 8px">${esc(GROUP_DESC[c])}</div>`:'')+items.map(a=>row(a,c)).join(''))+`</div>`;
   }).join('');

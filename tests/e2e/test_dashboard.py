@@ -853,3 +853,17 @@ def test_static_assets_are_served_and_the_manifest_is_valid_json(page, base_url)
         assert r.ok, f"{path} -> {r.status}"
     manifest = page.request.get(f"{base_url}/full/manifest.webmanifest").json()
     assert manifest["name"] and manifest["icons"]
+
+
+def test_icons_are_decorative_and_the_app_icon_is_complete(page, base_url):
+    page.goto(url(base_url, "full"))
+    titles = page.locator(".card h3[data-ic]")
+    assert titles.count() >= 10
+    expect(page.locator(".card h3[data-ic] .hic svg")).to_have_count(titles.count())   # every titled card has one
+    assert page.locator(".hic[aria-hidden='true']").count() == titles.count()           # text says it; icons don't
+    expect(page.locator(".grp[data-cat='position'] .gic svg")).to_have_count(1)
+    assert page.evaluate("document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')") == "apple-touch-icon.png"
+    m = page.evaluate("fetch('manifest.webmanifest').then(r=>r.json())")
+    assert any(i.get("purpose") == "maskable" for i in m["icons"])
+    for i in m["icons"]:                                                                  # every listed file is served
+        assert page.evaluate(f"fetch('{i['src']}').then(r=>r.ok)"), i["src"]

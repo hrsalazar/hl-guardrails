@@ -1,5 +1,5 @@
-const CACHE = "hlg-v23";
-const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "config.js"];
+const CACHE = "hlg-v24";
+const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png", "config.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL).catch(() => {})));

@@ -1147,7 +1147,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-77 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+78 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against
