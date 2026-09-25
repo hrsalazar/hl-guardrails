@@ -384,6 +384,7 @@ So the aids target that, and the checking habit that feeds it:
 |---|---|---|
 | **Resting-add warning** (pushed) | flags open orders that would add to a losing position, or below its entry — before they fill. The first line (the push, the lock screen) says what and where; the line under it quotes your own record | the old rule only fired after the fill; this catches the ladder while it can be cancelled |
 | **Now card** (top of the app) | one state — Wait / Setup live / Manage / Locked, icon + word — and, when waiting, "Nothing to do. Waiting is the plan." plus "nothing new since your last look" | checking habits run on unpredictable rewards ([Oulasvirta et al. 2012](https://link.springer.com/article/10.1007/s00779-011-0412-2)); a predictable, explicit "nothing new" removes the payoff |
+| **Next decision point** | a live countdown to the next close of the scanned timeframes ("4h close in 1h 13m — no entry can signal before then") and a bar through the current candle | the strategy acts only on closed bars, so watching a chart mid-bar changes nothing; a known, finite wait replaces "maybe something's happening" |
 | **Streak and clean trades** | days since you last added to a loser; your last 10 trades, clean (never added while losing, no loser held past 7 days) or not | rewards the behaviour that matters, not activity; process over outcome |
 | **The strategy's series** | the last 20 system trades as dots with their net R: losses are how the edge gets paid | Trading in the Zone: an edge plays out over a series, so accept each trade's risk up front ([summary](https://readingraphics.com/book-summary-trading-in-the-zone/)) |
 | **Your plan** | one of your if-then rules each hour ("If a position is losing, then I check its stop — and do nothing else"), editable in `config.yaml` → `discipline` | if-then plans raise follow-through (d = 0.65 over 94 studies, [Gollwitzer & Sheeran 2006](https://www.researchgate.net/publication/37367696_Implementation_Intentions_and_Goal_Achievement_A_Meta-Analysis_of_Effects_and_Processes)) |
@@ -1041,7 +1042,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-65 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+68 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

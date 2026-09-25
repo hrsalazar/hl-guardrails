@@ -4,6 +4,9 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-25
 
+- **Next decision point** on the Now card: a live countdown to the next 4h/1d close and a bar through the current candle. The strategy only acts on closed bars, so between closes no entry can signal; the card says so.
+- Phone tab bar: no longer a scroll container, centred without a transform, bottom offset that doesn't move with Safari's toolbar (WebKit mis-placed it after scrolling).
+
 - **Discipline aids** (README "Discipline aids"), after rebuilding the account's own fills into round
   trips showed the losses came from adding to losing positions, not from trading often:
   - **resting-add warning**: open orders that would add to a losing position, or below its entry,

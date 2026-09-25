@@ -1,4 +1,4 @@
-const CACHE = "hlg-v19";
+const CACHE = "hlg-v20";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "config.js"];
 
 self.addEventListener("install", (e) => {

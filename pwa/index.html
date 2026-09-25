@@ -622,6 +622,30 @@ function nowMode(d){
     return {k:'act',ic:'▶',word:'Setup live',h:`A setup is live${m.length?': '+[...new Set(m)].join(', '):''}. Follow the plan: limit entry, stop before entry, no adds.`}}
   return {k:'wait',ic:'●',word:'Wait',h:'Nothing to do. Waiting is the plan.'};
 }
+// Decision points: the strategy only acts on CLOSED bars, so between closes no entry can signal and
+// watching a chart changes nothing. Name the next close, count down to it, show how far through the
+// current bar we are -- a known, finite wait in place of "maybe something's happening".
+const TF_MS={'4h':4*36e5,'1d':864e5,'1h':36e5};
+function nextDecision(d,now=Date.now()){
+  const tfs=[...new Set((d.scan||[]).filter(r=>!r.watch).map(r=>r.tf||'1d'))].filter(tf=>TF_MS[tf]);
+  if(!tfs.length)tfs.push('1d');
+  const at=Math.min(...tfs.map(tf=>Math.ceil((now+1)/TF_MS[tf])*TF_MS[tf]));
+  const which=tfs.filter(tf=>at%TF_MS[tf]===0).sort((a,b)=>TF_MS[a]-TF_MS[b]);
+  const fast=tfs.sort((a,b)=>TF_MS[a]-TF_MS[b])[0];               // the fastest bar we're inside of
+  return {at,which,fast,frac:1-(Math.ceil((now+1)/TF_MS[fast])*TF_MS[fast]-now)/TF_MS[fast]};
+}
+function renderDecision(d){
+  const el=$('#decide');if(!el)return;
+  const x=nextDecision(d),m=Math.max(0,Math.round((x.at-Date.now())/6e4));
+  const left=m>=60?`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`:`${m}m`;
+  const local=new Date(x.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  el.innerHTML=`<div class="since"><b>Next decision point:</b> ${x.which.join(' + ')} close in <b class="num">${left}</b> <span class="mut">(${local} your time)</span>. `
+    +`No entry can signal before then.</div>`
+    +`<div class="meter" id="decidebar" style="height:5px;margin-top:6px" data-tip="How far through the current ${x.fast} bar">`
+    +`<span style="width:${Math.max(2,Math.min(100,x.frac*100)).toFixed(1)}%;background:var(--blue)"></span></div>`;
+}
+setInterval(()=>{if(D)renderDecision(D)},30e3);
+
 function renderNow(d){
   const M=nowMode(d), B=d.behavior||{}, dis=d.discipline||{}, j=d.journal||{};
   // since your last look: new alerts (not info) that appeared after it
@@ -653,11 +677,13 @@ function renderNow(d){
   const intent=I.length?I[Math.floor(Date.now()/36e5)%I.length]:null;  // a different plan each hour
   $('#now').className=`card now ${M.k}`;
   $('#now').innerHTML=`<div class="mode"><i aria-hidden="true">${M.ic}</i>${M.word}</div><h2>${M.h}</h2>`
-    +(since?`<div class="since">${since}</div>`:'')+series
+    +(since?`<div class="since">${since}</div>`:'')
+    +`<div id="decide" style="margin-top:10px"></div>`+series
     +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')
     +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')
     +`<div class="actions"><button id="urgebtn" class="${M.k==='wait'?'primary':''}">I feel like trading</button></div>`;
   $('#urgebtn').onclick=()=>urgeStart(d);
+  renderDecision(d);
 }
 
 // Urge check: name it -> pause (urge surfing) -> a checklist filled in from live data. Nothing is

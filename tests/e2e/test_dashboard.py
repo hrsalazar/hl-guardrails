@@ -422,6 +422,36 @@ def test_now_card_waits_and_says_nothing_new_since_the_last_look(page, base_url)
     expect(page.locator("#urgebtn")).to_have_class(re.compile(r"\bprimary\b"))
 
 
+def _at(page, iso):
+    import datetime as dt
+    page.clock.set_fixed_time(dt.datetime.fromisoformat(iso))
+
+
+def test_decision_point_counts_down_to_the_next_bar_close(page, base_url):
+    _at(page, "2026-09-25T14:47:00+00:00")                          # scan has 4h and 1d rows
+    page.goto(url(base_url, "full"))
+    dec = page.locator("#decide")
+    expect(dec).to_contain_text("Next decision point: 4h close in 1h 13m")
+    expect(dec).to_contain_text("No entry can signal before then.")
+    width = float(page.locator("#decidebar span").get_attribute("style").split("width:")[1].split("%")[0])
+    assert abs(width - 69.6) < 0.5, width                              # 2h47m into a 4h bar
+
+
+def test_decision_point_names_both_closes_at_midnight_utc(page, base_url):
+    _at(page, "2026-09-25T23:30:00+00:00")
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#decide")).to_contain_text("4h + 1d close in 30m")
+
+
+def test_decision_point_ticks_without_a_reload(page, base_url):
+    import datetime as dt
+    page.clock.install(time=dt.datetime.fromisoformat("2026-09-25T15:58:00+00:00"))
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#decide")).to_contain_text("close in 2m")
+    page.clock.run_for(61_000)                                         # the 30s refresh fires twice
+    expect(page.locator("#decide")).to_contain_text("close in 1m")
+
+
 def test_urge_check_names_pauses_checks_and_counts_a_waited_urge(page, base_url):
     page.goto(url(base_url, "empty"))
     page.locator("#urgebtn").click()
