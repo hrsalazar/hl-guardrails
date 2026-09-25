@@ -277,6 +277,13 @@ dialog#urge::backdrop{background:rgba(5,7,12,.55);backdrop-filter:blur(3px)}
 #urge li .ic{font-weight:700}
 #urge .verdict{padding:12px 14px;border-radius:12px;background:var(--blue-wash);font-weight:600;margin-top:4px}
 #urge .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+dialog#urge{max-height:88vh;overflow:auto}
+.lesson p{font-size:14px;line-height:1.55;margin:10px 0;color:var(--text-2)}
+.lsec{margin:10px 0;font-size:13.5px;line-height:1.5}
+.lsec>b:first-child,.lessonbtn>b{display:block;color:var(--text-2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.lessonbtn{display:block;width:100%;text-align:left;margin:10px 0 0;padding:10px 12px;border-radius:12px;background:var(--blue-wash);
+  border:1px solid color-mix(in srgb,var(--blue) 30%,transparent);font-size:14px;font-weight:600;line-height:1.35;color:var(--text)}
+button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-size:13.5px;font-weight:600}
 
 /* ---- touch screens: 40px+ targets ------------------------------------------------------------- */
 @media (pointer:coarse){
@@ -653,11 +660,8 @@ function renderNow(d){
   if(prevLook){const nw=(d.alerts||[]).filter(a=>a.first_seen>prevLook&&a.cat!=='info').length;
     since=nw?`${nw} new since your last look ${ago(prevLook)}.`:`Nothing new since your last look ${ago(prevLook)}.`}
   // how long since the strategy last signalled, and its usual gap -- waiting has a known shape
-  const sigs=[...new Set((j.recent||[]).map(e=>e.sig_t||Date.parse(e.signal_day)).filter(x=>isFinite(x)))].sort((a,b)=>a-b);
-  const gaps=sigs.slice(1).map((t,i)=>(t-sigs[i])/864e5).sort((a,b)=>a-b);
-  const lastSig=sigs.length?sigs[sigs.length-1]:null;
-  const pills=[];
-  if(lastSig)pills.push(`<span class="chip" data-tip="The strategy's last breakout signal, taken or not (signal journal)">Last signal <b>${ago(lastSig)}</b>${gaps.length>=3?`<span class="mut">usually every ~${fmt(gaps[gaps.length>>1],1)}d</span>`:''}</span>`);
+  const S=sigStats(d),pills=[];
+  if(S.last)pills.push(`<span class="chip" data-tip="The strategy's last breakout signal, taken or not (signal journal)">Last signal <b>${ago(S.last)}</b>${S.gap?`<span class="mut">usually every ~${fmt(S.gap,1)}d</span>`:''}</span>`);
   if(B.trades!=null)pills.push(B.streak_days!=null
     ?`<span class="chip" data-tip="Days since a fill added to a position below its average entry (hlg.behavior, from your fills)">No adds to a loser <b>${fmt(B.streak_days,0)} days</b></span>`
     :`<span class="chip">No adds to a loser <b>on record</b></span>`);
@@ -675,14 +679,17 @@ function renderNow(d){
       +`${w} won, ${cv.length-w} lost, net ${net>=0?'+':'−'}${fmt(Math.abs(net),1)}R — the losses are how the edge gets paid.</div>`}
   const I=dis.intentions||[];
   const intent=I.length?I[Math.floor(Date.now()/36e5)%I.length]:null;  // a different plan each hour
+  const TL=todayLesson(d);
   $('#now').className=`card now ${M.k}`;
   $('#now').innerHTML=`<div class="mode"><i aria-hidden="true">${M.ic}</i>${M.word}</div><h2>${M.h}</h2>`
     +(since?`<div class="since">${since}</div>`:'')
     +`<div id="decide" style="margin-top:10px"></div>`+series
     +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')
     +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')
+    +`<button class="lessonbtn" id="lessonbtn"><b>Today's lesson${lessonRead(TL.id)?' · read ✓':' · 1 min'}</b>${esc(TL.t)}</button>`
     +`<div class="actions"><button id="urgebtn" class="${M.k==='wait'?'primary':''}">I feel like trading</button></div>`;
   $('#urgebtn').onclick=()=>urgeStart(d);
+  $('#lessonbtn').onclick=()=>lessonShow(d,TL);
   renderDecision(d);
 }
 
@@ -735,8 +742,11 @@ function urgeCheck(d,reason){
   const go=live.length&&!locked&&!(reason==='add'&&losing.length);
   $('#urgebody').innerHTML=`<div class="step">3 of 3 · check it against the plan</div><h3 id="urgetitle">Does this trade pass?</h3><ul>${items.join('')}</ul>`
     +`<div class="verdict">${go?'The plan allows this one — entry, stop and size as the alert says.':'The plan says wait. Closing the app is the trade today.'}</div>`
+    +(go?'':`<button class="linkish" data-act="why">Why wait? A 1-minute lesson →</button>`)
     +`<div class="row"><button data-act="${go?'proceed':'override'}">${go?'Proceed with the plan':'Trade anyway'}</button><button class="primary" data-act="waited">I'll wait</button></div>`;
-  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;urgeEnd(b.dataset.act,reason)};
+  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.act==='why'){lessonShow(d,LESSONS.find(L=>L.id===URGE_LESSON[reason])||todayLesson(d),reason);return}
+    urgeEnd(b.dataset.act,reason)};
 }
 function urgeEnd(outcome,reason){
   clearInterval(urgeTimer);
@@ -745,6 +755,131 @@ function urgeEnd(outcome,reason){
   if(D)renderNow(D);
 }
 $('#urge').addEventListener('close',()=>clearInterval(urgeTimer));
+
+// Micro-lessons: one idea from the literature, then the same idea in your own numbers, then what it
+// means today, then one if-then plan. Built here from the decrypted payload -- your figures never
+// leave this browser (no model writes these; the text is fixed, the numbers are yours).
+// P(at least one run of >= k losses in n trades) at win rate p -- losing streaks are normal
+function lossRun(p,n,k){let s=Array(k).fill(0),hit=0;s[0]=1;
+  for(let i=0;i<n;i++){const t=Array(k).fill(0);
+    for(let j=0;j<k;j++){if(!s[j])continue;t[0]+=s[j]*p;if(j+1>=k)hit+=s[j]*(1-p);else t[j+1]+=s[j]*(1-p)}s=t}
+  return hit}
+function sigStats(d){
+  const sigs=[...new Set(((d.journal||{}).recent||[]).map(e=>e.sig_t||Date.parse(e.signal_day)).filter(x=>isFinite(x)))].sort((a,b)=>a-b);
+  const gaps=sigs.slice(1).map((t,i)=>(t-sigs[i])/864e5).sort((a,b)=>a-b);
+  return {last:sigs.length?sigs[sigs.length-1]:null,gap:gaps.length>=3?gaps[gaps.length>>1]:null}}
+const pct=v=>Math.round(v*100)+'%';
+const losingPos=d=>(d.positions||[]).filter(p=>+p.unrealizedPnl<0).map(p=>p.coin);
+function untilNext(d){const x=nextDecision(d),m=Math.max(0,Math.round((x.at-Date.now())/6e4));
+  return `the ${x.which.join(' + ')} close in ${m>=60?`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`:`${m}m`}`}
+const urgeTop=()=>{const u=urgeLog().filter(x=>x.t>=Date.now()-30*864e5),c={};u.forEach(x=>{if(x.reason)c[x.reason]=(c[x.reason]||0)+1});
+  const top=Object.entries(c).sort((a,b)=>b[1]-a[1])[0];return {n:u.length,waited:u.filter(x=>x.outcome==='waited').length,top:top&&top[0]}};
+const LESSONS=[
+ {id:'avgdown',t:'Adding to a loser fixes the price, not the odds',src:'Tversky & Kahneman 1992 · Odean 1998',
+  idea:'A loss hurts about 2.25× as much as an equal gain pleases, so a position in the red feels like a debt to repay. Adding lowers the average price, which feels like progress, but the odds of the trade haven\'t changed. Only the size has. Odean found investors hold losers and sell winners, and the winners they sold went on to beat the losers they kept.',
+  data:d=>{const B=d.behavior||{};if(!B.avgdown_n)return null;
+    return `Your last ${B.days} days: the ${B.avgdown_n} trades you averaged down netted <b>${money(B.avgdown_net)}</b>; the ${B.never_n} you never added to while losing netted <b>${money(B.never_net,true)}</b>.`
+      +(B.worst5_net<0?` Your five worst trades alone: ${money(B.worst5_net)}.`:'')},
+  today:d=>{const l=losingPos(d);return l.length?`${l.map(esc).join(', ')} ${l.length>1?'are':'is'} below entry right now. The only order ${l.length>1?'they need':'it needs'} is the stop.`
+    :'Nothing you hold is losing right now. That makes this the easiest moment to set the rule, before you need it.'},
+  act:'If a position is below my entry, then the only order I place on it is the stop.',
+  score:d=>(d.behavior||{}).avgdown_n?1+(losingPos(d).length?3:0)+(urgeTop().top==='add'?2:0):-1},
+ {id:'series',t:'An edge shows up over twenty trades, not one',src:'Mark Douglas, Trading in the Zone',
+  idea:'Douglas\'s core idea: anything can happen on a single trade, and you don\'t need to know what happens next to make money. An edge is an advantage that plays out over a series, with wins and losses arriving in random order. A loss isn\'t a mistake to fix and a win isn\'t proof. What you can judge is whether you took the setup as planned.',
+  data:d=>{const J=(d.journal||{}).summary||{};if(!(J.closed>=5)||J.win_rate==null)return null;
+    const cv=(J.curve||[]).map(x=>x.r);let run=0,mx=0;cv.forEach(r=>{run=r>0?0:run+1;mx=Math.max(mx,run)});
+    return `The strategy's journal: ${J.closed} closed trades, ${pct(J.win_rate)} won${J.pf?`, profit factor ${fmt(J.pf,2)}`:''}; its longest losing run so far is ${mx}. `
+      +`At a ${pct(J.win_rate)} win rate, <b>a run of 5+ losses somewhere in 20 trades happens ${pct(lossRun(J.win_rate,20,5))} of the time</b>. That's the edge working normally, not breaking.`},
+  today:d=>{const J=(d.journal||{}).summary||{};return J.open?`${J.open} strategy trade${J.open>1?'s are':' is'} open. The stop and the trail already decide the outcome; watching adds nothing.`
+    :`No strategy trade is open. The next chance to add one to the series is ${untilNext(d)}.`},
+  act:'For my next 20 trades, I grade only three things: was the setup valid, was the stop placed before entry, did I add? Not the P&L.',
+  score:d=>1+(((d.journal||{}).summary||{}).closed>=5?1:0)},
+ {id:'waiting',t:'Every trade has a cost; waiting is free',src:'Barber & Odean 2000 · Barber, Lee, Liu & Odean 2014',
+  idea:'In 66,000 US brokerage accounts, the fifth of households that traded most earned 11.4% a year while the market returned 17.9%. Among Taiwanese day traders, fewer than 1% were reliably profitable after costs. More trades mostly add fees, slippage and decisions made while bored or tired.',
+  data:d=>{const B=d.behavior||{},S=sigStats(d);if(!B.trades)return null;
+    return `You closed ${B.trades} trades in ${B.days} days, <b>about ${fmt(B.trades/B.days*30,0)} a month</b>.`
+      +(S.gap?` The strategy signals about once every ${fmt(S.gap,1)} days, so about ${fmt(30/S.gap,0)} a month.`:'')},
+  today:d=>{const S=sigStats(d);return (S.last?`The last signal was ${ago(S.last)}. `:'')+`The next one can only come at ${untilNext(d)}. Until then, nothing to do is the correct amount.`},
+  act:'If nothing has signalled, then I close the app until the next decision point.',
+  score:d=>1+(nowMode(d).k==='wait'?1:0)+(urgeTop().top==='bored'?2:0)},
+ {id:'payoff',t:'A win rate means nothing without the payoff',src:'Van K. Tharp, Trade Your Way to Financial Freedom',
+  idea:'What a way of trading earns per trade is its expectancy: win rate × average win − loss rate × average loss. A 50% win rate still loses money if the losses are twice the wins. The fix isn\'t winning more often. It\'s making every loss a fixed 1R, decided before entry, and letting winners run past it.',
+  data:d=>{const B=d.behavior||{};if(B.win_rate==null||!B.avg_win||!B.avg_loss)return null;
+    const E=B.win_rate*B.avg_win+(1-B.win_rate)*B.avg_loss,be=-B.avg_loss/(B.avg_win-B.avg_loss);
+    return `Your record: ${pct(B.win_rate)} won, average win ${money(B.avg_win)}, average loss ${money(B.avg_loss)}, so <b>${money(E,true)} per trade</b>. `
+      +`With that payoff you'd need to win ${pct(be)} of the time just to break even.`},
+  today:d=>{const r=d.rules||{},risk=d.equity*(r.risk_per_trade_pct||1)/100;
+    return `1R on this account today is <b>$${fmt(risk)}</b> (${r.risk_per_trade_pct||1}% of the equity base). A 1R loss is a planned cost, not a failure. A 3R loss is the one to prevent.`},
+  act:'If a trade reaches its stop, then it closes at 1R. I don\'t move the stop and I don\'t add.',
+  score:d=>{const B=d.behavior||{};return B.avg_win&&B.avg_loss?1+(-B.avg_loss>1.5*B.avg_win?2:0):-1}},
+ {id:'checking',t:'The chart works like a slot machine',src:'Skinner (variable-ratio reward) · Oulasvirta et al. 2012',
+  idea:'Rewards that arrive unpredictably build the strongest habits; it\'s how slot machines hold people. A chart pays out the same way: most looks show nothing, now and then one shows a big move, and that keeps the checking going. Oulasvirta found phone-checking habits are short, frequent and set off by boredom, not by need.',
+  data:()=>{const U=urgeTop();if(!U.n)return null;const lab=(REASONS.find(r=>r[0]===U.top)||[])[1];
+    return `On this device: ${U.n} urge check${U.n>1?'s':''} in the last 30 days${lab?`, most often "${esc(lab)}"`:''}. You waited out <b>${U.waited} of ${U.n}</b>.`},
+  today:d=>`${prevLook?`Your last look was ${ago(prevLook)}. `:''}The next moment that can change anything is ${untilNext(d)}.`,
+  act:'If I want to open a chart, then I look at the countdown on this card instead.',
+  score:()=>{const U=urgeTop();return 1+(U.n>=3?2:0)+(U.top==='moving'||U.top==='bored'?1:0)}},
+ {id:'breakeven',t:'The market doesn\'t know you\'re down',src:'Thaler & Johnson 1990 · Douglas',
+  idea:'After a loss, people accept bets they would normally refuse if the bet offers a chance to get even (the "break-even effect"). But the next trade has its own odds, and the last one is over; it has no claim on the next. Chasing a loss back is how one planned 1R loss becomes three.',
+  data:d=>{const rc=(d.behavior||{}).recent||[],l=rc[rc.length-1];if(!l)return null;
+    const after=rc.slice(1).filter((t,i)=>rc[i].net<0);
+    return `Your last trade (${esc(l.coin)}) closed at ${money(l.net,true)}.`+(after.length>=2?` Of your last ${rc.length} trades, the ${after.length} that came right after a loss netted <b>${money(after.reduce((s,t)=>s+t.net,0),true)}</b>.`:'')},
+  today:d=>{const day=pnlOf(d).day;return day<0?`You're down ${money(day)} today. That's exactly when the pull to get even is strongest.`:'Nothing to win back today. Keep it that way by taking only setups.'},
+  act:'If my last trade lost, then I wait for the next decision point before placing any new order.',
+  score:d=>{const rc=(d.behavior||{}).recent||[],l=rc[rc.length-1];return 1+(pnlOf(d).day<0?2:0)+(l&&l.net<0?1:0)+(urgeTop().top==='winback'?2:0)}},
+ {id:'process',t:'Grade the decision, not the result',src:'Annie Duke, Thinking in Bets',
+  idea:'Judging a decision by how it turned out (Duke calls it "resulting") teaches the wrong lessons. A broken rule that happened to win gets repeated, and a good trade that lost gets abandoned. Grade each trade on what you controlled: a valid setup, the stop placed before entry, size by the rule, no adds.',
+  data:d=>{const rc=(d.behavior||{}).recent||[];if(rc.length<3)return null;const c=rc.filter(t=>t.clean),n=rc.filter(t=>!t.clean);
+    const s=a=>a.reduce((x,t)=>x+t.net,0);
+    return `Your last ${rc.length} trades: the ${c.length} clean ones netted <b>${money(s(c),true)}</b>`+(n.length?`; the ${n.length} with a rule broken netted <b>${money(s(n),true)}</b>.`:'. None broke a rule.')},
+  today:d=>{const B=d.behavior||{};return B.streak_days!=null?`No adds to a loser for ${fmt(B.streak_days,0)} days. That streak is the grade that matters.`:'No add to a loser on record. Keep it that way.'},
+  act:'After each close, I grade the trade A (plan followed) or F (rule broken) before I look at the P&L.',
+  score:d=>{const rc=(d.behavior||{}).recent||[];return rc.length>=3?1+(rc.some(t=>!t.clean)?1:0):-1}},
+ {id:'fomo',t:'A missed move costs nothing',src:'Loomes & Sugden 1982 (regret) · this strategy\'s rules',
+  idea:'Watching a move you\'re not in feels like losing money, so the urge is to jump in late. A late entry means a worse price or a wider stop, so a worse payoff for the same risk. That\'s why this scanner drops a signal on purpose once price has run more than 1 ATR past it.',
+  data:d=>{const m=(d.ended||[]).filter(a=>a.status==='missed').length;return m?`In the last 24h, ${m} signal${m>1?'s':''} ran past the entry zone and ${m>1?'were':'was'} dropped. Not taking them is the rule working.`:null},
+  today:d=>{const n=(d.scan||[]).filter(r=>r.near_atr!=null).length;
+    return (n?`${n} coin${n>1?'s are':' is'} near a breakout. If one closes above its level you'll get an alert, so you don't have to watch for it. `:'')+`The next close is ${untilNext(d)}.`},
+  act:'If price has already run without me, then I let it go and wait for the next signal.',
+  score:d=>1+(urgeTop().top==='moving'?2:0)+((d.ended||[]).some(a=>a.status==='missed')?1:0)},
+ {id:'mood',t:'The crowd\'s mood is not a signal',src:'this repo\'s backtest (README, Sentiment)',
+  idea:'"Buy extreme fear" sounds wise. Tested on this strategy, it was backwards: higher Fear & Greed readings went with better forward returns, and filtering entries by the index didn\'t pass the bar set before the test. The one pass came from a single market phase. How the headlines make you feel gets no vote in entries.',
+  data:()=>null,
+  today:d=>{const f=d.fng;return f&&f.value!=null?`Fear & Greed is ${f.value} (${esc(f.label||'')}) today. The plan is the same as at any other reading.`:'The plan is the same at any sentiment reading.'},
+  act:'If a headline makes me want to trade, then I check whether anything has signalled. That\'s the only question.',
+  score:d=>{const v=(d.fng||{}).value;return 1+(v!=null&&(v<=24||v>=76)?2:0)}},
+];
+const URGE_LESSON={moving:'fomo',bored:'checking',winback:'breakeven',add:'avgdown',signal:'series'};
+const lessonLog=()=>kv('hlgLessons')||[];
+// today's lesson: the most relevant to your data right now; recently read ones step back; stable
+// within a UTC day so it isn't a new "reward" on every look
+function lessonOrder(d){
+  const day=Math.floor(Date.now()/864e5),read=lessonLog();
+  return LESSONS.map((L,i)=>{const s=L.score(d);if(s<0)return null;
+      const r=read.filter(x=>x.id===L.id).map(x=>x.t).sort().pop();
+      return {L,s:s-(r&&Date.now()-r<4*864e5?3:0)+((i+day)%LESSONS.length)/100}})
+    .filter(Boolean).sort((a,b)=>b.s-a.s).map(x=>x.L)}
+function todayLesson(d){const day=Math.floor(Date.now()/864e5),k=kv('hlgLessonDay');
+  if(k&&k.day===day&&LESSONS.some(L=>L.id===k.id))return LESSONS.find(L=>L.id===k.id);
+  const L=lessonOrder(d)[0];kv('hlgLessonDay',{day,id:L.id});return L}
+const lessonRead=id=>lessonLog().some(x=>x.id===id&&Date.now()-x.t<864e5);
+function lessonShow(d,L,urgeReason){
+  const dlg=$('#urge'),data=L.data(d);
+  $('#urgebody').innerHTML=`<div class="step">1-minute lesson · ${esc(L.src)}</div><h3 id="urgetitle">${esc(L.t)}</h3>`
+    +`<div class="lesson"><p>${esc(L.idea)}</p>`
+    +(data?`<div class="lsec"><b>Your data</b>${data}</div>`:'')
+    +`<div class="lsec"><b>Today</b>${L.today(d)}</div>`
+    +`<div class="intent"><b>Try this plan</b>${esc(L.act)}</div></div>`
+    +`<div class="row">`+(urgeReason
+      ?`<button data-act="closed">Close</button><button class="primary" data-act="waited">I'll wait</button>`
+      :`<button data-act="next">Another lesson</button><button class="primary" data-act="read">Got it</button>`)+`</div>`;
+  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.act;
+    if(a==='next'){const o=lessonOrder(d),i=o.findIndex(x=>x.id===L.id);lessonShow(d,o[(i+1)%o.length]);return}
+    const log=lessonLog();log.push({id:L.id,t:Date.now()});kv('hlgLessons',log.slice(-200));
+    if(urgeReason){urgeEnd(a,urgeReason);return}
+    dlg.close();if(D)renderNow(D)};
+  if(!dlg.open)dlg.showModal();
+}
 
 // ---- hero: portfolio value, day/week, equity curve ---------------------------------------------
 let eqRange=(()=>{try{return +localStorage.getItem('hlgEqRange')||7}catch(e){return 7}})();

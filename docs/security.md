@@ -98,7 +98,8 @@ material and gates nothing.
 The discipline aids read your own public fills (`hlg/behavior.py`) and derive P&L figures from them.
 Those stay in the encrypted state and payload: they are never logged (alerts log at WARNING, which
 `HLG_REDACT` drops in CI), never on a push's first line (the lock-screen text), and never in this
-repo -- test fixtures use made-up numbers. The urge-check log stays in the browser's storage.
+repo -- test fixtures use made-up numbers. The urge-check log and which lessons were read stay in the
+browser's storage; the lessons' figures are filled in by the page, never by the model that writes the brief.
 
 API errors are logged as status and error type only, never the request (which carries the key).
 A failed attempt is recorded before the call, so a bad key or a malformed reply retries two hours

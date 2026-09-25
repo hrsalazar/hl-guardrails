@@ -479,6 +479,62 @@ def test_urge_to_add_to_a_loser_shows_your_own_record(page, base_url):
     expect(dlg.locator(".verdict")).to_contain_text("The plan says wait.")
 
 
+def test_todays_lesson_picks_the_one_your_data_points_at_and_remembers_it_was_read(page, base_url):
+    page.goto(url(base_url, "full"))                                   # two positions under water + averaged-down record
+    btn = page.locator("#lessonbtn")
+    expect(btn).to_contain_text("Today's lesson · 1 min")
+    expect(btn).to_contain_text("Adding to a loser fixes the price, not the odds")
+    btn.click()
+    dlg = page.locator("#urge")
+    expect(dlg).to_contain_text("Tversky & Kahneman 1992")
+    expect(dlg).to_contain_text("the 61 trades you averaged down netted −$12,340; the 47 you never added to while losing netted +$1,905")
+    expect(dlg).to_contain_text("HYPE, ETH are below entry right now. The only order they need is the stop.")
+    expect(dlg.locator(".intent")).to_contain_text("If a position is below my entry")
+    dlg.get_by_role("button", name="Got it").click()
+    expect(dlg).to_be_hidden()
+    expect(btn).to_contain_text("read ✓")
+    page.reload()                                                      # same lesson all day, read state kept
+    expect(page.locator("#lessonbtn")).to_contain_text("Adding to a loser")
+    expect(page.locator("#lessonbtn")).to_contain_text("read ✓")
+
+
+def test_another_lesson_moves_on_and_shows_your_payoff_math(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator("#lessonbtn").click()
+    dlg = page.locator("#urge")
+    first = dlg.locator("h3").inner_text()
+    for _ in range(9):                                                # every lesson is reachable
+        if dlg.locator("h3").inner_text().startswith("A win rate"):
+            break
+        dlg.get_by_role("button", name="Another lesson").click()
+    assert first != dlg.locator("h3").inner_text()
+    expect(dlg.locator("h3")).to_have_text("A win rate means nothing without the payoff")
+    # made-up fixture: 50% won, +$240 / −$480 -> −$120 a trade, 67% needed to break even
+    expect(dlg).to_contain_text("so −$120 per trade")
+    expect(dlg).to_contain_text("you'd need to win 67% of the time just to break even")
+
+
+def test_losing_streak_math_in_the_page(page, base_url):
+    page.goto(url(base_url, "empty"))
+    assert page.evaluate("lossRun(0.5,2,2)") == 0.25                   # LL
+    assert page.evaluate("lossRun(0.5,3,2)") == 0.375                  # LLx, WLL
+    assert page.evaluate("lossRun(1,20,1)") == 0
+
+
+def test_urge_check_offers_the_lesson_matching_the_urge(page, base_url):
+    page.goto(url(base_url, "empty"))
+    expect(page.locator("#lessonbtn")).to_be_visible()                 # no record yet: still a lesson, no crash
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name="Bored — nothing is happening").click()
+    dlg.get_by_role("button", name="Why wait? A 1-minute lesson →").click(timeout=5000)
+    expect(dlg.locator("h3")).to_have_text("The chart works like a slot machine")
+    expect(dlg).to_contain_text("The next moment that can change anything is the")
+    dlg.get_by_role("button", name="I'll wait").click()
+    expect(dlg).to_be_hidden()
+    expect(page.locator("#now")).to_contain_text("Urges waited out 1/1")
+
+
 # ---------------------------------------------------------------------- phone layout
 PHONE = {"width": 390, "height": 844}
 

@@ -389,6 +389,25 @@ So the aids target that, and the checking habit that feeds it:
 | **The strategy's series** | the last 20 system trades as dots with their net R: losses are how the edge gets paid | Trading in the Zone: an edge plays out over a series, so accept each trade's risk up front ([summary](https://readingraphics.com/book-summary-trading-in-the-zone/)) |
 | **Your plan** | one of your if-then rules each hour ("If a position is losing, then I check its stop — and do nothing else"), editable in `config.yaml` → `discipline` | if-then plans raise follow-through (d = 0.65 over 94 studies, [Gollwitzer & Sheeran 2006](https://www.researchgate.net/publication/37367696_Implementation_Intentions_and_Goal_Achievement_A_Meta-Analysis_of_Effects_and_Processes)) |
 | **"I feel like trading"** | name the pull → a 90-second pause to let the urge pass → a checklist filled from live data (a live signal? adding to a loser — with your record? can you lose 1R without adding?) → wait or proceed. Urges waited out are counted | urge surfing: noticing an urge without acting cut the behaviour though the urge stayed as strong ([Bowen & Marlatt 2009](https://www.researchgate.net/publication/40755906_Surfing_the_Urge_Brief_Mindfulness-Based_Intervention_for_College_Student_Smokers)) |
+| **Today's lesson** (1 minute) | one idea from the research, then the same idea in *your* numbers, then what it means today, then one if-then plan to try. Nine lessons (below); the one shown is the most relevant to your data and today's state, fixed for the UTC day, and steps back for a few days once read. The urge check links the lesson that matches the urge ("price is moving without me" → *a missed move costs nothing*) | a principle sticks when it's tied to your own evidence and a concrete next action, and only one idea at a time (spacing, not a reading list) |
+
+The lessons, each with its source and the data it pulls in:
+
+| lesson | source | your data | today |
+|---|---|---|---|
+| Adding to a loser fixes the price, not the odds | Tversky & Kahneman 1992; Odean 1998 | averaged-down vs never-added trades, five worst | which positions are under water |
+| An edge shows up over twenty trades, not one | Douglas, *Trading in the Zone* | the journal's win rate and PF; the chance of a 5-loss run in 20 trades at that win rate (computed exactly) | open strategy trades, next close |
+| Every trade has a cost; waiting is free | Barber & Odean 2000 (most active fifth: 11.4%/yr vs market 17.9%); Barber, Lee, Liu & Odean 2014 (< 1% of day traders reliably profitable) | your trades a month vs the strategy's signals a month | last signal, next close |
+| A win rate means nothing without the payoff | Van K. Tharp (expectancy in R) | your expectancy per trade and the win rate you'd need to break even | today's 1R in dollars |
+| The chart works like a slot machine | variable-ratio reward (Skinner); Oulasvirta et al. 2012 | your urge checks, their most common reason, how many you waited out | your last look, next close |
+| The market doesn't know you're down | Thaler & Johnson 1990 (break-even effect); Douglas | your last trade; what the trades right after a loss netted | today's P&L |
+| Grade the decision, not the result | Duke, *Thinking in Bets* (resulting) | clean vs rule-broken trades, net of each | the no-adds streak |
+| A missed move costs nothing | Loomes & Sugden 1982 (regret); the scanner's 1-ATR "missed" rule | signals dropped as missed in the last 24h | coins near a breakout |
+| The crowd's mood is not a signal | this repo's Fear & Greed study (below) | – | today's reading |
+
+The text is fixed and written here, not generated: the numbers are filled in by the browser from the
+decrypted data, so no figure of yours goes to a model or leaves the device. Which lessons you've read
+stays in browser storage, like the urge log.
 
 Nothing here blocks a trade — the tool can't, and shouldn't pretend to. Every aid is either a warning
 with your own evidence attached or friction you chose. The fills analysis refreshes hourly; the urge
@@ -1042,7 +1061,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-68 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+72 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

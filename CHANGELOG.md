@@ -4,6 +4,7 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-25
 
+- **Today's lesson** on the Now card: a 1-minute lesson picked by what your data shows today (e.g. a position under water → averaging down; a losing day → the break-even effect). Each is one idea from the research (Douglas, Tversky & Kahneman, Odean, Barber & Odean, Tharp, Thaler & Johnson, Duke, regret theory, this repo's Fear & Greed study), your own numbers for it, what it means today, and one if-then plan. The urge check's "Why wait?" opens the lesson matching the urge. Built in the browser from the decrypted data: nothing goes to a model.
 - **Next decision point** on the Now card: a live countdown to the next 4h/1d close and a bar through the current candle. The strategy only acts on closed bars, so between closes no entry can signal; the card says so.
 - Phone tab bar: no longer a scroll container, centred without a transform, bottom offset that doesn't move with Safari's toolbar (WebKit mis-placed it after scrolling).
 

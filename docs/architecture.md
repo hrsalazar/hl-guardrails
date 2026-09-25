@@ -181,7 +181,7 @@ the account model (unified and classic), scanner setups, market transforms, the 
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (68 tests, ~40s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (72 tests, ~45s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see
