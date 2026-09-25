@@ -190,6 +190,54 @@ def context(data, fund, macro_f=None, stbl_f=None, sent_f=None, fomc=None):
     return data
 
 
+# ----------------------------------------------------------------------------- long-term lines
+MA_LINES = ("sma50w", "ema50w", "sma200d", "ema200d")
+
+
+def ma_lines(daily):
+    """50-week and 200-day averages from daily bars, indexed by the time each value became known
+    (the close of the bar it includes). The week ends with Sunday's daily bar (closes Monday 00:00
+    UTC). An EMA reads NA until it has had `span` bars, so an unwarmed line has no opinion."""
+    day_close = daily.c.copy()
+    day_close.index = daily.index + pd.Timedelta(days=1)             # known at the daily close
+    wk = daily.c.resample("W-SUN", label="right", closed="right").last().dropna()
+    wk.index = wk.index + pd.Timedelta(days=1)                       # Sunday's bar closes Monday 00:00
+    wk = wk[wk.index <= day_close.index[-1]]                          # drop a week still in progress
+    ema_w = ema(wk, 50).where(np.arange(len(wk)) >= 49)
+    ema_d = ema(day_close, 200).where(np.arange(len(day_close)) >= 199)
+    return {"sma50w": wk.rolling(50).mean(), "ema50w": ema_w,
+            "sma200d": day_close.rolling(200).mean(), "ema200d": ema_d}
+
+
+def _above(bars_df, lines, step):
+    """Per bar of `bars_df` (any interval): is its close above each line, as of the bar's own close?"""
+    close_t = bars_df.index + step
+    out = {}
+    for ln, ser in lines.items():
+        s = ser.dropna()
+        v = pd.Series(s.values, index=s.index).reindex(close_t, method="ffill") if len(s) else pd.Series(np.nan, index=close_t)
+        flag = pd.Series(bars_df.c.values > v.values, index=bars_df.index).astype("boolean")
+        out[ln] = flag.mask(pd.Series(v.values, index=bars_df.index).isna() | bars_df.c.isna())
+    return out
+
+
+def ma_context(data, cache, iv):
+    """Adds btc_above_* (BTC's close vs BTC's lines) and coin_above_* (the coin's own) to every
+    coin's bars (ma_study)."""
+    step = pd.Timedelta(hours=INTERVAL_H[iv])
+    btc, btc_daily = data.get("BTC"), bars("BTC", cache, "1d")
+    btc_lines = ma_lines(btc_daily) if btc is not None and btc_daily is not None and len(btc_daily) > 1 else None
+    for c, d in data.items():
+        if btc_lines is not None:
+            for ln, flag in _above(pd.DataFrame({"c": btc.c.reindex(d.index)}), btc_lines, step).items():
+                d[f"btc_above_{ln}"] = flag
+        daily = bars(c, cache, "1d")
+        own = _above(d, ma_lines(daily), step) if daily is not None and len(daily) > 1 else {}
+        for ln in MA_LINES:
+            d[f"coin_above_{ln}"] = own.get(ln, pd.NA)
+    return data
+
+
 # ----------------------------------------------------------------------------- filters
 MACRO_COLS = ["hy_stress", "vix_calm", "spx_bull", "dxy_headwind", "risk_on"]
 STBL_COLS = ["stbl_chg", "stbl_below_trend", "stbl_shrinking"]
@@ -237,6 +285,9 @@ FILTERS = {
     "fng_not_extreme_fear": lambda k: _pass(getattr(k, "fng_extreme_fear", None), lambda v: not v),
     # scheduled event risk (hlg.events): don't open into an FOMC decision
     "no_fomc_entry": lambda k: _pass(getattr(k, "fomc_next24", None), lambda v: not v),
+    # long-term lines from daily / weekly bars (ma_study, docs/research/ma-lines-study.md)
+    **{f"{who}_above_{ln}": (lambda col: lambda k: _pass(getattr(k, col, None), bool))(f"{who}_above_{ln}")
+       for who in ("btc", "coin") for ln in MA_LINES},
 }
 
 BASE_BREAKOUT = VARIANTS["breakout_long"]
@@ -846,7 +897,7 @@ def _corr_and_quintiles(rep, chg, chg_name, full_data, basket, windows=(7, 30, 9
         rep.append(f"### {name}, by {quintile_at}d-{chg_name} quintile on the signal day\n\n" + q.to_markdown() + "\n")
 
 
-def _entry_filter_test(rep, P, iv, cache, filters, context_kw, tag):
+def _entry_filter_test(rep, P, iv, cache, filters, context_kw, tag, extra=None):
     """Part 2 of a backdrop study: does gating breakout_long on `filters` help, at the same
     adoption bar --entry-study uses. Shared so every backdrop study is held to one bar."""
     start = pd.Timestamp(P["start"], tz="UTC")
@@ -858,6 +909,8 @@ def _entry_filter_test(rep, P, iv, cache, filters, context_kw, tag):
         data[c] = features(df, 1)
         fund[c] = funding(c, int(start.timestamp() * 1000), cache, iv)
     context(data, fund, **context_kw)
+    if extra is not None:
+        extra(data, cache, iv)
     days = sorted(set().union(*[set(d.index) for d in data.values()]))
     days = [d for d in days if d >= start]
     mid = days[len(days) // 2]
@@ -886,6 +939,7 @@ def _entry_filter_test(rep, P, iv, cache, filters, context_kw, tag):
     rep.append(f"\n## Entry-filter test ({P['start']} -> now, same bar as --entry-study)\n\n"
                + S[[c for c in cols if c in S]].astype(float).round(2).to_markdown() + "\n")
     rep.append("Verdicts (rule fixed before running): " + "; ".join(f"`{k}` {v}" for k, v in verdict.items()) + "\n")
+    return verdict, trades["base"], data
 
 
 def stbl_study(P, iv):
@@ -1001,6 +1055,45 @@ def event_study(P, iv):
     _entry_filter_test(rep, P, iv, cache, ("no_fomc_entry",), dict(fomc=fomc), "fomc")
     (out / f"event_study_{iv}.md").write_text("\n".join(rep), encoding="utf-8")
     print("\n".join(rep))
+
+
+def ma_study(P):
+    """python -m hlg.backtest --ma-study
+
+    Benjamin Cowen's long-term lines -- 50-week and 200-day SMA/EMA -- as breakout entry filters,
+    for BTC and for each coin's own chart, on 1d and 4h. Pre-registered in
+    docs/research/ma-lines-study.md: the usual entry-filter bar, and a filter is adopted only if it
+    passes on BOTH intervals (12 tests; one lone pass is expected by chance)."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    filters = tuple(f"{w}_above_{ln}" for w in ("btc", "coin") for ln in MA_LINES if not (w == "coin" and ln.startswith("ema")))
+    rep = [f"# Long-term moving averages as entry filters ({P['start']} -> now)\n"]
+    passed = {}
+    for iv in ("1d", "4h"):
+        rep.append(f"\n# {iv}\n")
+        verdict, T, data = _entry_filter_test(rep, P, iv, cache, filters, {}, "ma", extra=ma_context)
+        for f, v in verdict.items():
+            passed.setdefault(f, []).append(v.startswith("PASS"))
+        # descriptive: the base trades split by each line, read off the signal bar (the bar before entry)
+        split = []
+        for f in filters:
+            flag = []
+            for _, t in T.iterrows():
+                d = data[t.coin]
+                i = d.index.get_indexer([t.start])[0]
+                flag.append(d[f].iloc[i - 1] if i > 0 else pd.NA)
+            fl = pd.Series(flag, index=T.index, dtype="object")
+            for side, m in (("above", fl == True), ("below", fl == False), ("unknown", fl.isna())):  # noqa: E712
+                n = T.net[m.fillna(False).astype(bool)]
+                if len(n):
+                    split.append(dict(filter=f, side=side, trades=len(n), win_rate=round((n > 0).mean(), 2),
+                                      pf=round(min(n[n > 0].sum() / max(-n[n < 0].sum(), 1e-9), 99), 2), net=round(n.sum())))
+        rep.append(f"\n### {iv}: base trades by side of each line (signal bar)\n\n" + pd.DataFrame(split).to_markdown(index=False) + "\n")
+    adopted = [f for f, v in passed.items() if all(v) and len(v) == 2]
+    rep.append(f"\n**Adopted (passes on both 1d and 4h):** {', '.join(adopted) if adopted else 'none'}\n")
+    (out / "ma_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return passed
 
 
 PYRAMID_STUDY = {"base": 0, "pyramid1": 1, "pyramid2": 2}  # pyramid1 is the candidate; pyramid2 sensitivity only
@@ -1295,6 +1388,7 @@ def main():
     ap.add_argument("--pyramid-study", action="store_true", help="add to a held coin on a fresh breakout once its stop is at breakeven?")
     ap.add_argument("--combined-study", action="store_true", help="the live book: 1d + 4h signals sharing the position slots, at 1.5% and 1.0% risk")
     ap.add_argument("--priority-study", action="store_true", help="should 1d signals get slot priority over 4h in the live book?")
+    ap.add_argument("--ma-study", action="store_true", help="50-week / 200-day SMA/EMA (BTC and each coin) as breakout entry filters")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
@@ -1331,6 +1425,8 @@ def main():
         return priority_study(P)
     if a.regime_study:
         return regime_study(P)
+    if a.ma_study:
+        return ma_study(P)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

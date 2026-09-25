@@ -908,6 +908,30 @@ honest.
 > host (`api.stlouisfed.org`, needs a free key) is a different endpoint and may not be blocked —
 > untested.
 
+### Long-term lines: 50-week and 200-day averages (Benjamin Cowen) — tested, not adopted
+
+`python -m hlg.backtest --ma-study`, pre-registered in
+[docs/research/ma-lines-study.md](docs/research/ma-lines-study.md).
+
+The idea: price above the 50-week and 200-day averages means a bull phase, below means rallies fade. It
+was tested as a breakout entry filter on 1d and 4h. The lines were BTC's 50-week SMA and EMA, 200-day
+SMA and EMA, and each coin's own 50-week and 200-day SMA, all computed from daily and weekly bars with
+no lookahead. A filter needed to pass on both timeframes.
+
+- **None passed.** The BTC lines made results worse on both timeframes. The 1d PF fell from 1.67 to
+  1.38–1.50.
+- **The claim runs backwards for this strategy.** Breakouts taken while BTC was *below* its lines did
+  better on every line: 4h PF 1.54–1.63 below vs 1.16–1.20 above. A coin making a 20-bar high while
+  BTC is still under water is showing relative strength.
+- **The one lead is the coin's own 50-week SMA on 4h:**
+  - PF 1.61 vs 1.39, drawdown −30% vs −40%, better in both halves;
+  - but only at the 95th percentile, no effect on 1d, and 1 pass in 12 tests is about chance.
+
+  Not adopted; worth tracking live before believing it.
+
+The earlier `btc_bull` row above used a 200-*bar* EMA, which on 4h bars spans about 33 days. This
+study re-ran it on real 200-day bars, with the same result: worse.
+
 ### Stablecoins: does supply growth predict returns? — tested, and the opposite of the claim
 
 The common trading claim is that stablecoin dominance and crypto prices move inversely: money
