@@ -25,8 +25,21 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import (account, cascade_watch, digest, events, guardrails, journal, liqmap, liquidations, market, scanner,
-               sentiment, universe, vault)
+from . import (account, behavior, cascade_watch, digest, events, guardrails, journal, liqmap, liquidations, market,
+               scanner, sentiment, universe, vault)
+
+# README "Discipline aids": if-then plans (implementation intentions) shown in the Now card and the
+# urge check. Overridable in config.yaml -> discipline; written as the trader's own rules.
+DISCIPLINE = {
+    "pause_seconds": 90,
+    "intentions": [
+        "If a position is losing, then I check its stop is on the book - and do nothing else to it.",
+        "If I feel the urge to trade and nothing has signalled, then I close the app until the next 4h close.",
+        "If price runs without me, then I let it go: the next setup is the only one that matters.",
+        "If a trade stops out at 1R, then I score it as a plan followed - not as a loss.",
+        "If I want to add to a trade, then it must be winning, never losing.",
+    ],
+}
 from . import alerts as lifecycle
 from .common import (
     Notifier,
@@ -284,6 +297,9 @@ def main():
         "fng": state.get("fng"),
         "digest": state.get("digest"),
         "cascades": cascade_watch.summary(state),  # early-warning tracking, as of the previous run
+        # your own record from fills (hlg.behavior) and your if-then plans: the Now card and urge check
+        "behavior": state.get("behavior"),
+        "discipline": {**DISCIPLINE, **(cfg.get("discipline") or {})},
         # the page can't see secrets: this is how it tells "no key" from "not written yet"
         "digest_status": digest.status(state, now_ms, digest.settings(cfg),
                                        {"openrouter": os.environ.get("OPENROUTER_API_KEY"),
@@ -326,6 +342,10 @@ def main():
                 publish("state.json", state.d, vlt, in_ci)
         except Exception as e:  # noqa: BLE001 - context data; never fails the run
             log.error("liqmap failed: %s", e)
+    # Your own trading record (hlg.behavior): hourly, from public fills; P&L stays in the encrypted state.
+    b0 = state.get("behavior")
+    if behavior.refresh(state, cfg["account"], now_ms) is not b0:
+        publish("state.json", state.d, vlt, in_ci)
     # Cascade early-warning tracking (hlg.cascade_watch): hourly 1h candles per scanned coin, after
     # the push for the same reason as liqmap. Evidence only -- nothing is alerted from it.
     try:

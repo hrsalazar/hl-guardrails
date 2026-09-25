@@ -399,6 +399,56 @@ def test_journal_shows_hypothetical_adds_as_tracking_not_advice(page, base_url):
     expect(page.locator("#jadds")).to_contain_text("4h none yet")
 
 
+# ---------------------------------------------------------------------- discipline aids
+def test_now_card_says_manage_when_positions_have_warnings_with_your_record(page, base_url):
+    page.goto(url(base_url, "full"))
+    now = page.locator("#now")
+    expect(now).to_have_class(re.compile(r"\bmanage\b"))
+    expect(now.locator(".mode")).to_contain_text("Manage")           # icon + word, not colour alone
+    expect(now.locator("h2")).to_contain_text("Manage the risk — don't add.")
+    expect(now).to_contain_text("No adds to a loser 3 days")
+    expect(now).to_contain_text("Clean trades 7/10")
+    expect(now.locator(".dots i.no")).to_have_count(3)
+    expect(now.locator(".intent")).to_contain_text("If a position is losing")
+
+
+def test_now_card_waits_and_says_nothing_new_since_the_last_look(page, base_url):
+    page.add_init_script("localStorage.setItem('hlgLastLook', JSON.stringify(Date.now() - 2*3600e3))")
+    page.goto(url(base_url, "empty"))
+    now = page.locator("#now")
+    expect(now).to_have_class(re.compile(r"\bwait\b"))
+    expect(now.locator("h2")).to_have_text("Nothing to do. Waiting is the plan.")
+    expect(now).to_contain_text("Nothing new since your last look 2h ago.")
+    expect(page.locator("#urgebtn")).to_have_class(re.compile(r"\bprimary\b"))
+
+
+def test_urge_check_names_pauses_checks_and_counts_a_waited_urge(page, base_url):
+    page.goto(url(base_url, "empty"))
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    expect(dlg).to_be_visible()
+    dlg.get_by_role("button", name="Bored — nothing is happening").click()
+    expect(dlg).to_contain_text("Ride the urge for 1 second")          # fixture pause: 1s
+    expect(dlg).to_contain_text("Does this trade pass?", timeout=5000)
+    expect(dlg).to_contain_text("Nothing has signalled. No setup means no trade.")
+    expect(dlg.locator(".verdict")).to_contain_text("The plan says wait.")
+    dlg.get_by_role("button", name="I'll wait").click()
+    expect(dlg).to_be_hidden()
+    expect(page.locator("#now")).to_contain_text("Urges waited out 1/1")
+    page.reload()                                                        # kept on this device
+    expect(page.locator("#now")).to_contain_text("Urges waited out 1/1")
+
+
+def test_urge_to_add_to_a_loser_shows_your_own_record(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator("#urgebtn").click()
+    page.locator("#urge").get_by_role("button", name="Add to a position I hold").click()
+    dlg = page.locator("#urge")
+    expect(dlg).to_contain_text("You'd be adding to a losing position (HYPE, ETH).", timeout=5000)
+    expect(dlg).to_contain_text("61 averaged-down trades netted −$12,340; 47 you never added to netted +$1,905.")
+    expect(dlg.locator(".verdict")).to_contain_text("The plan says wait.")
+
+
 # ---------------------------------------------------------------------- phone layout
 PHONE = {"width": 390, "height": 844}
 

@@ -245,6 +245,39 @@ pre#sub{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 button:active{transform:scale(.97)}
 
+/* ---- discipline aids: the Now card and the urge check (README "Discipline aids") --------------- */
+.now{position:relative;overflow:hidden;padding-left:20px}
+.now::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--blue)}
+.now.manage::before{background:var(--warn)}.now.locked::before{background:var(--crit)}.now.act::before{background:var(--good)}
+.now .mode{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.07em;color:var(--text-2)}
+.now .mode i{font-style:normal;font-size:14px}
+.now h2{font-size:clamp(20px,5vw,24px);font-weight:650;letter-spacing:-.01em;line-height:1.25;margin:6px 0 4px}
+.now .since{font-size:13px;color:var(--text-2)}
+.now .stats{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+.dots{display:inline-flex;gap:4px;align-items:center;vertical-align:middle}
+.dots i{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--blue)}
+.dots i.no{background:transparent;box-shadow:inset 0 0 0 2px var(--red)}
+.dots i.l{background:var(--axis)}
+.intent{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13.5px;line-height:1.45}
+.intent b{color:var(--text-2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px}
+.now .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+dialog#urge{border:1px solid var(--line-2);border-radius:18px;background:var(--surface);color:var(--text);padding:0;width:min(94vw,440px);
+  box-shadow:0 30px 80px -20px rgba(0,0,0,.6)}
+dialog#urge::backdrop{background:rgba(5,7,12,.55);backdrop-filter:blur(3px)}
+#urge .body{padding:20px}
+#urge h3{margin:0 0 4px;font-size:17px}
+#urge .step{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+#urge .opts{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+#urge .opts button{text-align:left;border-radius:12px;padding:12px 14px;font-size:14px}
+#urge .ring{display:block;margin:12px auto}
+#urge .prompt{text-align:center;font-size:14px;line-height:1.5;color:var(--text-2);min-height:3em}
+#urge ul{list-style:none;padding:0;margin:12px 0;display:flex;flex-direction:column;gap:10px}
+#urge li{display:grid;grid-template-columns:22px 1fr;gap:8px;font-size:13.5px;line-height:1.4}
+#urge li .ic{font-weight:700}
+#urge .verdict{padding:12px 14px;border-radius:12px;background:var(--blue-wash);font-weight:600;margin-top:4px}
+#urge .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+
 /* ---- touch screens: 40px+ targets ------------------------------------------------------------- */
 @media (pointer:coarse){
   .seg button{padding:9px 13px}
@@ -323,6 +356,9 @@ button:active{transform:scale(.97)}
   <div id="app" hidden>
   <!-- Hero, gauges and alerts live outside the tabs on purpose: they are the act-now layer and must
        never be one tap away behind a tab you happen not to be on. -->
+  <!-- The first thing on screen: one clear state. Most of the time it's "wait" -- and saying so
+       plainly, with "nothing new since your last look", takes the variable reward out of checking. -->
+  <section class="card now fade-in" id="now" aria-live="polite"></section>
   <section class="card hero fade-in">
     <div class="hero-top">
       <div><div class="label" id="hlabel">Portfolio</div><div class="big num" id="hval">—</div><div class="collat" id="hcollat"></div>
@@ -373,6 +409,7 @@ button:active{transform:scale(.97)}
     <pre id="sub"></pre><button id="copy">Copy</button></section>
   <p class="foot">Refreshed whenever the monitor runs — the dot in the header turns amber, then red, as data ages. Advisory only — nothing here places orders.</p>
 </main>
+<dialog id="urge" aria-labelledby="urgetitle"><div class="body" id="urgebody"></div></dialog>
 <div id="tip" role="tooltip"></div>
 <script src="config.js"></script>
 <script>
@@ -487,7 +524,7 @@ async function render(){
   // the account part folds away on phones; the age never does -- it's the thing worth seeing
   $('#gen').innerHTML=`<span class="acct">${esc(d.account.slice(0,6))}…${esc(d.account.slice(-4))} · </span>`
     +`${age<1?'updated just now':'updated '+fmt(age)+' min ago'}${age>40?' — stale':''}`;
-  renderHero(d);renderGauges(d);renderAlerts(d);
+  renderNow(d);renderHero(d);renderGauges(d);renderAlerts(d);
   renderPositions(d);renderScan(d);renderJournal(d.journal);
   renderMacro(d);renderFlow(d);
   // local notifications for keys not seen on this device -- same rule as Web Push: dashboard-only
@@ -554,6 +591,130 @@ function lineChart(el,pts,{h=150,fmtY=v=>fmt(v),fmtX=t=>new Date(t).toLocaleStri
   hit.addEventListener('pointermove',move);hit.addEventListener('pointerdown',move);
   hit.addEventListener('pointerleave',()=>{g.style.display='none';hideTip()});
 }
+
+// ---- the Now card and the urge check (README "Discipline aids") --------------------------------
+// Research behind each piece: loss aversion and the disposition effect (Tversky & Kahneman 1992;
+// Odean 1998) are why adding to a loser feels right and costs the most; Douglas (Trading in the
+// Zone) -- an edge plays out over a series, so accept the risk before entry and judge the process;
+// if-then plans (Gollwitzer & Sheeran 2006, d = 0.65); urge surfing -- noticing an urge without acting
+// cut the behaviour though the urge stayed (Bowen & Marlatt 2009); checking habits run on variable
+// rewards (Oulasvirta et al. 2012), so "nothing new since your last look" is said out loud.
+// own tiny store: this block runs at load, before the alert list's `store` const is initialised
+const kv=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+let prevLook=null;
+function markLook(){prevLook=kv('hlgLastLook')||prevLook;kv('hlgLastLook',Date.now())}
+markLook();
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){markLook();if(D)renderNow(D)}});
+const urgeLog=()=>kv('hlgUrges')||[];
+const money=(v,plus)=>(v<0?'−':plus?'+':'')+'$'+fmt(Math.abs(v));
+const weekUrges=()=>{const w=Date.now()-7*864e5,u=urgeLog().filter(x=>x.t>=w);return {n:u.length,waited:u.filter(x=>x.outcome==='waited').length}};
+function nowMode(d){
+  const live=(d.alerts||[]).filter(a=>a.status==='live');
+  if(d.locked_until&&d.locked_until>Date.now())return {k:'locked',ic:'■',word:'Locked',h:'Loss limit hit. The plan says be flat until the lock ends.'};
+  const pos=live.filter(a=>a.cat==='position');
+  if(pos.length)return {k:'manage',ic:'!',word:'Manage',h:`${pos.length} position warning${pos.length>1?'s':''}. Manage the risk — don't add.`};
+  const ent=live.filter(a=>a.cat==='entry');
+  if(ent.length){const m=ent.map(a=>esc((a.meta&&a.meta.coin)||a.summary.split(' ')[2]||'')).filter(Boolean);
+    return {k:'act',ic:'▶',word:'Setup live',h:`A setup is live${m.length?': '+[...new Set(m)].join(', '):''}. Follow the plan: limit entry, stop before entry, no adds.`}}
+  return {k:'wait',ic:'●',word:'Wait',h:'Nothing to do. Waiting is the plan.'};
+}
+function renderNow(d){
+  const M=nowMode(d), B=d.behavior||{}, dis=d.discipline||{}, j=d.journal||{};
+  // since your last look: new alerts (not info) that appeared after it
+  let since='';
+  if(prevLook){const nw=(d.alerts||[]).filter(a=>a.first_seen>prevLook&&a.cat!=='info').length;
+    since=nw?`${nw} new since your last look ${ago(prevLook)}.`:`Nothing new since your last look ${ago(prevLook)}.`}
+  // how long since the strategy last signalled, and its usual gap -- waiting has a known shape
+  const sigs=[...new Set((j.recent||[]).map(e=>e.sig_t||Date.parse(e.signal_day)).filter(x=>isFinite(x)))].sort((a,b)=>a-b);
+  const gaps=sigs.slice(1).map((t,i)=>(t-sigs[i])/864e5).sort((a,b)=>a-b);
+  const lastSig=sigs.length?sigs[sigs.length-1]:null;
+  const pills=[];
+  if(lastSig)pills.push(`<span class="chip" data-tip="The strategy's last breakout signal, taken or not (signal journal)">Last signal <b>${ago(lastSig)}</b>${gaps.length>=3?`<span class="mut">usually every ~${fmt(gaps[gaps.length>>1],1)}d</span>`:''}</span>`);
+  if(B.trades!=null)pills.push(B.streak_days!=null
+    ?`<span class="chip" data-tip="Days since a fill added to a position below its average entry (hlg.behavior, from your fills)">No adds to a loser <b>${fmt(B.streak_days,0)} days</b></span>`
+    :`<span class="chip">No adds to a loser <b>on record</b></span>`);
+  const rc=B.recent||[];
+  if(rc.length){const nc=rc.filter(t=>t.clean).length;
+    pills.push(`<span class="chip" data-tip="Your last ${rc.length} closed trades. Filled = clean: never added while losing, no loser held past 7 days. Ring = not.">Clean trades <b>${nc}/${rc.length}</b>`
+      +`<span class="dots">${rc.map(t=>`<i class="${t.clean?'':'no'}" title="${esc(t.coin)} ${t.clean?'clean':t.adds_under?'averaged down':'loser held > 7d'}"></i>`).join('')}</span></span>`)}
+  const U=weekUrges();
+  if(U.n)pills.push(`<span class="chip" data-tip="Urge checks on this device in the last 7 days">Urges waited out <b>${U.waited}/${U.n}</b><span class="mut">this week</span></span>`);
+  // the strategy's own series: losses are how the edge gets paid (Douglas: think in series, not trades)
+  const cv=((j.summary||{}).curve||[]).slice(-20);
+  let series='';
+  if(M.k==='wait'&&cv.length>=5){const w=cv.filter(x=>x.r>0).length,net=cv.reduce((s,x)=>s+x.r,0);
+    series=`<div class="since" style="margin-top:10px">Last ${cv.length} strategy trades: <span class="dots">${cv.map(x=>`<i class="${x.r>0?'':'l'}"></i>`).join('')}</span> `
+      +`${w} won, ${cv.length-w} lost, net ${net>=0?'+':'−'}${fmt(Math.abs(net),1)}R — the losses are how the edge gets paid.</div>`}
+  const I=dis.intentions||[];
+  const intent=I.length?I[Math.floor(Date.now()/36e5)%I.length]:null;  // a different plan each hour
+  $('#now').className=`card now ${M.k}`;
+  $('#now').innerHTML=`<div class="mode"><i aria-hidden="true">${M.ic}</i>${M.word}</div><h2>${M.h}</h2>`
+    +(since?`<div class="since">${since}</div>`:'')+series
+    +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')
+    +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')
+    +`<div class="actions"><button id="urgebtn" class="${M.k==='wait'?'primary':''}">I feel like trading</button></div>`;
+  $('#urgebtn').onclick=()=>urgeStart(d);
+}
+
+// Urge check: name it -> pause (urge surfing) -> a checklist filled in from live data. Nothing is
+// blocked -- the pause only breaks the automatic "urge -> order" link, and waiting it out is counted.
+const REASONS=[['moving','Price is moving without me'],['bored','Bored — nothing is happening'],['winback','Win back a loss'],
+  ['add','Add to a position I hold'],['signal','A setup signalled']];
+let urgeTimer=null;
+function urgeStart(d){
+  const dlg=$('#urge');
+  $('#urgebody').innerHTML=`<div class="step">1 of 3 · notice it</div><h3 id="urgetitle">What's pulling you right now?</h3>`
+    +`<div class="opts">${REASONS.map(([k,l])=>`<button data-r="${k}">${l}</button>`).join('')}</div>`
+    +`<div class="row"><button data-act="close">Close</button></div>`;
+  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.act==='close'){urgeEnd('closed');return}
+    if(b.dataset.r)urgePause(d,b.dataset.r)};
+  if(!dlg.open)dlg.showModal();
+}
+function urgePause(d,reason){
+  const secs=Math.max(1,+((d.discipline||{}).pause_seconds)||90),R0=44,C=2*Math.PI*R0;
+  const prompts=['Notice where you feel it. You don\'t have to act on it.','Urges rise, peak and pass — like a wave. Just watch this one.',
+    'The market will still be there in a minute. So will the next setup.','Breathe out slowly. Nothing needs doing in the next few seconds.'];
+  $('#urgebody').innerHTML=`<div class="step">2 of 3 · let it pass</div><h3 id="urgetitle">Ride the urge for ${secs} second${secs===1?'':'s'}</h3>`
+    +`<svg class="ring" width="120" height="120" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="${R0}" fill="none" stroke="var(--surface-3)" stroke-width="8"/>`
+    +`<circle id="ringarc" cx="60" cy="60" r="${R0}" fill="none" stroke="var(--blue)" stroke-width="8" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="${C}" stroke-dashoffset="0"/>`
+    +`<text id="ringt" x="60" y="67" text-anchor="middle" font-size="22" font-weight="650" fill="var(--text)">${secs}</text></svg>`
+    +`<div class="prompt" id="uprompt">${prompts[0]}</div><div class="row"><button data-act="waited">I'll wait — close</button></div>`;
+  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(b&&b.dataset.act==='waited')urgeEnd('waited',reason)};
+  const t0=Date.now();clearInterval(urgeTimer);
+  urgeTimer=setInterval(()=>{const el=(Date.now()-t0)/1000,left=Math.max(0,Math.ceil(secs-el));
+    const arc=$('#ringarc');if(!arc){clearInterval(urgeTimer);return}
+    arc.setAttribute('stroke-dashoffset',String(C*Math.min(1,el/secs)));$('#ringt').textContent=left;
+    $('#uprompt').textContent=prompts[Math.min(prompts.length-1,Math.floor(el/secs*prompts.length))];
+    if(left<=0){clearInterval(urgeTimer);urgeCheck(d,reason)}},250);
+}
+function urgeCheck(d,reason){
+  const live=(d.alerts||[]).filter(a=>a.status==='live'&&a.cat==='entry');
+  const losing=(d.positions||[]).filter(p=>+p.unrealizedPnl<0).map(p=>p.coin);
+  const B=d.behavior||{}, risk=d.equity*(d.rules.risk_per_trade_pct||1)/100;
+  const locked=d.locked_until&&d.locked_until>Date.now();
+  const item=(ok,t)=>`<li><span class="ic ${ok?'pos':'neg'}">${ok?'✓':'✕'}</span><span>${t}</span></li>`;
+  const items=[
+    item(live.length>0,live.length?`A setup is live: ${[...new Set(live.map(a=>esc((a.meta&&a.meta.coin)||'')))].join(', ')}.`:'Nothing has signalled. No setup means no trade.'),
+    item(!locked,locked?'The loss lock is on: the plan says be flat.':'No loss lock.'),
+    item(!(reason==='add'&&losing.length),reason==='add'&&losing.length
+      ?`You'd be adding to a losing position (${losing.map(esc).join(', ')}).${B.avgdown_n?` Your record: ${B.avgdown_n} averaged-down trades netted ${money(B.avgdown_net)}; ${B.never_n} you never added to netted ${money(B.never_net,true)}.`:''}`
+      :'Not adding to a losing position.'),
+    item(reason!=='winback',reason==='winback'?'Winning back a loss isn\'t a setup. The last trade is over; this one has its own odds.':'Not trying to win back a loss.'),
+    `<li><span class="ic">?</span><span>Is the stop decided <b>before</b> entry, and can you lose 1R ($${fmt(risk)}) on it without adding? Accept that loss now, or don't take the trade.</span></li>`];
+  const go=live.length&&!locked&&!(reason==='add'&&losing.length);
+  $('#urgebody').innerHTML=`<div class="step">3 of 3 · check it against the plan</div><h3 id="urgetitle">Does this trade pass?</h3><ul>${items.join('')}</ul>`
+    +`<div class="verdict">${go?'The plan allows this one — entry, stop and size as the alert says.':'The plan says wait. Closing the app is the trade today.'}</div>`
+    +`<div class="row"><button data-act="${go?'proceed':'override'}">${go?'Proceed with the plan':'Trade anyway'}</button><button class="primary" data-act="waited">I'll wait</button></div>`;
+  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;urgeEnd(b.dataset.act,reason)};
+}
+function urgeEnd(outcome,reason){
+  clearInterval(urgeTimer);
+  if(outcome!=='closed'){const log=urgeLog();log.push({t:Date.now(),reason:reason||null,outcome});kv('hlgUrges',log.slice(-300))}
+  const dlg=$('#urge');if(dlg.open)dlg.close();
+  if(D)renderNow(D);
+}
+$('#urge').addEventListener('close',()=>clearInterval(urgeTimer));
 
 // ---- hero: portfolio value, day/week, equity curve ---------------------------------------------
 let eqRange=(()=>{try{return +localStorage.getItem('hlgEqRange')||7}catch(e){return 7}})();

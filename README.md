@@ -364,6 +364,35 @@ What the rest says:
 The research tables elsewhere in this README keep their 1.5% risk (`hlg.backtest.DEF`) so they stay
 reproducible and comparable; at 1.0% their drawdowns and returns scale down, PF does not.
 
+### Discipline aids: waiting, and not adding to losers
+
+The obvious guess for why an active trader loses is "too many trades". The account this was built
+for said otherwise when its own six months of fills were rebuilt into round trips (`hlg/behavior.py`):
+trade frequency, busy days and quick re-entries after a loss made no measurable difference. **The
+losses sat almost entirely in trades that were added to while losing**; trades never averaged down
+were net positive, and the handful of worst trades — each a ladder of buys below the average price,
+held for weeks — cost more than the whole net result. (The figures are private: they live only in
+the encrypted dashboard, never in this repo.)
+
+That is the pattern behavioural finance predicts. Losses weigh about 2.25× as much as equal gains
+([Tversky & Kahneman 1992](https://cemi.ehess.fr/docannexe/file/2780/tversjy_kahneman_advances.pdf)),
+so closing a loser feels worse than adding to it, and investors sell winners roughly 60% more readily
+than losers ([Odean 1998](https://faculty.haas.berkeley.edu/odean/papers%20current%20versions/areinvestorsreluctant.pdf)).
+So the aids target that, and the checking habit that feeds it:
+
+| aid | what it does | why |
+|---|---|---|
+| **Resting-add warning** (pushed) | flags open orders that would add to a losing position, or below its entry — before they fill. The first line (the push, the lock screen) says what and where; the line under it quotes your own record | the old rule only fired after the fill; this catches the ladder while it can be cancelled |
+| **Now card** (top of the app) | one state — Wait / Setup live / Manage / Locked, icon + word — and, when waiting, "Nothing to do. Waiting is the plan." plus "nothing new since your last look" | checking habits run on unpredictable rewards ([Oulasvirta et al. 2012](https://link.springer.com/article/10.1007/s00779-011-0412-2)); a predictable, explicit "nothing new" removes the payoff |
+| **Streak and clean trades** | days since you last added to a loser; your last 10 trades, clean (never added while losing, no loser held past 7 days) or not | rewards the behaviour that matters, not activity; process over outcome |
+| **The strategy's series** | the last 20 system trades as dots with their net R: losses are how the edge gets paid | Trading in the Zone: an edge plays out over a series, so accept each trade's risk up front ([summary](https://readingraphics.com/book-summary-trading-in-the-zone/)) |
+| **Your plan** | one of your if-then rules each hour ("If a position is losing, then I check its stop — and do nothing else"), editable in `config.yaml` → `discipline` | if-then plans raise follow-through (d = 0.65 over 94 studies, [Gollwitzer & Sheeran 2006](https://www.researchgate.net/publication/37367696_Implementation_Intentions_and_Goal_Achievement_A_Meta-Analysis_of_Effects_and_Processes)) |
+| **"I feel like trading"** | name the pull → a 90-second pause to let the urge pass → a checklist filled from live data (a live signal? adding to a loser — with your record? can you lose 1R without adding?) → wait or proceed. Urges waited out are counted | urge surfing: noticing an urge without acting cut the behaviour though the urge stayed as strong ([Bowen & Marlatt 2009](https://www.researchgate.net/publication/40755906_Surfing_the_Urge_Brief_Mindfulness-Based_Intervention_for_College_Student_Smokers)) |
+
+Nothing here blocks a trade — the tool can't, and shouldn't pretend to. Every aid is either a warning
+with your own evidence attached or friction you chose. The fills analysis refreshes hourly; the urge
+log stays on the device (browser storage), not in the published state.
+
 ## Scanner (config.yaml → `scanner`)
 
 For each coin: daily EMA20/EMA50 trend, 4h RSI14 pullback, proximity to the 20-day extreme, stop from
@@ -1012,7 +1041,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-61 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+65 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

@@ -4,6 +4,20 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-25
 
+- **Discipline aids** (README "Discipline aids"), after rebuilding the account's own fills into round
+  trips showed the losses came from adding to losing positions, not from trading often:
+  - **resting-add warning**: open orders that would add to a losing position, or below its entry,
+    are flagged (pushed) before they fill, with the account's own record on the line under the push;
+    the existing "added while underwater" warning gets the same evidence line;
+  - **Now card** at the top of the app: Wait / Setup live / Manage / Locked, "nothing new since your
+    last look", days since the last signal, the streak without adding to a loser, clean-trade dots,
+    the strategy's recent series, and an if-then plan (`config.yaml` -> `discipline`);
+  - **urge check**: name it, a timed pause, then a checklist from live data; waited-out urges counted.
+  - `hlg/behavior.py` rebuilds round trips hourly from public fills; P&L stays in the encrypted state
+    and never reaches logs or a push's first line (lock screen).
+  Grounded in Tversky & Kahneman (1992), Odean (1998), Douglas (Trading in the Zone), Gollwitzer &
+  Sheeran (2006), Bowen & Marlatt (2009), Oulasvirta et al. (2012).
+
 - **Dashboard, phone-first pass** (audited at 390px in both themes, before and after):
   - the freshness line ("updated N min ago") was cut off on phones; the header now uses icon buttons
     (labels kept for screen readers) and folds the address away instead;

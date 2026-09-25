@@ -260,6 +260,15 @@ def build_full(*, age_min=2, journal_closed=8):
             ],
             "watch": ["CPI Wednesday 12:30 UTC", "ETF flows"],
         },
+        "behavior": {"t": gen, "days": 180, "trades": 108, "net": -10435.0, "avgdown_n": 61, "avgdown_net": -12340.0,  # made up
+                     "never_n": 47, "never_net": 1905.0, "win_rate": 0.5, "avg_win": 240.0, "avg_loss": -480.0,
+                     "worst5_net": -13100.0, "last_add_under": gen - int(3.2 * D), "streak_days": 3.2,
+                     "recent": [{"coin": c, "t": gen - (10 - i) * D, "net": n, "clean": ok, "adds_under": 0 if ok else 4}
+                                for i, (c, n, ok) in enumerate([("SOL", 120, True), ("ETH", -80, True), ("SUI", -900, False),
+                                                                ("BTC", 300, True), ("ZEC", -60, True), ("NEAR", -400, False),
+                                                                ("DOGE", 90, True), ("HYPE", -95, True), ("LINK", -1200, False),
+                                                                ("SOL", 210, True)])]},
+        "discipline": {"pause_seconds": 1, "intentions": ["If a position is losing, then I check its stop is on the book."]},
         "cascades": {"resolved": 7, "hits": 3, "hit_rate": 3 / 7, "median_lead_days": 3.0, "median_better_atr": 1.5,
                      "watching": [{"coin": "SOL", "t": gen - 5 * H}, {"coin": "BTC", "t": gen - 9 * H}],
                      "backtest": {"hit_rate": 0.458, "base_rate": 0.319, "lift_bar": 1.5}},
@@ -296,7 +305,8 @@ def build_empty(*, age_min=95):
         "journal": {"summary": {"closed": 0, "open": 0}, "recent": []},
         "universe": {"mode": "fixed", "coins": 3, "day": None},
         "liqmap": None,
-        "events": None, "fng": None, "digest": None,
+        "events": None, "fng": None, "digest": None, "behavior": None,
+        "discipline": {"pause_seconds": 1, "intentions": ["If I feel the urge to trade and nothing has signalled, then I close the app."]},
         "digest_status": {"enabled": True, "configured": False, "provider": None, "next": gen, "error": None},
     }
 

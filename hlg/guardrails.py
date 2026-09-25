@@ -14,7 +14,7 @@ import datetime as dt
 import math
 import time
 
-from . import account
+from . import account, behavior
 from .common import (
     Notifier,
     State,
@@ -247,6 +247,26 @@ def run_once(cfg, inf, notif, state):
         if p["leverage"].get("type") == "isolated" and lev > R["max_leverage"]:
             breach(f"{tag}: isolated leverage {lev}x > max {R['max_leverage']}x - it sets where this position liquidates. Lower it.", f"lev_{coin}")
 
+        # Resting orders that would ADD to this position while it's losing, or below its entry (above,
+        # for a short): an averaging-down ladder, caught before it fills. The "ADDED while underwater"
+        # rule below only fires after the fact; this is the costliest pattern in the account's own
+        # record (hlg.behavior), so it's worth catching while the orders can still be cancelled.
+        if R["no_add_underwater"]:
+            long_ = sz > 0
+            adds = [o for o in oo if o.get("coin") == coin and not o.get("reduceOnly") and not o.get("isTrigger")
+                    and o.get("side") == ("B" if long_ else "A")]
+            losing = (mark < entry) if long_ else (mark > entry)
+            flagged = adds if losing else [o for o in adds if (fnum(o.get("limitPx")) < entry if long_ else fnum(o.get("limitPx")) > entry)]
+            if flagged:
+                qty = sum(fnum(o.get("sz")) for o in flagged)
+                pxs = sorted(fnum(o.get("limitPx")) for o in flagged)
+                where = ", ".join(f"{x:.5g}" for x in (pxs[:3] if long_ else pxs[-3:])) + (" ..." if len(pxs) > 3 else "")
+                msg = (f"{tag}: {len(flagged)} resting {'buy' if long_ else 'sell'} order(s), {qty:.4g} {coin} at {where}, "
+                       f"would add to this {'losing ' if losing else ''}position {'below' if long_ else 'above'} its entry - "
+                       f"averaging down. Cancel them before they fill.")
+                ev = behavior.evidence(state)
+                breach(msg + (f"\n  {ev}" if ev else ""), f"addorders_{coin}_{len(flagged)}_{int(qty * 1e6)}")
+
         # stop-loss coverage
         cov, trig = stop_coverage(oo, coin, sz)
         want_stop = entry - risk_usd / abs(sz) if sz > 0 else entry + risk_usd / abs(sz)
@@ -276,8 +296,9 @@ def run_once(cfg, inf, notif, state):
                 underwater = (mark < prev[coin]["entry"]) if sz > 0 else (mark > prev[coin]["entry"])
                 if underwater:
                     added = abs(sz) - abs(psz)
+                    ev = behavior.evidence(state)
                     breach(
-                        f"{tag}: ADDED {added:.4g} while underwater (averaging down). Trim back.",
+                        f"{tag}: ADDED {added:.4g} while underwater (averaging down). Trim back." + (f"\n  {ev}" if ev else ""),
                         f"add_{coin}_{int(abs(sz) * 1e6)}",
                     )
 

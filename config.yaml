@@ -119,6 +119,17 @@ digest:
   model: claude-sonnet-5 # used only for provider anthropic (Anthropic's API directly)
   lookback_hours: 30
 
+# Discipline aids (README "Discipline aids"): the if-then plans shown in the Now card, one per hour, and
+# the urge-check pause. Written as your own rules; edit them to match yours.
+discipline:
+  pause_seconds: 90
+  intentions:
+    - "If a position is losing, then I check its stop is on the book - and do nothing else to it."
+    - "If I feel the urge to trade and nothing has signalled, then I close the app until the next 4h close."
+    - "If price runs without me, then I let it go: the next setup is the only one that matters."
+    - "If a trade stops out at 1R, then I score it as a plan followed - not as a loss."
+    - "If I want to add to a trade, then it must be winning, never losing."
+
 telegram:
   enabled: false                 # set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars
 

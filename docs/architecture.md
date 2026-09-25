@@ -44,6 +44,7 @@ read back at the start of the next run.
 | `hlg/universe.py` | which coins are scanned: `scanner.coins`, or the top N perps by 30-day median volume, rebuilt once per UTC day | – |
 | `hlg/liqmap.py` | liquidation clusters per coin from the public positions of ~560 large and active HL accounts; refreshed every 4h after the push | HL, HL leaderboard |
 | `hlg/journal.py` | live signal journal: each breakout signal followed under the strategy's rules, result in R, plus a hypothetical pyramid add (README "Pyramiding") | – |
+| `hlg/behavior.py` | your record from public fills (round trips, averaged down or not, streak, clean trades), hourly; evidence for the discipline aids; P&L only in the encrypted state | HL |
 | `hlg/cascade_watch.py` | live tracking of the 1h->4h reversal cascade as an early warning of 1d breakouts (README "Earlier entries"); hourly, after the push; evidence only | HL |
 | `hlg/alerts.py` | alert lifecycle: first seen, valid until, live/missed/failed/expired, what gets pushed | – |
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
@@ -129,6 +130,8 @@ Decrypted `alerts.json`, the dashboard payload:
 | `macro` | FRED backdrop, or null |
 | `events` | `{upcoming: [{t, country, titles, forecast, previous}], next_fomc, fetched}`: the next 7 days of high-impact releases |
 | `fng` | `{value, label, as_of, series}`: Fear & Greed, 90 days |
+| `behavior` | your record from fills: averaged-down vs never counts and net, streak_days, last 10 trades clean or not (private) |
+| `discipline` | pause_seconds and the if-then plans shown in the Now card |
 | `digest` | `{day, t, model, headline, tilt, confidence, why, points: [{text, links}], watch, n_items, sources, failed}`, or null |
 | `rules` | the rule thresholds in force |
 
@@ -172,13 +175,13 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 240 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 246 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (61 tests, ~30s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (65 tests, ~40s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see

@@ -95,6 +95,11 @@ asserts all three stay inert. The model has no tools and its output drives no ac
 poisoned headline can do is make the brief's wording wrong, which is why it's labelled reading
 material and gates nothing.
 
+The discipline aids read your own public fills (`hlg/behavior.py`) and derive P&L figures from them.
+Those stay in the encrypted state and payload: they are never logged (alerts log at WARNING, which
+`HLG_REDACT` drops in CI), never on a push's first line (the lock-screen text), and never in this
+repo -- test fixtures use made-up numbers. The urge-check log stays in the browser's storage.
+
 API errors are logged as status and error type only, never the request (which carries the key).
 A failed attempt is recorded before the call, so a bad key or a malformed reply retries two hours
 later rather than every 15 minutes.
