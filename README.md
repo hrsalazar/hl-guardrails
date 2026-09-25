@@ -389,7 +389,7 @@ So the aids target that, and the checking habit that feeds it:
 | **The strategy's series** | the last 20 system trades as dots with their net R: losses are how the edge gets paid | Trading in the Zone: an edge plays out over a series, so accept each trade's risk up front ([summary](https://readingraphics.com/book-summary-trading-in-the-zone/)) |
 | **Your plan** | one of your if-then rules each hour ("If a position is losing, then I check its stop — and do nothing else"), editable in `config.yaml` → `discipline` | if-then plans raise follow-through (d = 0.65 over 94 studies, [Gollwitzer & Sheeran 2006](https://www.researchgate.net/publication/37367696_Implementation_Intentions_and_Goal_Achievement_A_Meta-Analysis_of_Effects_and_Processes)) |
 | **"I feel like trading"** | name the pull → a 90-second pause to let the urge pass → a checklist filled from live data (a live signal? adding to a loser — with your record? can you lose 1R without adding?) → wait or proceed. Urges waited out are counted | urge surfing: noticing an urge without acting cut the behaviour though the urge stayed as strong ([Bowen & Marlatt 2009](https://www.researchgate.net/publication/40755906_Surfing_the_Urge_Brief_Mindfulness-Based_Intervention_for_College_Student_Smokers)) |
-| **Today's lesson** (1 minute) | one idea from the research, then the same idea in *your* numbers, then what it means today, then one if-then plan to try. Nine lessons (below); the one shown is the most relevant to your data and today's state, fixed for the UTC day, and steps back for a few days once read. The urge check links the lesson that matches the urge ("price is moving without me" → *a missed move costs nothing*) | a principle sticks when it's tied to your own evidence and a concrete next action, and only one idea at a time (spacing, not a reading list) |
+| **Today's lesson** (1 minute) | one idea from the research, then the same idea in *your* numbers, then what it means today, then one if-then plan to try. Ten lessons (below); the one shown is the most relevant to your data and today's state, fixed for the UTC day, and steps back for a few days once read. The urge check links the lesson that matches the urge ("price is moving without me" → *a missed move costs nothing*) | a principle sticks when it's tied to your own evidence and a concrete next action, and only one idea at a time (spacing, not a reading list) |
 
 The lessons, each with its source and the data it pulls in:
 
@@ -404,6 +404,27 @@ The lessons, each with its source and the data it pulls in:
 | Grade the decision, not the result | Duke, *Thinking in Bets* (resulting) | clean vs rule-broken trades, net of each | the no-adds streak |
 | A missed move costs nothing | Loomes & Sugden 1982 (regret); the scanner's 1-ATR "missed" rule | signals dropped as missed in the last 24h | coins near a breakout |
 | The crowd's mood is not a signal | this repo's Fear & Greed study (below) | – | today's reading |
+| Stops go on before the news | this repo's FOMC measurement (below: the hour after a decision ranges 2.6× a normal hour) | – | the release within 24h and what you hold |
+
+**Market today** (fixed lessons, variable context). The Now card, every lesson and the urge check
+carry today's state (risk-on, mixed or risk-off, from `hlg/market_state.py`) and any high-impact
+release within 24h. The state is the three legs and composite of the market-state study:
+- BTC against its 200-day EMA, read once a day;
+- credit and the S&P;
+- Fear & Greed.
+
+That study found the strategy's odds the same in every state (below: 2 of 44 tests passed, the
+number chance produces). So the state never says trade more or less. It names the pull the market
+puts on *you*, and quotes only what held in every state:
+- **risk-off:** the pull is to buy the dip or add to what's down, and the strategy only buys strength;
+- **risk-on:** the pull is to chase and to size up after wins, and 1R stays 1R;
+- **mixed:** the pull is to read meaning into headlines.
+
+Each lesson has its own wording per state. For example, *adding to a loser* in risk-off reads
+"dips look like bargains, and adding feels brave". Each also ends with the study's facts: profit
+factor 1.36 in risk-off vs 1.33 in risk-on, 8–12 entries a month and losing runs of 7–18 trades in
+every state. The state nudges which lesson comes up (fear → averaging down, greed → missed moves),
+but your own open risk outranks it: an under-water position always brings the averaging-down lesson.
 
 The text is fixed and written here, not generated: the numbers are filled in by the browser from the
 decrypted data, so no figure of yours goes to a model or leaves the device. Which lessons you've read
@@ -1088,7 +1109,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-72 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+76 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

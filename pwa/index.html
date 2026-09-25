@@ -280,6 +280,10 @@ dialog#urge::backdrop{background:rgba(5,7,12,.55);backdrop-filter:blur(3px)}
 dialog#urge{max-height:88vh;overflow:auto}
 .lesson p{font-size:14px;line-height:1.55;margin:10px 0;color:var(--text-2)}
 .lsec{margin:10px 0;font-size:13.5px;line-height:1.5}
+.mkchip{display:inline-block;font-size:11.5px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px;
+  background:var(--surface-2);border:1px solid var(--line-2);color:var(--text-2);margin-right:4px}
+.mkchip::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--axis)}
+.mkchip.mk-risk_on::before{background:var(--blue)}.mkchip.mk-risk_off::before{background:var(--red)}
 .lsec>b:first-child,.lessonbtn>b{display:block;color:var(--text-2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
 .lessonbtn{display:block;width:100%;text-align:left;margin:10px 0 0;padding:10px 12px;border-radius:12px;background:var(--blue-wash);
   border:1px solid color-mix(in srgb,var(--blue) 30%,transparent);font-size:14px;font-weight:600;line-height:1.35;color:var(--text)}
@@ -653,6 +657,10 @@ function renderDecision(d){
 }
 setInterval(()=>{if(D)renderDecision(D)},30e3);
 
+function mktLine(d){const X=mkt(d),n=newsSoon(d);if(!X&&!n)return '';
+  return `<div class="since mktline" style="margin-top:10px">`
+    +(X?`<span class="mkchip mk-${X.k}" data-tip="${esc(X.legs)}. Context for you, never a signal: the strategy's odds were the same in every state (docs/research/regime-study.md)">${X.word}</span> ${esc(X.pull)}`:'')
+    +(n?`<div style="margin-top:4px"><b>${esc(n.title)} ${n.when}.</b> Stops on the exchange before it.</div>`:'')+`</div>`}
 function renderNow(d){
   const M=nowMode(d), B=d.behavior||{}, dis=d.discipline||{}, j=d.journal||{};
   // since your last look: new alerts (not info) that appeared after it
@@ -683,7 +691,7 @@ function renderNow(d){
   $('#now').className=`card now ${M.k}`;
   $('#now').innerHTML=`<div class="mode"><i aria-hidden="true">${M.ic}</i>${M.word}</div><h2>${M.h}</h2>`
     +(since?`<div class="since">${since}</div>`:'')
-    +`<div id="decide" style="margin-top:10px"></div>`+series
+    +`<div id="decide" style="margin-top:10px"></div>`+mktLine(d)+series
     +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')
     +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')
     +`<button class="lessonbtn" id="lessonbtn"><b>Today's lesson${lessonRead(TL.id)?' · read ✓':' · 1 min'}</b>${esc(TL.t)}</button>`
@@ -738,6 +746,7 @@ function urgeCheck(d,reason){
       ?`You'd be adding to a losing position (${losing.map(esc).join(', ')}).${B.avgdown_n?` Your record: ${B.avgdown_n} averaged-down trades netted ${money(B.avgdown_net)}; ${B.never_n} you never added to netted ${money(B.never_net,true)}.`:''}`
       :'Not adding to a losing position.'),
     item(reason!=='winback',reason==='winback'?'Winning back a loss isn\'t a setup. The last trade is over; this one has its own odds.':'Not trying to win back a loss.'),
+    ...(mkt(d)?[`<li><span class="ic">i</span><span>Market: ${mkt(d).word}. ${esc(mkt(d).pull)} The strategy's odds are the same in every state.</span></li>`]:[]),
     `<li><span class="ic">?</span><span>Is the stop decided <b>before</b> entry, and can you lose 1R ($${fmt(risk)}) on it without adding? Accept that loss now, or don't take the trade.</span></li>`];
   const go=live.length&&!locked&&!(reason==='add'&&losing.length);
   $('#urgebody').innerHTML=`<div class="step">3 of 3 · check it against the plan</div><h3 id="urgetitle">Does this trade pass?</h3><ul>${items.join('')}</ul>`
@@ -783,7 +792,7 @@ const LESSONS=[
   today:d=>{const l=losingPos(d);return l.length?`${l.map(esc).join(', ')} ${l.length>1?'are':'is'} below entry right now. The only order ${l.length>1?'they need':'it needs'} is the stop.`
     :'Nothing you hold is losing right now. That makes this the easiest moment to set the rule, before you need it.'},
   act:'If a position is below my entry, then the only order I place on it is the stop.',
-  score:d=>(d.behavior||{}).avgdown_n?1+(losingPos(d).length?3:0)+(urgeTop().top==='add'?2:0):-1},
+  score:d=>(d.behavior||{}).avgdown_n?1+(losingPos(d).length?4:0)+(urgeTop().top==='add'?2:0):-1},
  {id:'series',t:'An edge shows up over twenty trades, not one',src:'Mark Douglas, Trading in the Zone',
   idea:'Douglas\'s core idea: anything can happen on a single trade, and you don\'t need to know what happens next to make money. An edge is an advantage that plays out over a series, with wins and losses arriving in random order. A loss isn\'t a mistake to fix and a win isn\'t proof. What you can judge is whether you took the setup as planned.',
   data:d=>{const J=(d.journal||{}).summary||{};if(!(J.closed>=5)||J.win_rate==null)return null;
@@ -849,13 +858,49 @@ const LESSONS=[
   act:'If a headline makes me want to trade, then I check whether anything has signalled. That\'s the only question.',
   score:d=>{const v=(d.fng||{}).value;return 1+(v!=null&&(v<=24||v>=76)?2:0)}},
 ];
+// Market today (hlg.market_state): risk-on / mixed / risk-off from BTC's trend, credit and the S&P, and
+// Fear & Greed. The pre-registered study found the strategy's odds the SAME in every state
+// (docs/research/regime-study.md), so this never says "trade more / less" -- it names the pull the
+// market puts on you, and quotes only what held in every state.
+const MS_WORD={risk_on:'Risk-on',mixed:'Mixed',risk_off:'Risk-off'};
+function mkt(d){const m=d.market_state;if(!m||!MS_WORD[m.state])return null;
+  const legs=[m.trend&&(m.trend==='btc_up'?'BTC above its 200-day':'BTC below its 200-day'),
+    m.macro&&{macro_on:'credit calm, S&P above its 200-day',macro_off:'credit stress, S&P below its 200-day',macro_mixed:'credit and S&P disagree'}[m.macro],
+    m.fng!=null&&`Fear & Greed ${m.fng}`].filter(Boolean);
+  const pull={risk_off:'In fear the pull is to buy the dip or add to what\'s down. The strategy only buys strength: a close above the 20-bar high.',
+    risk_on:'In greed the pull is to chase moves you missed and to size up after wins. Size stays 1R, and a missed move costs nothing.',
+    mixed:'Mixed signals invite reading meaning into every headline. The plan doesn\'t need a view on the market.'}[m.state];
+  const S=m.study||{},pf=S.pf||{},e=S.entries_month||[],lr=S.losing_run||[];
+  const fact=pf.risk_on?`Same odds in every state: in the backtest, profit factor ${fmt(pf.risk_off,2)} in risk-off vs ${fmt(pf.risk_on,2)} in risk-on; ${e[0]}–${e[1]} entries a month and losing runs of ${lr[0]}–${lr[1]} trades in all of them.`:'';
+  return {k:m.state,word:MS_WORD[m.state],legs:legs.join(' · '),pull,fact}}
+// the next high-impact release within 24h, if any
+function newsSoon(d){const now=Date.now();const u=((d.events||{}).upcoming||[]).filter(g=>g.t>now&&g.t-now<=864e5).sort((a,b)=>a.t-b.t)[0];
+  if(!u)return null;const h=(u.t-now)/36e5;return {title:(u.titles||[]).join(', '),when:h<1?`in ${Math.max(1,Math.round(h*60))}m`:`in ${Math.round(h)}h`}}
+LESSONS.push({id:'news',t:'Stops go on before the news',src:'this repo\'s FOMC measurement (README, Events)',
+  idea:'In the hour after each of the 27 FOMC decisions since mid-2023, BTC\'s high-low range was about 2.6× a normal hour, and in 63% of them bigger than 9 in 10 ordinary hours. A move that fast runs through a stop that lives only in your head, and a mental stop gets renegotiated on the way down.',
+  data:()=>null,
+  today:d=>{const n=newsSoon(d),held=(d.positions||[]).map(p=>esc(p.coin));
+    if(!n)return 'No high-impact release in the next 24 hours.';
+    return `${esc(n.title)} ${n.when}. `+(held.length?`You hold ${held.join(', ')}: check each stop is on the exchange now, not after the print.`:'Nothing open, so nothing to protect. Don\'t open something in the minutes before it.')},
+  act:'If a high-impact release is within 24h, then every open position has its stop on the exchange before it.',
+  score:d=>d.events?1+(newsSoon(d)?2:0)+(newsSoon(d)&&(d.positions||[]).length?0.5:0):-1});
+// what today's market means for each lesson (falls back to the general pull)
+const LESSON_MKT={
+  avgdown:{risk_off:'Risk-off today: dips look like bargains, and adding feels brave. It is still adding to a loser, and the strategy never buys a dip.',
+           risk_on:'Risk-on today: losers tend to get forgiven fast, so adding "because it\'ll bounce" feels safe. The odds of that position are the same as they were.'},
+  fomo:{risk_on:'Risk-on today: moves look endless and missing one feels expensive.',risk_off:'Risk-off today: sharp bounces tempt an early jump. A bounce is not a breakout.'},
+  payoff:{risk_on:'Risk-on today: after a few wins, bigger size feels earned. 1R stays 1R.',risk_off:'Risk-off today: fast down days turn an unplanned loss into three.'},
+  breakeven:{risk_off:'Risk-off today: fast down days make losses bigger and the urge to win it back stronger.'},
+  mood:{risk_on:'Greed today feels like confirmation. The backtest says it isn\'t.',risk_off:'Fear today feels like a warning. The backtest says it isn\'t.'},
+};
 const URGE_LESSON={moving:'fomo',bored:'checking',winback:'breakeven',add:'avgdown',signal:'series'};
 const lessonLog=()=>kv('hlgLessons')||[];
 // today's lesson: the most relevant to your data right now; recently read ones step back; stable
 // within a UTC day so it isn't a new "reward" on every look
 function lessonOrder(d){
   const day=Math.floor(Date.now()/864e5),read=lessonLog();
-  return LESSONS.map((L,i)=>{const s=L.score(d);if(s<0)return null;
+  const M=(d.market_state||{}).state,boost={risk_off:{avgdown:1,breakeven:1},risk_on:{fomo:1,payoff:1},mixed:{mood:1}}[M]||{};
+  return LESSONS.map((L,i)=>{let s=L.score(d);if(s<0)return null;s+=boost[L.id]||0;
       const r=read.filter(x=>x.id===L.id).map(x=>x.t).sort().pop();
       return {L,s:s-(r&&Date.now()-r<4*864e5?3:0)+((i+day)%LESSONS.length)/100}})
     .filter(Boolean).sort((a,b)=>b.s-a.s).map(x=>x.L)}
@@ -864,11 +909,12 @@ function todayLesson(d){const day=Math.floor(Date.now()/864e5),k=kv('hlgLessonDa
   const L=lessonOrder(d)[0];kv('hlgLessonDay',{day,id:L.id});return L}
 const lessonRead=id=>lessonLog().some(x=>x.id===id&&Date.now()-x.t<864e5);
 function lessonShow(d,L,urgeReason){
-  const dlg=$('#urge'),data=L.data(d);
+  const dlg=$('#urge'),data=L.data(d),X=mkt(d);
   $('#urgebody').innerHTML=`<div class="step">1-minute lesson · ${esc(L.src)}</div><h3 id="urgetitle">${esc(L.t)}</h3>`
     +`<div class="lesson"><p>${esc(L.idea)}</p>`
     +(data?`<div class="lsec"><b>Your data</b>${data}</div>`:'')
     +`<div class="lsec"><b>Today</b>${L.today(d)}</div>`
+    +(X?`<div class="lsec"><b>Market today · ${X.word}</b>${esc(((LESSON_MKT[L.id]||{})[X.k])||X.pull)} <span class="mut">${esc(X.fact)}</span></div>`:'')
     +`<div class="intent"><b>Try this plan</b>${esc(L.act)}</div></div>`
     +`<div class="row">`+(urgeReason
       ?`<button data-act="closed">Close</button><button class="primary" data-act="waited">I'll wait</button>`

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from . import events, macro, sentiment, stablecoin
+from . import events, macro, market_state, sentiment, stablecoin
 from .common import API, load_config, log, setup_logging
 from .scanner import atr, ema, rsi
 
@@ -1177,12 +1177,12 @@ def regime_states(btc_1d, macro_f, sent_f):
         S["macro"] = pd.NA
     if sent_f is not None and not sent_f.empty:
         f = sent_f.fng.reindex(idx)
-        S["crowd"] = np.where(f.isna(), None, np.where(f <= 44, "fear", np.where(f >= 56, "greed", "neutral")))
+        S["crowd"] = [None if pd.isna(v) else market_state.crowd_of(v) for v in f]
     else:
         S["crowd"] = None
-    on = (S.trend == "btc_up").astype(int) + (S.macro == "macro_on").astype(int) + (S.crowd == "greed").astype(int)
-    off = (S.trend == "btc_down").astype(int) + (S.macro == "macro_off").astype(int) + (S.crowd == "fear").astype(int)
-    S["composite"] = np.where(off >= 2, "risk_off", np.where((on >= 2) & (off == 0), "risk_on", "mixed"))
+    # one classifier for the study and the live label (hlg.market_state), so they can't drift apart
+    nz = lambda v: None if v is None or v is pd.NA or (isinstance(v, float) and np.isnan(v)) else v  # noqa: E731
+    S["composite"] = [market_state.composite(nz(t), nz(m), nz(c)) for t, m, c in zip(S.trend, S.macro, S.crowd)]
     return S
 
 

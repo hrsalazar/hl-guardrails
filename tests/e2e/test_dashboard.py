@@ -535,6 +535,67 @@ def test_urge_check_offers_the_lesson_matching_the_urge(page, base_url):
     expect(page.locator("#now")).to_contain_text("Urges waited out 1/1")
 
 
+def _with_market(page, **override):
+    """Serve the full scenario with market_state / events changed (the full fixture is plain JSON)."""
+    import json as _json
+
+    def handle(route):
+        body = _json.loads(route.fetch().text())
+        for k, v in override.items():
+            body[k] = {**(body.get(k) or {}), **v} if isinstance(v, dict) else v
+        route.fulfill(status=200, content_type="application/json", body=_json.dumps(body))
+
+    page.route("**/alerts.json*", handle)
+
+
+def test_now_card_names_the_market_state_as_pressure_not_a_signal_and_the_release_ahead(page, base_url):
+    page.goto(url(base_url, "full"))                                   # fixture: risk-on, CPI in ~14h
+    line = page.locator("#now .mktline")
+    expect(line.locator(".mkchip")).to_have_text("Risk-on")
+    expect(line).to_contain_text("In greed the pull is to chase moves you missed")
+    expect(line).to_contain_text("CPI m/m, Core CPI m/m in 14h.")
+    tip = line.locator(".mkchip").get_attribute("data-tip")
+    assert "BTC above its 200-day" in tip and "never a signal" in tip
+    page.goto(url(base_url, "empty"))                                  # no state, no release: no line
+    expect(page.locator("#now .mktline")).to_have_count(0)
+
+
+def test_lessons_carry_todays_market_and_only_the_study_facts(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator("#lessonbtn").click()
+    dlg = page.locator("#urge")
+    expect(dlg).to_contain_text("Market today · Risk-on")
+    expect(dlg).to_contain_text("losers tend to get forgiven fast")
+    expect(dlg).to_contain_text("profit factor 1.36 in risk-off vs 1.33 in risk-on; 8–12 entries a month and losing runs of 7–18")
+
+
+def test_risk_off_shifts_the_pull_the_lesson_and_the_urge_check(page, base_url):
+    _with_market(page, market_state={"state": "risk_off", "trend": "btc_down", "macro": "macro_off", "crowd": "fear", "fng": 18})
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#now .mkchip")).to_have_text("Risk-off")
+    expect(page.locator("#now .mktline")).to_contain_text("the pull is to buy the dip")
+    page.locator("#lessonbtn").click()
+    expect(page.locator("#urge")).to_contain_text("Risk-off today: dips look like bargains")
+    page.locator("#urge").get_by_role("button", name="Got it").click()
+    page.locator("#urgebtn").click()
+    page.locator("#urge").get_by_role("button", name="Bored — nothing is happening").click()
+    expect(page.locator("#urge")).to_contain_text("Market: Risk-off.", timeout=5000)
+    expect(page.locator("#urge")).to_contain_text("The strategy's odds are the same in every state.")
+
+
+def test_a_release_within_24h_with_positions_open_brings_the_stops_lesson(page, base_url):
+    import time as _t
+    now = int(_t.time() * 1000)
+    _with_market(page, behavior=None,                                  # no record: the news lesson leads
+                 events={"upcoming": [{"t": now + 3 * 3_600_000, "country": "USD", "titles": ["FOMC Statement"],
+                                       "forecast": [""], "previous": [""]}]})
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#lessonbtn")).to_contain_text("Stops go on before the news")
+    page.locator("#lessonbtn").click()
+    expect(page.locator("#urge")).to_contain_text("FOMC Statement in 3h. You hold")
+    expect(page.locator("#urge")).to_contain_text("check each stop is on the exchange now")
+
+
 # ---------------------------------------------------------------------- phone layout
 PHONE = {"width": 390, "height": 844}
 

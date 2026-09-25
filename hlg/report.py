@@ -26,7 +26,7 @@ import requests
 from cryptography.exceptions import InvalidTag
 
 from . import (account, behavior, cascade_watch, digest, events, guardrails, journal, liqmap, liquidations, market,
-               scanner, sentiment, universe, vault)
+               market_state, scanner, sentiment, universe, vault)
 
 # README "Discipline aids": if-then plans (implementation intentions) shown in the Now card and the
 # urge check. Overridable in config.yaml -> discipline; written as the trader's own rules.
@@ -266,6 +266,9 @@ def main():
         sentiment.refresh(state, now_ms)  # one small request every 6h
     except Exception as e:  # noqa: BLE001
         log.error("fear & greed failed: %s", e)
+    macro_ctx = scanner.macro_context(cfg["scanner"])  # cached on disk by hlg.macro, so no second fetch
+    # today's risk-on / mixed / risk-off, for the lessons -- context for you, never a signal (hlg.market_state)
+    mstate = market_state.build(market_state.btc_trend(inf, state, now_ms), macro_ctx, state.get("fng"))
     out = {
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "account": cfg["account"],
@@ -282,7 +285,8 @@ def main():
         "alerts": alerts,
         "ended": ended,  # signals that expired, ran away or failed in the last 24h (hlg.alerts)
         "scan": rows,
-        "macro": scanner.macro_context(cfg["scanner"]),  # cached on disk by hlg.macro, so no second fetch
+        "macro": macro_ctx,
+        "market_state": mstate,
         "market": market_rows,
         "tradfi": {"rows": tradfi_rows, "dropped": tradfi_dropped},
         "liquidations": liq,
