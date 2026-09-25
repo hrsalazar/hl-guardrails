@@ -1030,6 +1030,33 @@ years it removed **one** 1d trade (PF 1.67 → 1.66, 27th percentile) and, on 4h
 swapped for another; PF 1.38 → 1.37). Breakouts and FOMC days simply rarely coincide. Not adopted;
 the value of the calendar is protecting positions you already hold, not filtering entries.
 
+### Market state (risk-on / risk-off): does the live book behave differently? — tested, no
+
+`python -m hlg.backtest --regime-study`, pre-registered in
+[docs/research/regime-study.md](docs/research/regime-study.md) before the first run.
+
+The question was whether the lessons should adapt to the market with claims like "in phases like this
+the strategy…". Each of the 406 trades of the live book (1d + 4h, 3 slots, 1% risk) was tagged with
+its entry day's state, using only data known the day before:
+- BTC above or below its 200-day EMA;
+- the credit and S&P backdrop;
+- the Fear & Greed band;
+- a composite of those three: risk-on, mixed or risk-off.
+
+| composite | trades | entries / 30 days | win rate | PF | avg R | early stops | longest losing run |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| risk_on | 201 | 9.9 | 37% | 1.33 | +0.18 | 20% | 13 |
+| mixed | 52 | 7.7 | 37% | 1.98 | +0.41 | 17% | 7 |
+| risk_off | 153 | 11.6 | 35% | 1.36 | +0.17 | 14% | 12 |
+
+**2 of 44 tests passed** (bucket outside the 5–95th percentile of random same-size subsets, same
+direction in both halves). That's the number chance alone produces. So the strategy behaves about
+the same in every state, and no state message may claim otherwise. What held everywhere:
+- the book entered 8–12 times a month;
+- losing runs of 7–18 trades occurred.
+
+The market changes the pressure on you, not the strategy's odds.
+
 ### Regime analysis (`python -m hlg.regime`)
 
 Tags every day with a BTC regime (bull/bear vs EMA200, range/trending by 20d span vs ATR, breadth, drawdown) and

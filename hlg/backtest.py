@@ -1152,6 +1152,129 @@ def combined_study(P, risks=(1.5, 1.0)):
     return rows
 
 
+REGIME_METRICS = ("pf", "win_rate", "avg_r", "early_stop")
+BAR_DAYS = {"1d": 1.0, "4h": 4 / 24, "1h": 1 / 24}
+
+
+def regime_states(btc_1d, macro_f, sent_f):
+    """Market state per UTC day, as known before that day's open (docs/research/regime-study.md).
+    BTC's trend from the previous daily close; the macro and Fear & Greed frames are already shifted
+    a day in their own modules. A dimension with no reading stays NA and counts as neither leg."""
+    up = (btc_1d.c > ema(btc_1d.c, 200)).astype("boolean")
+    up.iloc[:200] = pd.NA                                              # the 200-day EMA hasn't warmed up
+    up = up.shift(1)
+    idx = up.index
+    S = pd.DataFrame(index=idx)
+    S["trend"] = up.map({True: "btc_up", False: "btc_down"}, na_action="ignore")
+    if macro_f is not None and not macro_f.empty:
+        hy, spx = macro_f.hy_stress.reindex(idx), macro_f.spx_bull.reindex(idx)
+        m = pd.Series(pd.NA, index=idx, dtype="object")
+        m[(hy == False) & (spx == True)] = "macro_on"                  # noqa: E712 - nullable booleans
+        m[(hy == True) & (spx == False)] = "macro_off"                 # noqa: E712
+        m[((hy == True) & (spx == True)) | ((hy == False) & (spx == False))] = "macro_mixed"  # noqa: E712
+        S["macro"] = m
+    else:
+        S["macro"] = pd.NA
+    if sent_f is not None and not sent_f.empty:
+        f = sent_f.fng.reindex(idx)
+        S["crowd"] = np.where(f.isna(), None, np.where(f <= 44, "fear", np.where(f >= 56, "greed", "neutral")))
+    else:
+        S["crowd"] = None
+    on = (S.trend == "btc_up").astype(int) + (S.macro == "macro_on").astype(int) + (S.crowd == "greed").astype(int)
+    off = (S.trend == "btc_down").astype(int) + (S.macro == "macro_off").astype(int) + (S.crowd == "fear").astype(int)
+    S["composite"] = np.where(off >= 2, "risk_off", np.where((on >= 2) & (off == 0), "risk_on", "mixed"))
+    return S
+
+
+def _regime_metric(name, net, r, early, ix):
+    if name == "pf":
+        w, l = net[ix][net[ix] > 0].sum(), -net[ix][net[ix] < 0].sum()
+        return min(w / max(l, 1e-9), 99)
+    if name == "win_rate":
+        return float((net[ix] > 0).mean())
+    if name == "avg_r":
+        return float(r[ix].mean())
+    return float(early[ix].mean())
+
+
+def regime_study(P, risk=1.0, n_boot=20_000, seed=0):
+    """python -m hlg.backtest --regime-study
+
+    Does the live book behave differently by market state? Messaging only: pre-registered in
+    docs/research/regime-study.md (states, metrics and the bar for "different" fixed before the
+    first run). Nothing here changes a signal, a size or a rule."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    out.mkdir(exist_ok=True)
+    data, fund, extra, mid = _combined_book(P)
+    Q = {**P, "risk_pct": risk, **extra}
+    T, C, dd = run(VARIANTS["breakout_long"], data, fund, Q)
+    macro_f = macro.features(macro.frame(start="2022-01-01", cache_dir=str(cache)))
+    sent_f = sentiment.features(sentiment.frame(cache_dir=str(cache)))
+    S = regime_states(bars("BTC", cache, "1d"), macro_f, sent_f)
+    T = T.copy()
+    T["tf"] = T.coin.str.split("|").str[1]
+    T["day"] = T.start.dt.floor("D")
+    for dim in ("trend", "macro", "crowd", "composite"):
+        T[dim] = T.day.map(S[dim])
+    T["r"] = T.net_pct / risk
+    T["early"] = (T.why == "stop") & (T.days <= 3 * T.tf.map(BAR_DAYS))
+    T = T.sort_values("start").reset_index(drop=True)
+    net, r, early = T.net.values, T.r.values, T.early.values.astype(float)
+    first, second = (T.start < mid).values, (T.start >= mid).values
+    window = S[(S.index >= pd.Timestamp(P["start"], tz="UTC")) & (S.index <= T.end.max())]
+    rng = np.random.default_rng(seed)
+    allix = np.arange(len(T))
+    overall = {m: _regime_metric(m, net, r, early, allix) for m in REGIME_METRICS}
+    rows, tests = [], []
+    for dim in ("trend", "macro", "crowd", "composite"):
+        for b in sorted(T[dim].dropna().unique()):
+            ix = np.flatnonzero((T[dim] == b).values)
+            days_in = int((window[dim] == b).sum())
+            run_, longest = 0, 0
+            for v in net[ix]:
+                run_ = run_ + 1 if v <= 0 else 0
+                longest = max(longest, run_)
+            row = dict(dimension=dim, state=b, trades=len(ix), share_of_days=days_in / max(len(window), 1),
+                       entries_per_30d=len(ix) / days_in * 30 if days_in else np.nan,
+                       longest_losing_run=longest, median_days_held=float(np.median(T.days.values[ix])))
+            for m in REGIME_METRICS:
+                v = _regime_metric(m, net, r, early, ix)
+                row[m] = v
+                if len(ix) < 30:
+                    row[f"{m}_verdict"] = "n<30"
+                    continue
+                draws = np.array([_regime_metric(m, net, r, early, rng.choice(allix, size=len(ix), replace=False))
+                                  for _ in range(n_boot)])
+                pctile = float((draws < v).mean() * 100)
+                signs = []
+                for h in (first, second):
+                    hb, ha = np.flatnonzero((T[dim] == b).values & h), np.flatnonzero(h)
+                    signs.append(np.sign(_regime_metric(m, net, r, early, hb) - _regime_metric(m, net, r, early, ha))
+                                 if len(hb) else 0)
+                ok = (pctile < 5 or pctile > 95) and signs[0] == signs[1] != 0
+                row[f"{m}_verdict"] = f"{'DIFFERENT' if ok else 'same'} (p{pctile:.0f}, halves {signs[0]:+.0f}/{signs[1]:+.0f})"
+                tests.append(ok)
+            rows.append(row)
+            log.info("%s %s: %d trades", dim, b, len(ix), extra={"safe": True})
+    R = pd.DataFrame(rows)
+    T.to_csv(out / "regime_trades.csv", index=False)
+    num = ["trades", "share_of_days", "entries_per_30d", "win_rate", "pf", "avg_r", "early_stop",
+           "longest_losing_run", "median_days_held"]
+    rep = [f"# Market-state study: live book (1d + 4h, {risk}% risk, max {P['max_positions']} positions), "
+           f"{P['start']} -> now\n",
+           f"Whole book: {len(T)} trades, win rate {overall['win_rate']:.2f}, PF {overall['pf']:.2f}, "
+           f"avg R {overall['avg_r']:+.2f}, early-stop rate {overall['early_stop']:.2f}. "
+           f"{int(T[['trend', 'macro', 'crowd']].isna().any(axis=1).sum())} trades lack a reading on at least one dimension.\n",
+           R[["dimension", "state"] + num].round(2).to_markdown(index=False) + "\n",
+           "## Verdicts (rule fixed before running)\n",
+           R[["dimension", "state"] + [f"{m}_verdict" for m in REGIME_METRICS]].to_markdown(index=False) + "\n",
+           f"**{sum(tests)} of {len(tests)} tests passed**; about {len(tests) * 0.1 * 0.5:.0f}-{len(tests) * 0.1:.0f} "
+           "would pass by chance (10% two-sided, fewer after the halves rule).\n"]
+    (out / "regime_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return R, T
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -1172,6 +1295,7 @@ def main():
     ap.add_argument("--pyramid-study", action="store_true", help="add to a held coin on a fresh breakout once its stop is at breakeven?")
     ap.add_argument("--combined-study", action="store_true", help="the live book: 1d + 4h signals sharing the position slots, at 1.5% and 1.0% risk")
     ap.add_argument("--priority-study", action="store_true", help="should 1d signals get slot priority over 4h in the live book?")
+    ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
     a = ap.parse_args()
@@ -1205,6 +1329,8 @@ def main():
         return combined_study(P)
     if a.priority_study:
         return priority_study(P)
+    if a.regime_study:
+        return regime_study(P)
     k = 1 if P["native"] else 24 // INTERVAL_H[iv]
     tag = f"{iv}{'_native' if P['native'] and iv != '1d' else ''}"
     cache, out = Path(P["cache_dir"]), Path(P["out_dir"])

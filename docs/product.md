@@ -35,7 +35,7 @@ never trades and never needs keys, which is the core trust argument.
 ## Current state
 
 **Works today, for one person:** guardrails, scanner (1d/4h), momentum alerts, tabbed dashboard
-(Technical / Macro / Flow), encryption, push, 246 tests, and CI.
+(Technical / Macro / Flow), encryption, push, 249 tests, and CI.
 
 **It is single-tenant.** One repository watches one account for one owner. Configuration is a
 YAML file and secrets are set by hand. Setup takes about 20 minutes and requires a GitHub
