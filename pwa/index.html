@@ -1200,6 +1200,15 @@ function renderJournal(j){
     +`${['4h','1d'].map(adLine).join(' &nbsp;·&nbsp; ')}${adClosed<30?' <span class="mut">(judge at ~30 closed)</span>':''}`
     +`<div class="meter" style="height:6px;margin-top:8px" data-tip="${adClosed} of ~30 closed adds needed before the result means anything">`
     +`<span style="width:${Math.min(100,adClosed/30*100)}%;background:var(--blue)"></span></div></div>`;
+  // The ma-lines study's one lead (docs/research/ma-lines-study.md): on 4h, breakouts on coins above their
+  // own 50-week SMA did better (PF 1.67 vs 1.14) but it wasn't adopted. Live split, judged at 25 a side.
+  const LN=((s.lines||{})['4h']||{}).sma50w||{},la=LN.above,lb=LN.below,lmin=Math.min(la?la.n:0,lb?lb.n:0);
+  const side=(x,w)=>x?`<b>${w}</b> ${x.n} · avg ${R(x.avg_r)}${x.pf!=null?` · PF ${fmt(x.pf,2)}`:''}`:`<b>${w}</b> <span class="mut">none yet</span>`;
+  html+=`<div class="track" id="jlines"><h4>Coin vs its 50-week average <span class="mut" style="font-weight:400">— tracking only, not advice.</span></h4>`
+    +`4h signals closed with the coin above or below its own 50-week SMA at the signal. Backtest: PF 1.67 above vs 1.14 below, not adopted (README "Long-term lines"). `
+    +`${side(la,'above')} &nbsp;·&nbsp; ${side(lb,'below')}${lmin<25?' <span class="mut">(judge at 25 on each side)</span>':''}`
+    +`<div class="meter" style="height:6px;margin-top:8px" data-tip="${lmin} of 25 closed on the thinner side">`
+    +`<span style="width:${Math.min(100,lmin/25*100)}%;background:var(--blue)"></span></div></div>`;
   // 1h->4h cascade as an early warning of a 1d breakout (hlg.cascade_watch): evidence, not advice.
   // Bullet chart on a 0-80% scale: live hit rate (bar) against the base rate, the backtest, and the
   // bar it must clear (lift_bar x base) before it could become an alert.

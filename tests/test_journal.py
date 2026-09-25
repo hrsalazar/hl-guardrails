@@ -135,3 +135,18 @@ def test_an_armed_add_is_skipped_if_the_entry_closes_first():
     journal.arm_add(jr, row(signal_day="2026-09-04", sig_t=4 * D))      # signal on bar 4: fills at bar 5's open
     journal.update(e, [bar(4, 104, 105, 103, 104)], S, 21)                # stopped at 104 on bar 4
     assert e["status"] == "stopped" and e["add"]["status"] == "skipped"
+
+
+# ---- the ma-lines lead, tracked live (docs/research/ma-lines-study.md)
+def test_lines_are_kept_and_closed_entries_are_split_by_side():
+    jr = []
+    for i, (lines, lo, c) in enumerate([({"sma50w": True, "sma200d": True}, 100, 130),     # winner above
+                                        ({"sma50w": False, "sma200d": None}, 95, 96),      # loser below
+                                        ({"sma50w": True, "sma200d": False}, 95, 96)]):    # loser above
+        journal.add(jr, row(tf="4h", lines=lines), f"k{i}", 0, S)
+        journal.update(jr[-1], [bar(1, 101, 131, lo, c)] + [bar(j, c, c + 1, c - 1, c) for j in range(2, 25)], S, 21)
+    assert jr[1]["lines"] == {"sma50w": False, "sma200d": None}
+    L = journal.summary(jr)["lines"]["4h"]
+    assert L["sma50w"]["above"]["n"] == 2 and L["sma50w"]["below"]["n"] == 1
+    assert L["sma50w"]["above"]["win_rate"] == 0.5 and L["sma50w"]["below"]["win_rate"] == 0
+    assert "below" in L["sma200d"] and L["sma200d"]["below"]["n"] == 1 and L["sma200d"]["above"]["n"] == 1  # None skipped

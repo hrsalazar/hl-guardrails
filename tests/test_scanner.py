@@ -173,3 +173,25 @@ def test_momentum_pct_is_near_zero_for_a_flat_market():
     inf = FakeInfo(candles={("BTC", "1h"): make_candles(flat, step_ms=3600_000)})
     pct = scanner.momentum_pct(inf, "BTC", _S(momentum_window_hours=4))
     assert abs(pct) < 0.5
+
+
+def test_a_new_journal_entry_records_its_lines_once(tmp_path, monkeypatch):
+    """The coin's side of its own 50-week / 200-day SMA is looked up when a signal first enters the
+    journal (docs/research/ma-lines-study.md), not again on later runs."""
+    from hlg.common import State
+
+    ramp = [100.0 + i for i in range(59)]
+    d1 = make_candles(ramp)
+    d1.append({"t": d1[-1]["t"] + 86_400_000, "o": ramp[-1], "h": ramp[-1] + 0.4, "l": ramp[-1] - 0.4, "c": ramp[-1], "v": 100})
+    inf = FakeInfo(candles={("BTC", "1d"): d1, ("BTC", "1h"): make_candles([100.0] * 30, step_ms=3600_000)},
+                   meta_ctxs=_meta_ctx(["BTC"]), user_state={"marginSummary": {"accountValue": "10000"}, "assetPositions": []})
+    calls = []
+    real = scanner.signal_lines
+    monkeypatch.setattr(scanner, "signal_lines", lambda inf, r: calls.append(r["coin"]) or real(inf, r))
+    st = State(tmp_path / "s.json")
+    cfg = {"account": "0xTEST", "scanner": _S(timeframes=["1d"], coins=["BTC"], watch_coins=[]), "rules": base_cfg()["rules"]}
+    scanner.run_once(cfg, inf, _NullNotifier(), st)
+    scanner.run_once(cfg, inf, _NullNotifier(), st)
+    jr = st.get("journal")
+    assert len(jr) == 1 and calls == ["BTC"]
+    assert jr[0]["lines"] == {"sma50w": None, "sma200d": None}      # 60 days of history: too young for either

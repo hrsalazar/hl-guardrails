@@ -927,7 +927,9 @@ no lookahead. A filter needed to pass on both timeframes.
   - PF 1.61 vs 1.39, drawdown −30% vs −40%, better in both halves;
   - but only at the 95th percentile, no effect on 1d, and 1 pass in 12 tests is about chance.
 
-  Not adopted; worth tracking live before believing it.
+  Not adopted. **It's tracked live instead:** each journal signal records whether the coin was
+  above its own 50-week and 200-day SMA. The Signal journal shows the split, which is judged once
+  25 4h signals have closed on each side (the rule is in the study doc).
 
 The earlier `btc_bull` row above used a 200-*bar* EMA, which on 4h bars spans about 33 days. This
 study re-ran it on real 200-day bars, with the same result: worse.
@@ -1133,7 +1135,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-76 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+77 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

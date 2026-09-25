@@ -222,6 +222,8 @@ def build_full(*, age_min=2, journal_closed=8):
                 "failed_early": 3, "failed_early_recovered": 1,
                 "adds": {"4h": {"closed": 3, "open": 1, "skipped": 2, "r_sum": 1.4, "pf": 2.1,
                                 "base_r_sum": 2.0, "with_add_r_sum": 3.4}},
+                "lines": {"4h": {"sma50w": {"above": {"n": 6, "win_rate": 0.5, "avg_r": 0.42, "pf": 1.9},
+                                            "below": {"n": 3, "win_rate": 0.0, "avg_r": -1.0, "pf": 0.0}}}},
                 "curve": [{"t": gen - (journal_closed - i) * 3 * D, "r": r, "coin": "SOL", "tf": "1d"}
                           for i, r in enumerate([-1, -1, 2.4, -0.6, -1, 4.1, -1, 0.8][:journal_closed])],
             },

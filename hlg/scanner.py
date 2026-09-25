@@ -62,6 +62,19 @@ def candles(inf, coin, interval, days):
     return df
 
 
+def signal_lines(inf, r):
+    """The coin's close vs its own 50-week / 200-day SMA at the signal bar's close (hlg.lines). One
+    400-day candle request, only when a signal first enters the journal (a few a week). Fail-soft."""
+    from . import lines
+
+    try:
+        d = candles(inf, r["coin"], "1d", 400).set_index("t")
+        return lines.at_signal(d, r["sig_t"], BAR_MS.get(r["tf"], 86_400_000), r["signal_close"])
+    except Exception as e:  # noqa: BLE001 - evidence only; never blocks the journal
+        log.error("signal lines %s failed: %s", r.get("coin"), e)
+        return None
+
+
 def ema(s, n):
     return s.ewm(span=n, adjust=False).mean()
 
@@ -469,7 +482,10 @@ def run_once(cfg, inf, notif, state):
         for r in rows:
             if r.get("signal_close") is not None and not r.get("watch"):
                 journal.arm_add(jr, r)  # a fresh breakout on an open entry: hypothetical add (README "Pyramiding")
-                journal.add(jr, r, f"setup_{r['coin']}_LONG_{r['signal_day']}|{r['tf']}", now_ms, S)
+                key = f"setup_{r['coin']}_LONG_{r['signal_day']}|{r['tf']}"
+                if not any(e["key"] == key for e in jr):
+                    r["lines"] = signal_lines(inf, r)
+                journal.add(jr, r, key, now_ms, S)
         for e in jr:
             b = bars_out.get(f"{e['coin']}|{e['tf']}")
             if b and e["status"] in ("pending", "open"):

@@ -38,6 +38,9 @@ def add(journal, row, key, now_ms, S):
         "sig_t": row.get("sig_t"), "added": now_ms, "close": row["signal_close"], "level": row["level"],
         "atr": row["atr"], "risk": risk, "close_loc": row.get("close_loc"),
         "liq": row.get("liq"),  # HL liquidation clusters near the price at signal time (hlg.liqmap)
+        # the coin's own close vs its 50-week / 200-day SMA at the signal (hlg.lines): the live test of
+        # the ma-lines study's one lead, "above its 50-week SMA breaks out better on 4h"
+        "lines": row.get("lines"),
         "entry": None, "stop": row["signal_close"] - risk, "best": None, "bars": 0,
         "status": "pending", "r": None, "max_r": 0.0, "failed_early": False, "last_t": row.get("sig_t"),
     })
@@ -135,7 +138,32 @@ def summary(journal):
         "pf": wins / losses if losses else None,
         "failed_early": len(fe), "failed_early_recovered": sum(e["r"] > 0 for e in fe),
         "adds": add_summary(journal),
+        "lines": lines_summary(done),
     }
+
+
+# Live rule for the ma-lines lead, fixed before any live data (docs/research/ma-lines-study.md): on 4h,
+# once >= 25 closed entries sit on each side of the coin's 50-week SMA, the lead holds if PF above
+# >= PF below + 0.3 and PF above >= 1.2. Holding earns a fresh pre-registered backtest, not adoption.
+LINES_JUDGE_N = 25
+
+
+def lines_summary(done):
+    """Closed entries split by the coin's side of each line, per timeframe: n, win rate, avg R, PF."""
+    out = {}
+    for e in done:
+        for ln, v in (e.get("lines") or {}).items():
+            if v is None:
+                continue
+            g = out.setdefault(e["tf"], {}).setdefault(ln, {}).setdefault("above" if v else "below", [])
+            g.append(e["r"])
+    for tf in out.values():
+        for ln, sides in tf.items():
+            for side, rs in sides.items():
+                w, l = sum(r for r in rs if r > 0), -sum(r for r in rs if r < 0)
+                sides[side] = {"n": len(rs), "win_rate": sum(r > 0 for r in rs) / len(rs),
+                               "avg_r": sum(rs) / len(rs), "pf": w / l if l else None}
+    return out
 
 
 def add_summary(journal):

@@ -399,6 +399,19 @@ def test_journal_shows_hypothetical_adds_as_tracking_not_advice(page, base_url):
     expect(page.locator("#jadds")).to_contain_text("4h none yet")
 
 
+def test_journal_tracks_the_50_week_lead_until_there_is_enough_to_judge(page, base_url):
+    page.goto(url(base_url, "full"))
+    t = page.locator("#jlines")
+    expect(t).to_contain_text("Backtest: PF 1.67 above vs 1.14 below, not adopted")
+    expect(t).to_contain_text("above 6 · avg +0.42R · PF 1.90")
+    expect(t).to_contain_text("below 3 · avg −1.00R · PF 0.00")
+    expect(t).to_contain_text("(judge at 25 on each side)")
+    width = float(t.locator(".meter span").get_attribute("style").split("width:")[1].split("%")[0])
+    assert abs(width - 12) < 0.5                                       # 3 of 25 on the thinner side
+    page.goto(url(base_url, "empty"))
+    expect(page.locator("#jlines")).to_contain_text("above none yet")
+
+
 # ---------------------------------------------------------------------- discipline aids
 def test_now_card_says_manage_when_positions_have_warnings_with_your_record(page, base_url):
     page.goto(url(base_url, "full"))

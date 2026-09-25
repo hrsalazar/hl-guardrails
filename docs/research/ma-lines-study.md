@@ -94,3 +94,18 @@ Why it isn't adopted:
 - 1 pass in 12 tests is roughly what chance produces.
 
 It is a hypothesis to watch, not a rule.
+
+## Live tracking (added 2026-09-25, before any live data)
+
+The lead is followed in the signal journal (`hlg/journal.py`, `hlg/lines.py`). When a signal first
+enters the journal, the coin's daily history is fetched once, and the signal close is compared with
+the coin's own 50-week and 200-day SMA as of the signal bar's close. Closed entries are then split
+by side (dashboard: Signal journal → "Coin vs its 50-week average").
+
+**Rule, fixed now:** judged on **4h** entries once **25 have closed on each side** of the 50-week SMA.
+The lead holds if both of these are true:
+- PF above ≥ PF below + 0.3;
+- PF above ≥ 1.2.
+
+Holding it earns a fresh pre-registered backtest on the longer history by then, not adoption.
+Failing it retires the idea.

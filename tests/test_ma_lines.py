@@ -41,3 +41,14 @@ def test_filters_let_trades_through_without_a_reading():
     k = pd.Series({"btc_above_sma50w": pd.NA, "coin_above_sma200d": False})
     assert bt.FILTERS["btc_above_sma50w"](k) is True
     assert not bt.FILTERS["coin_above_sma200d"](k)
+
+
+def test_live_signal_reads_its_own_lines_and_a_young_coin_has_none():
+    from hlg import lines
+    d = _daily(np.r_[np.full(400, 100.0), [90.0]])           # 401 days: 57 weeks, the 50-week SMA is 100
+    t = int(d.index[-1].timestamp() * 1000)                   # a 1d signal on the last bar
+    assert lines.at_signal(d, t, 86_400_000, 105.0) == {"sma50w": True, "sma200d": True}
+    assert lines.at_signal(d, t, 86_400_000, 95.0) == {"sma50w": False, "sma200d": False}  # 200d = 99.95, includes the 90
+    assert lines.at_signal(d, t, 86_400_000, 99.97) == {"sma50w": False, "sma200d": True}
+    young = _daily(np.full(60, 100.0))
+    assert lines.at_signal(young, int(young.index[-1].timestamp() * 1000), 86_400_000, 105.0) == {"sma50w": None, "sma200d": None}

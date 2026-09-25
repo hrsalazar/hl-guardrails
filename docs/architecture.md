@@ -50,6 +50,7 @@ read back at the start of the next run.
 | `hlg/market.py` | pure transforms: volume, OI, premium and spread rows; the TradFi liquidity filter | – |
 | `hlg/liquidations.py` | recent liquidation events from OKX, time-boxed and fail-soft | OKX |
 | `hlg/events.py` | scheduled high-impact releases: weekly calendar + FOMC schedule, pushed 24h heads-up, breakout-alert note | FairEconomy, federalreserve.gov |
+| `hlg/lines.py` | 50-week / 200-day SMA/EMA from daily bars without lookahead; shared by `--ma-study` and the journal, which records each new signal's coin against its own lines | HL (one 400-day candle request per new journal signal) |
 | `hlg/market_state.py` | today's risk-on / mixed / risk-off (BTC vs 200-day EMA, credit and S&P, Fear & Greed) for the Now card and the lessons; the same classifier the market-state study used; context, never a signal | HL (one BTC daily-candle request a day) |
 | `hlg/sentiment.py` | Crypto Fear & Greed: live reading for the dashboard, daily history for the backtest | alternative.me |
 | `hlg/digest.py` | daily brief: public RSS headlines digested by a model into a tilt and cited points (`OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`) | RSS feeds, OpenRouter / Anthropic API |
@@ -176,13 +177,13 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 263 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 266 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (76 tests, ~50s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (77 tests, ~50s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see
