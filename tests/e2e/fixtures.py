@@ -94,6 +94,12 @@ def build_full(*, age_min=2, journal_closed=8):
          "setup": None, "hi20": 428.0, "atr": 6.1, "near_atr": 0.22, "urank": 15, "vlm24h": 3.2e7},
         {"coin": "BTC", "tf": "1d", "px": 98_000.0, "rsi4h": 45, "trend": "DOWN", "funding_apr": 10.0,
          "setup": None, "rejected": "trend down", "hi20": 104_000.0, "atr": 2500.0, "urank": 1, "vlm24h": 3.2e9},
+        {"coin": "SOL", "tf": "1d", "px": 186.0, "rsi4h": 63, "trend": "UP", "funding_apr": 8.0, "setup": None,
+         "rejected": "forming: above 20-bar high 182, needs 1d close", "hi20": 182.0, "atr": 6.0, "urank": 3, "vlm24h": 9.0e8},
+        {"coin": "HYPE", "tf": "4h", "px": 48.9, "rsi4h": 71, "trend": "UP", "funding_apr": 21.0, "setup": None,
+         "rejected": "ran 4.1% since signal close, wait for next setup", "hi20": 46.2, "atr": 0.9, "urank": 4, "vlm24h": 6.0e8},
+        {"coin": "ZEC", "tf": "1d", "px": 51.0, "rsi4h": 55, "trend": "UP", "funding_apr": 5.0, "setup": None,
+         "hi20": 56.0, "atr": 2.0, "urank": 20, "vlm24h": 2.0e7},
         {"coin": "xyz:CL", "tf": "1d", "px": 71.2, "rsi4h": 50, "trend": "UP", "funding_apr": 0,
          "setup": None, "watch": True, "hi20": 73.0, "atr": 1.1, "vlm24h": 4e6},
     ]

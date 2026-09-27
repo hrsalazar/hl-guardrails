@@ -290,6 +290,26 @@ dialog#urge{max-height:88vh;overflow:auto}
   border:1px solid color-mix(in srgb,var(--blue) 30%,transparent);font-size:14px;font-weight:600;line-height:1.35;color:var(--text)}
 button.linkish{background:none;border:0;padding:6px 0;color:var(--blue);font-size:13.5px;font-weight:600}
 
+/* ---- scanner statuses: a word + a dot for every status that deserves attention; rows that don't stay
+   plain, and downtrend rows step back in text colour (not opacity -- nothing here is disabled) */
+.sbadge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;
+  padding:1px 7px 1px 6px;border-radius:999px;color:var(--text-2);background:color-mix(in srgb,var(--sc,var(--axis)) 16%,transparent);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--sc,var(--axis)) 30%,transparent) inset;vertical-align:1px;white-space:nowrap}
+.sbadge i,.tfc i{width:7px;height:7px;border-radius:50%;background:var(--sc,var(--axis));display:inline-block}
+.s-signal{--sc:var(--pos)} .s-breaking{--sc:var(--warn)} .s-near{--sc:var(--blue)} .s-ran{--sc:var(--axis)} .s-watch{--sc:var(--violet)}
+.sbadge.s-signal{color:var(--text)}
+tr.st-signal td{background:color-mix(in srgb,var(--pos) 9%,transparent)}
+tr.st-breaking td{background:color-mix(in srgb,var(--warn) 8%,transparent)}
+tr.st-near td{background:color-mix(in srgb,var(--blue) 6%,transparent)}
+tr.st-signal td:first-child{box-shadow:inset 3px 0 0 var(--pos)} tr.st-breaking td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+tr.st-near td:first-child{box-shadow:inset 3px 0 0 var(--blue)}
+tr.st-down td,tr.st-ran td{color:var(--muted)} tr.st-down b,tr.st-ran b{font-weight:550;color:var(--text-2)}
+.tfhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tfc{display:inline-flex;align-items:center;gap:5px;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text-2)}
+.hot{display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;align-items:center;margin:8px 0;padding:9px 12px;border-radius:12px;
+  background:color-mix(in srgb,var(--sc) 7%,var(--surface-2));border:1px solid color-mix(in srgb,var(--sc) 28%,var(--line))}
+.hot .hc{min-width:64px}.hot .hr{font-size:12.5px;color:var(--text-2);text-align:right}
+
 /* ---- section icons and quiet colour: each area has its own hue (Technical blue, Macro violet, Flow
    teal, alerts amber) on a soft wash. Decorative only -- the title text says what the card is. */
 .hic{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:8px;flex:none;margin-right:2px;
@@ -360,6 +380,12 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
   table.cardable td:not(:first-child)::before{content:attr(data-label);display:block;font-size:10.5px;color:var(--muted);
     text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
   table.cardable td.wide{grid-column:1/-1}
+  table.cardable tr.st-signal,table.cardable tr.st-breaking,table.cardable tr.st-near{border-left:3px solid var(--sc)}
+  table.cardable tr.st-signal{--sc:var(--pos);background:color-mix(in srgb,var(--pos) 7%,var(--surface-2))}
+  table.cardable tr.st-breaking{--sc:var(--warn);background:color-mix(in srgb,var(--warn) 7%,var(--surface-2))}
+  table.cardable tr.st-near{--sc:var(--blue);background:color-mix(in srgb,var(--blue) 5%,var(--surface-2))}
+  table.cardable tr[class^="st-"] td{background:none;box-shadow:none}
+  .hot{grid-template-columns:auto 1fr;row-gap:6px}.hot .meter{grid-column:1/-1}.hot .hr{grid-column:1/-1;text-align:left}
   table.cardable td.span2{grid-column:span 2}
   .tw{margin:0;overflow:visible}
 }
@@ -421,8 +447,8 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
   </div>
   <div class="pane" id="pane-tech">
     <section class="card"><h3 data-ic="layers">Positions <span class="badge" id="poscount"></span></h3><div id="positions"></div></section>
-    <section class="card" id="nearcard" hidden><h3 data-ic="target">Near breakout <span class="badge" id="nearcount"></span></h3>
-      <p class="desc">Uptrend and within 0.5 ATR of the level the bar has to close above. A watch list, not a signal — nothing here alerts.</p><div id="near"></div></section>
+    <section class="card" id="nearcard" hidden><h3 data-ic="target">Watch closely <span class="badge" id="nearcount"></span></h3>
+      <p class="desc">The short list: live signals, coins trading above their trigger that still need a bar close, and uptrend coins within 0.5 ATR of it. Only a closed-bar signal alerts; everything else in the scanner is just on the list.</p><div id="near"></div></section>
     <section class="card"><h3 data-ic="radar">Scanner <span class="badge" id="unilabel"></span></h3><div id="scan"></div></section>
     <section class="card"><h3 data-ic="book">Signal journal <span class="badge" id="jcount"></span></h3>
       <p class="desc">Every breakout signal, followed under the strategy's rules whether or not you took it: entry at the next open, 2×ATR stop, 3×ATR trail, 21-day time stop. R = multiples of the initial risk.</p><div id="journal"></div></section>
@@ -1189,37 +1215,75 @@ function ladder({long,entry,mark,stop,liq,rstop},w){
 }
 
 // ---- scanner, near-breakout ---------------------------------------------------------------------
+// Every row gets one status, so what needs watching stands out from what is just on the list:
+// signal (a live entry) > breaking out (above the trigger, the bar hasn't closed) > near (<= 0.5 ATR
+// below it) > uptrend (further off) > ran past (signalled, price left the entry zone) > downtrend (not
+// eligible). Each status is a word + a mark, never colour alone.
+const SCAN_ST={signal:{w:'Signal',o:0,tip:'A live entry: the bar closed above its 20-bar high in an uptrend. See Alerts for size and stop.'},
+  breaking:{w:'Breaking out',o:1,tip:'Trading above its trigger now. It only signals if the bar CLOSES above it.'},
+  near:{w:'Near',o:2,tip:'Uptrend, within 0.5 ATR of the level the bar has to close above.'},
+  up:{w:'Uptrend',o:3,tip:'Uptrend, further from its trigger.'},
+  ran:{w:'Ran past',o:4,tip:'It signalled, but price ran more than 1 ATR past the entry. Not chased.'},
+  down:{w:'Downtrend',o:5,tip:'EMA20 below EMA50: the strategy does not buy these.'}};
+function scanStatus(r){
+  if(r.setup)return 'signal';
+  if(r.rejected&&/^ran /.test(r.rejected))return 'ran';
+  if(r.trend!=='UP')return 'down';
+  if(r.hi20&&r.px>r.hi20)return 'breaking';
+  if(r.near_atr!=null)return 'near';
+  return 'up';
+}
+const atrAway=r=>r.hi20&&r.atr&&r.px!=null?(r.hi20-r.px)/r.atr:99;
+const barLeft=tf=>{const ms=TF_MS[tf||'1d']||864e5,m=Math.max(0,Math.round((Math.ceil((Date.now()+1)/ms)*ms-Date.now())/6e4));
+  return m>=60?`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`:`${m}m`};
+const sbadge=st=>`<span class="sbadge s-${st}" data-tip="${esc(SCAN_ST[st].tip)}"><i aria-hidden="true"></i>${SCAN_ST[st].w}</span>`;
 function renderScan(d){
   const TF_LABEL={'1d':'Daily','4h':'4-hour','1h':'Hourly'},TF_ORDER={'1d':0,'4h':1,'1h':2};
-  const tfGroups=new Map();
-  for(const r of d.scan){const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
+  const tfGroups=new Map(),watch=[];
+  for(const r of d.scan){if(r.watch){watch.push(r);continue}const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
   const tfKeys=[...tfGroups.keys()].sort((a,b)=>(TF_ORDER[a]??99)-(TF_ORDER[b]??99)||a.localeCompare(b));
   const setupCell=r=>r.setup?`<span class="pill long">${r.setup}</span> stop ${fmt(r.stop,sig(r.stop))}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:''}`
+    :scanStatus(r)==='breaking'?`<span>needs a ${r.tf||'1d'} close above ${fmt(r.hi20,sig(r.hi20))} · <b class="num">${barLeft(r.tf)}</b> left</span>`
     :`<span class="mut">${esc(r.rejected||(r.hi20?`below 20-bar high ${fmt(r.hi20,sig(r.hi20))}`:'—'))}</span>`;
   const trend=t=>t==='UP'?'<span class="pos">▲ up</span>':'<span class="neg">▼ down</span>';
   // distance to the level the bar must close above, in ATR: a full bar = at or through it,
   // empty = 3 ATR or more below. Shown for every row, so "how close is everything" reads at a glance.
   const trig=r=>{if(!r.hi20||!r.atr||r.px==null)return '—';
-    const a=(r.hi20-r.px)/r.atr, f=r.setup?1:Math.max(0,Math.min(1,1-a/3));
+    const st=scanStatus(r),a=atrAway(r), f=r.setup||a<=0?1:Math.max(0,Math.min(1,1-a/3));
     const txt=r.setup?'signal':a<=0?'above':`${fmt(a,1)} ATR`;
+    const col={signal:'--pos',breaking:'--warn',near:'--blue',up:'--blue',ran:'--axis',down:'--axis'}[st];
     return `<div class="trig" data-tip="<b>${r.coin} ${r.tf||''}</b><br>trigger ${fmt(r.hi20,sig(r.hi20))} · ${r.setup?'signalled':a<=0?'above, needs a close':fmt(a,2)+' ATR below'}">`
-      +`<div class="meter"><span style="width:${Math.max(4,f*100)}%;background:var(${r.trend==='UP'?'--blue':'--axis'})"></span></div><small>${txt}</small></div>`};
-  const scanRow=r=>`<tr${r.watch?' style="opacity:.55"':''}><td>${r.urank?`<small class="mut">${r.urank}</small> `:''}<b>${r.coin}</b>${r.watch?' <small>watch</small>':''}</td><td>${fmt(r.px,sig(r.px))}</td><td>${trend(r.trend)}</td><td class="span2">${trig(r)}</td><td>${fmt(r.rsi4h)}</td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td><td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td class="span2" style="text-align:left">${setupCell(r)}</td></tr>`;
-  // live setups first, then near-breakouts, then the rest by liquidity
-  const scanOrder=r=>(r.setup?0:r.near_atr!=null?1:2)*1e15-(r.vlm24h||0);
-  $('#scan').innerHTML=tfKeys.map(tf=>
-    `<div class="tfhead">${TF_LABEL[tf]||tf}</div><div class="tw"><table><tr><th>Coin</th><th>Price</th><th>Trend</th><th style="text-align:left">To trigger</th><th>RSI</th><th>24h vol</th><th>Funding</th><th style="text-align:left">Setup</th></tr>`+
-    [...tfGroups.get(tf)].sort((a,b)=>scanOrder(a)-scanOrder(b)).map(scanRow).join('')+'</table></div>').join('');
+      +`<div class="meter"><span style="width:${Math.max(4,f*100)}%;background:var(${col})"></span></div><small>${txt}</small></div>`};
+  const scanRow=r=>{const st=r.watch?'watch':scanStatus(r),show=['signal','breaking','near','ran'].includes(st);
+    return `<tr class="st-${st}"><td>${r.urank?`<small class="mut">${r.urank}</small> `:''}<b>${r.coin}</b>${show?' '+sbadge(st):''}${r.watch?' <span class="sbadge s-watch"><i aria-hidden="true"></i>Watch only</span>':''}</td>`
+      +`<td>${fmt(r.px,sig(r.px))}</td><td>${trend(r.trend)}</td><td class="span2">${trig(r)}</td><td>${fmt(r.rsi4h)}</td><td>${r.vlm24h?usd(r.vlm24h):'—'}</td>`
+      +`<td class="${cls(-r.funding_apr)}">${r.funding_apr>0?'+':''}${fmt(r.funding_apr,1)}%</td><td class="span2" style="text-align:left">${setupCell(r)}</td></tr>`};
+  // by status, then within it: closest to the trigger first (downtrend and ran-past by liquidity)
+  const order=(a,b)=>{const sa=scanStatus(a),sb=scanStatus(b);
+    return SCAN_ST[sa].o-SCAN_ST[sb].o||(['down','ran'].includes(sa)?(b.vlm24h||0)-(a.vlm24h||0):atrAway(a)-atrAway(b))};
+  const head=`<tr><th>Coin</th><th>Price</th><th>Trend</th><th style="text-align:left">To trigger</th><th>RSI</th><th>24h vol</th><th>Funding</th><th style="text-align:left">Setup</th></tr>`;
+  const counts=rows=>{const c={};rows.forEach(r=>{const st=scanStatus(r);c[st]=(c[st]||0)+1});
+    return ['signal','breaking','near'].filter(k=>c[k]).map(k=>`<span class="tfc s-${k}"><i aria-hidden="true"></i>${c[k]} ${SCAN_ST[k].w.toLowerCase()}</span>`).join('')};
+  $('#scan').innerHTML=tfKeys.map(tf=>{const rows=[...tfGroups.get(tf)].sort(order);
+      return `<div class="tfhead">${TF_LABEL[tf]||tf}${counts(rows)}</div><div class="tw"><table>${head}${rows.map(scanRow).join('')}</table></div>`}).join('')
+    // TradFi perps: shown for context at full strength, labelled -- not dimmed as if switched off
+    +(watch.length?`<div class="tfhead">TradFi perps · watch only</div><p class="desc" style="margin:0 0 4px">Same rule, shown for context. Never alerted and not part of the tested book: their Hyperliquid history is short and the backtest edge there is thin (PF ~1.2).</p>`
+      +`<div class="tw"><table>${head}${watch.sort((a,b)=>(b.vlm24h||0)-(a.vlm24h||0)).map(scanRow).join('')}</table></div>`:'');
   const U=d.universe||{};
   $('#unilabel').textContent=U.mode==='auto'?`top ${U.coins} by volume`:U.coins?`${U.coins} coins`:'';
-  // near-breakout: how far each coin is from its trigger, as a bar (0.5 ATR = empty, at trigger = full)
-  const near=d.scan.filter(r=>r.near_atr!=null&&!r.watch).sort((a,b)=>a.near_atr-b.near_atr);
-  $('#nearcard').hidden=!near.length;$('#nearcount').textContent=near.length||'';
-  $('#near').innerHTML=near.map(r=>{const f=1-r.near_atr/.5;
-    return `<div style="display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;margin:9px 0" data-tip="<b>${r.coin} ${r.tf}</b><br>trigger ${fmt(r.hi20,sig(r.hi20))} · ${fmt(r.near_atr,2)} ATR away">`
-      +`<div><b>${r.coin}</b> <small class="mut">${r.tf}</small></div>`
-      +`<div class="meter" style="height:8px"><span style="width:${Math.max(3,f*100)}%;background:var(--blue)"></span></div>`
-      +`<div class="num" style="font-size:12.5px;color:var(--text-2)">${fmt(100*(r.hi20/r.px-1),1)}% to ${fmt(r.hi20,sig(r.hi20))}</div></div>`}).join('');
+  // Watch closely: live signals, coins above their trigger waiting on a close, and near ones -- the
+  // short list worth a look at the next decision point. Everything else is just on the list.
+  const hot=d.scan.filter(r=>!r.watch&&['signal','breaking','near'].includes(scanStatus(r))).sort(order);
+  $('#nearcard').hidden=!hot.length;$('#nearcount').textContent=hot.length||'';
+  $('#near').innerHTML=hot.map(r=>{const st=scanStatus(r),a=atrAway(r);
+    const f=st==='near'?1-r.near_atr/.5:1;
+    const right=st==='signal'?`entry at the next open · stop ${fmt(r.stop,sig(r.stop))}`
+      :st==='breaking'?`above ${fmt(r.hi20,sig(r.hi20))} · needs the close in <b class="num">${barLeft(r.tf)}</b>`
+      :`${fmt(100*(r.hi20/r.px-1),1)}% to ${fmt(r.hi20,sig(r.hi20))}`;
+    return `<div class="hot s-${st}" data-tip="<b>${r.coin} ${r.tf}</b><br>trigger ${fmt(r.hi20,sig(r.hi20))} · ${a<=0?'above it':fmt(a,2)+' ATR away'}">`
+      +`<div class="hc"><b>${r.coin}</b> <small class="mut">${r.tf}</small></div>${sbadge(st)}`
+      +`<div class="meter" style="height:8px"><span style="width:${Math.max(3,f*100)}%;background:var(${{signal:'--pos',breaking:'--warn',near:'--blue'}[st]})"></span></div>`
+      +`<div class="num hr">${right}</div></div>`}).join('');
 }
 
 // ---- journal: cumulative R --------------------------------------------------------------------

@@ -2,8 +2,20 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-27
+
+- **Scanner: see at a glance what to watch.** Every row gets one status, shown as a word and a coloured mark:
+  - *Signal*: a live entry.
+  - *Breaking out*: above its trigger, needs the bar to close; shows the time left.
+  - *Near*: within 0.5 ATR.
+  - *Uptrend*: further off.
+  - *Ran past* and *Downtrend*: in muted text.
+
+  Rows sort by status, then by distance to the trigger. Each timeframe heading counts signals, breakouts and near ones. The Near breakout card becomes **Watch closely**, which also lists signals and breakouts in progress. TradFi perps were drawn at 55% opacity, which read as disabled; they now sit at full strength in their own group, labelled *watch only* with the reason.
+
 ## 2026-09-25
 
+- **Wallet behavior study** (`scripts/wallet_behavior_study.py`, exploratory and not pre-registered; docs/research/wallet-behavior-study.md): 200 random active Hyperliquid wallets over 90 days, 145 of them analyzed (20,138 closed positions). Losses sit in the tail: in each wallet the worst 5% of positions are half the losses. Averaged-down positions are 14% of positions but 45% of losses, and 83% of the worst 1% broke a guardrail rule. 48% of wallets were liquidated, 96% of those positions with no stop. Wallet-level habits did not predict profitability (stop users were profitable less often, 31% vs 50%), so this supports the guardrails as tail protection, not as an edge. Nothing adopted. Raw data stays in the gitignored `miner_cache/`.
 - **A calmer, friendlier look.** New app icon matching the header's blue-to-indigo shield, drawn bolder so it reads at 16px. Adds a maskable Android icon and a proper Apple touch icon. Each card title gets a small line icon on a soft tinted badge, with one quiet hue per area: Technical blue, Macro violet, Flow teal, alerts amber. Alert groups get icons, tabs show their icon on desktop too, and panes fade in with short colour transitions. All motion is off under reduced motion; icons are decorative (aria-hidden) next to text that says the same.
 - **Bull market support band study** (`--bmsb-study`, pre-registered in docs/research/bmsb-study.md): 20-week SMA / 21-week EMA vs the 50-week SMA as breakout filters. Nothing adopted, and neither line is clearly more relevant. BTC's band is neutral (4h PF 1.36 above = 1.36 below), unlike its harmful 50-week line. For the coin itself, the band and the 50-week measure the same long-term uptrend (4h ~1.6 vs ~1.1 PF), but only the 50-week held up as a filter.
 - **Signal journal: the 50-week lead, tracked live.** Each new signal records whether the coin closed above its own 50-week and 200-day SMA (`hlg/lines.py`, one daily-candle request per new signal). The journal card shows closed 4h signals above vs below the 50-week line. The rule is fixed before any live data: judged at 25 per side; the lead holds if PF above ≥ PF below + 0.3 and ≥ 1.2, which earns a fresh backtest, not adoption.

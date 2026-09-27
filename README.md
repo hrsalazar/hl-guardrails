@@ -148,7 +148,7 @@ layer. Everything else is grouped into three tabs (the last one you used is reme
 
 | Tab | Contents | Source |
 |---|---|---|
-| **Technical** | open positions; the breakout scanner, grouped by timeframe | Hyperliquid candles |
+| **Technical** | open positions; **Watch closely** (the short list: live signals, coins above their trigger waiting on a bar close with the time left, uptrend coins within 0.5 ATR); the breakout scanner, grouped by timeframe, every row with a status (*Signal*, *Breaking out*, *Near*, *Ran past* as badges; uptrend and downtrend plain) and sorted by it, closest to the trigger first; TradFi perps in their own *watch only* group | Hyperliquid candles |
 | **Macro** | the **daily brief** (Claude's digest of the day's public headlines), the **calendar** of high-impact US releases with countdowns and the next FOMC, **Fear & Greed** with its 90-day line, then TradFi instruments — SP500, gold, silver, oil, copper, natgas, EUR/JPY, MSTR/COIN | RSS feeds + Claude API, FairEconomy + federalreserve.gov, alternative.me, HL's `xyz` perps |
 | **Flow** | maintenance-margin buffer, 24h volume / open interest / turnover / mark-vs-oracle premium, recent liquidations | HL asset contexts + OKX |
 
@@ -1147,7 +1147,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-78 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+79 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

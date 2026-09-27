@@ -297,22 +297,42 @@ def test_a_fully_covered_position_shows_no_warning(page, base_url):
 
 
 # ---------------------------------------------------------------------- scanner / near-breakout
-def test_near_breakout_list_is_sorted_closest_first(page, base_url):
+def test_watch_closely_lists_signals_then_breakouts_then_near_ones(page, base_url):
     page.goto(url(base_url, "full"))
-    expect(page.locator("#nearcard")).to_be_visible()
-    coins = page.locator("#near b").all_text_contents()
-    assert coins == ["TAO"]  # only non-watch coin with near_atr in this fixture
+    card = page.locator("#nearcard")
+    expect(card).to_be_visible()
+    expect(card.locator("h3")).to_contain_text("Watch closely")
+    assert card.locator(".hot .hc b").all_text_contents() == ["ENA", "UNI", "SOL", "TAO"]   # signals (above trigger first), breaking, near
+    expect(card.locator(".hot.s-breaking")).to_contain_text("needs the close in")
+    expect(card.locator(".hot.s-near")).to_contain_text("% to 428")
+    expect(page.locator("#nearcount")).to_have_text("4")                # ran-past, uptrend, downtrend: not here
 
 
-def test_scanner_table_groups_by_timeframe_and_shows_the_setup(page, base_url):
+def test_scanner_rows_carry_a_status_and_sort_by_it(page, base_url):
     page.goto(url(base_url, "full"))
-    expect(page.locator(".tfhead")).to_have_count(2)  # 1d and 4h present
+    expect(page.locator(".tfhead")).to_have_count(3)                     # 1d, 4h, TradFi
+    daily = page.locator("#scan table").first
+    order = [c for c in daily.locator("tr td:first-child b").all_text_contents()]
+    assert order == ["UNI", "SOL", "TAO", "ZEC", "BTC"], order          # signal, breaking, near, uptrend, down
+    expect(daily.locator("tr", has_text="UNI").locator(".sbadge")).to_have_text("Signal")
+    expect(daily.locator("tr", has_text="SOL").locator(".sbadge")).to_have_text("Breaking out")
+    expect(daily.locator("tr", has_text="SOL")).to_contain_text("needs a 1d close above 182")
+    expect(daily.locator("tr", has_text="TAO").locator(".sbadge")).to_have_text("Near")
+    expect(daily.locator("tr", has_text="ZEC").locator(".sbadge")).to_have_count(0)  # just on the list: no badge
+    expect(daily.locator("tr", has_text="BTC")).to_have_class("st-down")
+    expect(page.locator("#scan tr", has_text="HYPE").locator(".sbadge")).to_have_text("Ran past")
+    expect(page.locator(".tfhead").first).to_contain_text("1 signal")
+    expect(page.locator(".tfhead").first).to_contain_text("1 breaking out")
     ena_row = page.locator("#scan tr", has_text="ENA")
     expect(ena_row.locator(".pill.long")).to_have_text("LONG")
-    btc_row = page.locator("#scan tr", has_text="BTC")
-    expect(btc_row).to_contain_text("trend down")
-    watch_row = page.locator("#scan tr", has_text="xyz:CL")
-    expect(watch_row).to_have_attribute("style", re.compile("opacity"))
+
+
+def test_tradfi_rows_are_labelled_watch_only_not_dimmed(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator(".tfhead").last).to_contain_text("TradFi perps · watch only")
+    row = page.locator("#scan tr", has_text="xyz:CL")
+    expect(row.locator(".sbadge")).to_have_text("Watch only")
+    assert page.evaluate("getComputedStyle([...document.querySelectorAll('#scan tr')].find(t=>t.textContent.includes('xyz:CL'))).opacity") == "1"
 
 
 # ---------------------------------------------------------------------- journal
