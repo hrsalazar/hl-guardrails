@@ -2,6 +2,14 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-28
+
+- **Wallet behavior study** (`scripts/wallet_behavior_study.py`, docs/research/wallet-behavior-study.md; exploratory, not pre-registered): 200 random Hyperliquid wallets, 20,138 closed positions over 90 days.
+  - Losses concentrate in a few positions (worst 5% = half of a wallet's losses), and 83% of the worst 1% broke a guardrail rule (averaged down, liquidated, or no stop).
+  - 48% of wallets were liquidated at least once, and 96% of those liquidations had no stop.
+  - The habits did not predict which wallets were profitable, so the guardrails are protection, not an edge.
+  - Raw data stays gitignored; only aggregates are committed. The figures were reproduced from the cache, and the position rebuild gained 6 unit tests.
+
 ## 2026-09-27
 
 - **Scanner: see at a glance what to watch.** Every row gets one status, shown as a word and a coloured mark:

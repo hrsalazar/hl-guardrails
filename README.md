@@ -374,6 +374,22 @@ were net positive, and the handful of worst trades — each a ladder of buys bel
 held for weeks — cost more than the whole net result. (The figures are private: they live only in
 the encrypted dashboard, never in this repo.)
 
+**Do other traders lose the same way?** An exploratory study of 200 random Hyperliquid wallets
+([docs/research/wallet-behavior-study.md](docs/research/wallet-behavior-study.md), not pre-registered)
+rebuilt 20,138 closed positions from 145 of them, over 90 days.
+- **The damage sits in the tail, and the tail breaks these rules.** In each wallet, the worst 5% of
+  positions carried half the losses. 83% of the worst 1% were averaged down, liquidated or had no
+  stop.
+- **Averaging down is over-represented in losses.** Averaged-down positions were 14% of a wallet's
+  positions but 45% of its losses (medians).
+- **Missing stops end accounts.** 48% of wallets were liquidated at least once, and 96% of those
+  liquidations had no stop.
+- **But the habits didn't predict which wallets were profitable.** Stop users and rare averagers were
+  *less* often profitable. Trading style, survivorship and small groups are all possible reasons.
+
+So the evidence backs the guardrails as protection against the account-ending position, not as an
+edge. That's how they are framed here.
+
 That is the pattern behavioural finance predicts. Losses weigh about 2.25× as much as equal gains
 ([Tversky & Kahneman 1992](https://cemi.ehess.fr/docannexe/file/2780/tversjy_kahneman_advances.pdf)),
 so closing a loser feels worse than adding to it, and investors sell winners roughly 60% more readily

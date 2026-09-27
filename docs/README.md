@@ -8,6 +8,7 @@
 | [product.md](product.md) | the owner | positioning, ways to sell it, open legal questions, roadmap |
 | [proposals/](proposals/) | the owner | parked or future designs, not current behaviour, e.g. [Kronos stop-hit odds](proposals/kronos-stop-odds.md) |
 | [research/universe-study.md](research/universe-study.md) | the owner | weekly auto-generated trend of the liquidity-ranked universe study (README "Universe"); read-only, never changes `config.yaml` |
+| [research/](research/) | the owner | pre-registered studies with results (market state, long-term lines, bull market support band) and the exploratory [wallet behavior study](research/wallet-behavior-study.md): do other Hyperliquid traders lose money the way the guardrails assume? |
 | [../CHANGELOG.md](../CHANGELOG.md) | everyone | what changed and when |
 
 The top-level [README](../README.md) keeps the research: the rules, the scanner, and the
