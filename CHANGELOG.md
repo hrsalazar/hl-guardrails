@@ -4,6 +4,11 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-28
 
+- **Fix: Today / This week started up to ~2h20m early.**
+  - **Cause:** Hyperliquid's day/week P&L series have a point only every ~2h20m, and the monitor took the last point *before* 00:00 UTC. A live check found −$162 of Sunday evening counted in Monday's Today. The daily and weekly loss limits measure from the same start.
+  - **Fix:** the start is now anchored on HL's all-time series (the only one with a fixed baseline). It is interpolated between the monitor's runs either side of midnight (~15 minutes apart), or between HL's history points when there was no run just before, then kept for the period.
+  - **Verified:** against an independent check (account value minus deposits and withdrawals), which agreed to the cent.
+  - **Labels:** the chips now say where they start ("from 02:00", your time), with a note that Hyperliquid's app shows rolling 24h / 7d. The gauges say "since 00:00 UTC".
 - **Push notifications, easier to set up and harder to miss.**
   - Every alert now buzzes (`renotify`). Before, a new alert that replaced one still sitting in the tray arrived silently.
   - The *Push* button no longer waits for the bell button: it asks for permission itself, which matters after a reinstall resets it.

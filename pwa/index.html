@@ -984,6 +984,14 @@ function lessonShow(d,L,urgeReason){
 
 // ---- hero: portfolio value, day/week, equity curve ---------------------------------------------
 let eqRange=(()=>{try{return +localStorage.getItem('hlgEqRange')||7}catch(e){return 7}})();
+function periodStarts(now=Date.now()){
+  const d0=Math.floor(now/864e5)*864e5, w0=d0-((new Date(d0).getUTCDay()+6)%7)*864e5;
+  const hm=t=>new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const dw=t=>new Date(t).toLocaleDateString([], {weekday:'short'})+' '+hm(t);
+  const note=" Hyperliquid's app shows rolling 24h / 7d figures instead, so the two can differ.";
+  return {dayLocal:hm(d0),weekLocal:dw(w0),
+    dayTip:`Since 00:00 UTC (${hm(d0)} your time): the daily loss limit's day. Deposits, withdrawals and transfers are netted out.`+note,
+    weekTip:`Since Monday 00:00 UTC (${dw(w0)} your time): the weekly loss limit's week.`+note}}
 function pnlOf(d){
   const day=d.day_pnl!=null?d.day_pnl:(d.day_start_equity?d.equity-d.day_start_equity:0);
   const week=d.week_pnl!=null?d.week_pnl:(d.week_start_equity?d.equity-d.week_start_equity:0);
@@ -996,8 +1004,11 @@ function renderHero(d){
   $('#hval').textContent='$'+fmt(val,val<1e4?2:0);
   $('#hcollat').textContent=uni?`$${fmt(A.base)} USDC collateral · sizing base`:'sizing base';
   const pc=(n,b)=>b?` <span class="mut">${sgn(n)}${fmt(Math.abs(100*n/b),2)}%</span>`:'';
-  $('#hchips').innerHTML=`<span class="chip">Today <b class="${cls(day)}">${sgn(day)}$${fmt(Math.abs(day))}</b>${pc(day,d.day_start_equity)}</span>`
-    +`<span class="chip">This week <b class="${cls(week)}">${sgn(week)}$${fmt(Math.abs(week))}</b>${pc(week,d.week_start_equity)}</span>`
+  // Today / This week run from 00:00 UTC and Monday 00:00 UTC (the loss limits' periods), not rolling
+  // 24h / 7d like Hyperliquid's own app -- so the two can differ, and each chip says where it starts
+  const P=periodStarts();
+  $('#hchips').innerHTML=`<span class="chip" data-tip="${esc(P.dayTip)}">Today <b class="${cls(day)}">${sgn(day)}$${fmt(Math.abs(day))}</b>${pc(day,d.day_start_equity)}<span class="mut">from ${P.dayLocal}</span></span>`
+    +`<span class="chip" data-tip="${esc(P.weekTip)}">This week <b class="${cls(week)}">${sgn(week)}$${fmt(Math.abs(week))}</b>${pc(week,d.week_start_equity)}<span class="mut">from ${P.weekLocal}</span></span>`
     +`<span class="chip">Positions <b>${d.positions.length}</b><span class="mut">/ ${d.rules.max_positions}</span></span>`;
   const locked=d.locked_until&&d.locked_until>Date.now();
   $('#hstate').className='state'+(locked?' lock':'');
@@ -1041,8 +1052,8 @@ function renderGauges(d){
   const dayUsed=Math.max(0,-day)/(dayBase*R.daily_loss_limit_pct/100||1);
   const weekUsed=Math.max(0,-week)/(weekBase*R.weekly_loss_limit_pct/100||1);
   const lev=A.leverage??null,cap=R.max_gross_exposure_x,ratio=A.ratio_pct??null;
-  let h=gauge('Daily loss limit',`${fmt(Math.max(0,-day)/dayBase*100,2)}%`,dayUsed,band(dayUsed),`of ${R.daily_loss_limit_pct}% used`);
-  h+=gauge('Weekly loss limit',`${fmt(Math.max(0,-week)/weekBase*100,2)}%`,weekUsed,band(weekUsed),`of ${R.weekly_loss_limit_pct}% used`);
+  let h=gauge('Daily loss limit',`${fmt(Math.max(0,-day)/dayBase*100,2)}%`,dayUsed,band(dayUsed),`of ${R.daily_loss_limit_pct}% used · since 00:00 UTC`);
+  h+=gauge('Weekly loss limit',`${fmt(Math.max(0,-week)/weekBase*100,2)}%`,weekUsed,band(weekUsed),`of ${R.weekly_loss_limit_pct}% used · since Mon 00:00 UTC`);
   h+=lev==null?'':gauge(A.unified?'Account leverage':'Leverage',`${fmt(lev,2)}×`,lev/cap,band(lev/cap,.66,1),`cap ${cap}×`);
   // HL liquidates as the ratio approaches 100%; the dashboard's warn/crit bands are 25% / 50%
   h+=ratio==null?'':gauge(A.unified?'Account ratio':'Margin ratio',`${fmt(ratio,2)}%`,ratio/100,ratio>=50?'crit':ratio>=25?'warn':'good','liquidation at 100%',null);

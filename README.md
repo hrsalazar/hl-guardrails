@@ -262,6 +262,18 @@ What else changes on a unified account:
 - **Loss limits** use HL's whole-account `day`/`week` PnL series, as a share of the whole
   portfolio. Spot is collateral there, so a bad day in the spot book is a bad day. Classic accounts
   keep the perp-only series, where spot really is a separate wallet.
+- **Where the periods start.** Today runs from 00:00 UTC and This week from Monday 00:00 UTC, on
+  HL's own P&L, which already nets out deposits, withdrawals and transfers. That differs from
+  Hyperliquid's app, which shows rolling 24h / 7d figures.
+
+  HL's day/week series have a point only every ~2h20m and restart at 0 as their window rolls. So
+  the start is anchored on the all-time series (`hlg.guardrails.pnl_anchors`), interpolated between
+  the monitor's runs either side of midnight, which are ~15 minutes apart. If there was no run just
+  before, it's interpolated between HL's history points around it.
+
+  This fixed a real error, found by checking against live data. The old start was "the last history
+  point before midnight", up to ~2h20m early. One Monday it counted −$162 of Sunday evening in Today,
+  and the loss limits are measured from that same start.
 - **Spot tokens are exposure, not capacity.** They never raise the sizing base — counting a HYPE bag
   as room for more HYPE risk would double-count it. `max_coin_exposure_x` instead nets spot into
   the same coin's perp position, so a perp long stacked on a spot bag is flagged as the one bet it
@@ -1163,7 +1175,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-81 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+82 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

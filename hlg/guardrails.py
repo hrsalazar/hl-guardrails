@@ -42,6 +42,66 @@ def week_key(t):
     return f"{y}-W{w:02d}"
 
 
+LIVE_GAP_MS = 3_600_000  # two runs this close either side of a period start bracket it well enough
+
+
+def _interp(a, b, t):
+    """(t, pnl, value) points a <= t <= b -> the pnl and value at t, linearly."""
+    if b[0] == a[0]:
+        return b[1], b[2]
+    w = (t - a[0]) / (b[0] - a[0])
+    return a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w
+
+
+def pnl_anchors(port, dwin, wwin, state, starts):
+    """Where Today and This week start, on HL's own flow-adjusted P&L (deposits, withdrawals and
+    transfers already netted out).
+
+    HL's day/week series are coarse (a point every ~2h20m) and each window's P&L restarts at 0 at the
+    window's own start, which rolls; only the all-time series keeps a fixed baseline. So every run
+    records the live all-time P&L and account value, and the start of a period is anchored once, on
+    the all-time scale, then kept for the rest of the period:
+      runs     interpolated between the last run before 00:00 UTC and the first run after it
+               (~15 minutes apart; the common case)
+      history  otherwise (no run just before, e.g. the first deploy): interpolated between the day or
+               week series' points either side of the start, converted to the all-time scale
+    The old anchor, "the last history point at or before the start", sat up to ~2h20m early and so
+    counted the previous evening's P&L in Today.
+
+    Returns (live, {period: anchor}) where live and anchors are (t, all_time_pnl, account_value)."""
+    awin = "allTime" if dwin == "day" else "perpAllTime"
+    t_now, p_now = port[awin]["pnlHistory"][-1]
+    live = (int(t_now), float(p_now), float(port[awin]["accountValueHistory"][-1][1]))
+    prev = state.get("pnl_live")
+    anchors = {}
+    for period, win in (("day", dwin), ("week", wwin)):
+        t0 = int(starts[period].timestamp() * 1000)
+        a = state.get(f"pnl_anchor_{period}")
+        if not (isinstance(a, dict) and a.get("t0") == t0):
+            if isinstance(prev, dict) and prev["t"] <= t0 <= live[0] and live[0] - prev["t"] <= LIVE_GAP_MS:
+                p, v = _interp((prev["t"], prev["pnl"], prev["av"]), live, t0)
+                how = "runs"
+            else:
+                rows = [(int(t), float(p), float(v)) for (t, p), (_, v) in
+                        zip(port[win]["pnlHistory"], port[win]["accountValueHistory"])]
+                before = [r for r in rows if r[0] <= t0]
+                after = [r for r in rows if r[0] > t0]
+                lo, hi = (before[-1] if before else rows[0]), (after[0] if after else rows[-1])
+                p_w, v = _interp(lo, hi, t0) if before and after else (lo[1], lo[2])
+                p = live[1] - (rows[-1][1] - p_w)          # this window's scale -> the all-time scale
+                how = "history"
+            a = {"t0": t0, "pnl": p, "av": v, "how": how}
+            state.set(f"pnl_anchor_{period}", a)
+        anchors[period] = a
+    state.set("pnl_live", {"t": live[0], "pnl": live[1], "av": live[2]})
+    return live, anchors
+
+
+def period_since(live, anchor):
+    """(P&L since the anchor, the account value at it) -- the loss limits' numerator and base."""
+    return live[1] - anchor["pnl"], anchor["av"]
+
+
 def episode_start(fills, coin, cur_sz):
     """Time the current position was opened from flat (walk fills backwards)."""
     sz = cur_sz
@@ -136,16 +196,9 @@ def run_once(cfg, inf, notif, state):
     day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week0 = day0 - dt.timedelta(days=now.weekday())
 
-    def period_pnl(win, t0):
-        t0_ms = int(t0.timestamp() * 1000)
-        pnl, av = port[win]["pnlHistory"], port[win]["accountValueHistory"]
-        base = [(float(p), float(v)) for (t, p), (_, v) in zip(pnl, av) if t <= t0_ms]
-        p0, v0 = base[-1] if base else (float(pnl[0][1]), float(av[0][1]))
-        return float(pnl[-1][1]) - p0, v0
-
     try:
-        day_pnl, day_base = period_pnl(dwin, day0)
-        week_pnl, week_base = period_pnl(wwin, week0)
+        live, anchors = pnl_anchors(port, dwin, wwin, state, {"day": day0, "week": week0})
+        (day_pnl, day_base), (week_pnl, week_base) = (period_since(live, anchors[k]) for k in ("day", "week"))
     except (KeyError, IndexError) as e:
         log.error("portfolio pnl unavailable (%s); falling back to equity snapshot", e)
         if state.get("day_start_equity") is None or state.get("day_start_day") != dk:

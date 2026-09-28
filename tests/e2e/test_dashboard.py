@@ -909,3 +909,18 @@ def test_a_new_alert_buzzes_even_when_one_is_still_in_the_tray(page, base_url):
     page.goto(url(base_url, "empty"))
     sw = page.evaluate("fetch('sw.js').then(r=>r.text())")
     assert 'tag: "hlg-push"' in sw and "renotify: true" in sw
+
+
+def test_today_and_this_week_say_they_run_from_utc_midnight_and_monday(page, base_url):
+    _at(page, "2026-09-30T14:00:00+00:00")                            # a Wednesday
+    page.emulate_media(color_scheme="dark")
+    page.goto(url(base_url, "full"))
+    chips = page.locator("#hchips .chip")
+    today, week = chips.nth(0), chips.nth(1)
+    local0 = page.evaluate("new Date(Date.UTC(2026,8,30)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})")
+    expect(today).to_contain_text(f"from {local0}")
+    assert "Since 00:00 UTC" in today.get_attribute("data-tip") and "rolling 24h / 7d" in today.get_attribute("data-tip")
+    mon = page.evaluate("new Date(Date.UTC(2026,8,28)).toLocaleDateString([], {weekday:'short'})")
+    expect(week).to_contain_text(f"from {mon}")
+    expect(page.locator("#gauges")).to_contain_text("since 00:00 UTC")
+    expect(page.locator("#gauges")).to_contain_text("since Mon 00:00 UTC")

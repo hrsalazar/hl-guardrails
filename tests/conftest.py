@@ -85,33 +85,50 @@ def make_spot(usdc, **tokens):
     return {"balances": bal}
 
 
+def _period_starts(now_ms=None):
+    """00:00 UTC today and Monday 00:00 UTC, in ms -- where the monitor's Today / This week begin."""
+    import datetime as _dt
+    now = _dt.datetime.fromtimestamp((now_ms or NOW_MS) / 1000, _dt.timezone.utc)
+    d0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(d0.timestamp() * 1000), int((d0 - _dt.timedelta(days=now.weekday())).timestamp() * 1000)
+
+
+def _series(start_ms, pnl, value):
+    """A window's history as HL shapes it: P&L 0 at the window's own start (t=0 here, always
+    before any period start), a point exactly at the period start, and the live point at NOW."""
+    return {"pnlHistory": [[0, "0"], [start_ms, "0"], [NOW_MS, str(pnl)]],
+            "accountValueHistory": [[0, str(value)], [start_ms, str(value)], [NOW_MS, str(value)]]}
+
+
+def _all_time(value, day_pnl=0.0):
+    # the only series with a fixed baseline: the monitor anchors Today / This week on it, so it moves
+    # with today's P&L like the real one (5000 = whatever the account made before today)
+    return {"pnlHistory": [[0, "0"], [NOW_MS, str(5000 + day_pnl)]], "accountValueHistory": [[0, str(value)], [NOW_MS, str(value)]]}
+
+
 def make_unified_portfolio(day_pnl, week_pnl, portfolio_value):
     """Unified accounts are judged on the whole-account "day"/"week" series, not perpDay/perpWeek."""
+    d0, w0 = _period_starts()
     return [
-        ["day", {"pnlHistory": [[0, "0"], [NOW_MS, str(day_pnl)]],
-                 "accountValueHistory": [[0, str(portfolio_value)], [NOW_MS, str(portfolio_value)]]}],
-        ["week", {"pnlHistory": [[0, "0"], [NOW_MS, str(week_pnl)]],
-                  "accountValueHistory": [[0, str(portfolio_value)], [NOW_MS, str(portfolio_value)]]}],
+        ["day", _series(d0, day_pnl, portfolio_value)],
+        ["week", _series(w0, week_pnl, portfolio_value)],
+        ["allTime", _all_time(portfolio_value, day_pnl)],
         # the perp series of a unified account is tiny and must NOT drive anything
-        ["perpDay", {"pnlHistory": [[0, "0"], [NOW_MS, "-999"]], "accountValueHistory": [[0, "1000"], [NOW_MS, "1000"]]}],
-        ["perpWeek", {"pnlHistory": [[0, "0"], [NOW_MS, "-999"]], "accountValueHistory": [[0, "1000"], [NOW_MS, "1000"]]}],
+        ["perpDay", _series(d0, -999, 1000)],
+        ["perpWeek", _series(w0, -999, 1000)],
+        ["perpAllTime", _all_time(1000, -999)],
     ]
 
 
 def make_portfolio(day_pnl, week_pnl, equity):
-    """A perpDay/perpWeek history with one baseline entry far in the past (t=0, always inside
-    any real day/week window) and one entry equal to `now` -- period_pnl() diffs the series'
-    very last element against the last baseline entry at-or-before the period start, so this
-    deterministically yields (day_pnl, equity) and (week_pnl, equity) regardless of wall clock."""
+    """perpDay/perpWeek histories with a point exactly at 00:00 UTC / Monday 00:00 UTC, so the
+    monitor's anchor (hlg.guardrails.pnl_anchors, history case) yields (day_pnl, equity) and
+    (week_pnl, equity) whatever the wall clock."""
+    d0, w0 = _period_starts()
     return [
-        ["perpDay", {
-            "pnlHistory": [[0, "0"], [NOW_MS, str(day_pnl)]],
-            "accountValueHistory": [[0, str(equity)], [NOW_MS, str(equity)]],
-        }],
-        ["perpWeek", {
-            "pnlHistory": [[0, "0"], [NOW_MS, str(week_pnl)]],
-            "accountValueHistory": [[0, str(equity)], [NOW_MS, str(equity)]],
-        }],
+        ["perpDay", _series(d0, day_pnl, equity)],
+        ["perpWeek", _series(w0, week_pnl, equity)],
+        ["perpAllTime", _all_time(equity, day_pnl)],
     ]
 
 
