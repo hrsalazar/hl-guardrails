@@ -139,3 +139,20 @@ def test_telegram_is_skipped_for_dashboard_only_alerts(monkeypatch):
     n.send("FUNDING ZEC", key="fund_ZEC_4", push=False)
     n.send("BREAKOUT LONG ENA", key="setup_ENA")
     assert len(sent) == 1
+
+
+def test_pushes_are_high_urgency_and_carry_their_send_time(monkeypatch):
+    """Without Urgency: high, Android holds a push in Doze until the phone wakes and iOS may batch it."""
+    import json
+    import sys
+    import types
+
+    calls = []
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "k")
+    monkeypatch.setenv("PUSH_SUBSCRIPTIONS", "[{\"endpoint\": \"https://push.example/x\"}]")
+    monkeypatch.setitem(sys.modules, "pywebpush", types.SimpleNamespace(
+        webpush=lambda subscription_info, data, **kw: calls.append((json.loads(data), kw)), WebPushException=Exception))
+    report.web_push([{"key": "a", "text": "NO STOP on ETH"}], {})
+    data, kw = calls[0]
+    assert kw["headers"] == {"Urgency": "high"}
+    assert isinstance(data["sent"], int) and data["sent"] > 1_700_000_000_000

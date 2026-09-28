@@ -924,3 +924,66 @@ def test_today_and_this_week_say_they_run_from_utc_midnight_and_monday(page, bas
     expect(week).to_contain_text(f"from {mon}")
     expect(page.locator("#gauges")).to_contain_text("since 00:00 UTC")
     expect(page.locator("#gauges")).to_contain_text("since Mon 00:00 UTC")
+
+
+NOTE_SPY = """
+window.__notes=[];
+window.Notification=class{constructor(t){window.__notes.push(t)} static get permission(){return 'granted'}
+  static requestPermission(){return Promise.resolve('granted')}};
+ServiceWorkerRegistration.prototype.showNotification=function(t){window.__notes.push(t);return Promise.resolve()};
+"""
+
+
+def test_opening_the_app_does_not_replay_alerts_that_were_already_pushed(page, base_url):
+    page.add_init_script(NOTE_SPY)                                     # permission granted, nothing seen yet
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#hval")).to_have_text("$12,133")
+    page.wait_for_timeout(500)
+    assert page.evaluate("window.__notes") == []                       # old alerts: on the page, not a notification
+
+
+def _serve_with_a_new_alert(page):
+    import json as _json
+
+    def handle(route):
+        body = _json.loads(route.fetch().text())
+        body["alerts"].append({"kind": "guardrail", "cat": "position", "key": "nostop_SOL", "push": True, "new": True,
+                               "first_seen": int(__import__("time").time() * 1000) + 5_000, "status": "live",
+                               "text": "SOL LONG has NO STOP", "summary": "SOL LONG has NO STOP"})
+        route.fulfill(status=200, content_type="application/json", body=_json.dumps(body))
+    page.route("**/alerts.json*", handle)
+
+
+def test_an_alert_that_appears_while_open_notifies_only_without_push(page, base_url):
+    page.add_init_script(NOTE_SPY)
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#hval")).to_have_text("$12,133")
+    _serve_with_a_new_alert(page)
+    page.evaluate("load()")
+    page.wait_for_function("window.__notes.length===1")
+    # a device with a push subscription already got it by push: no second notification
+    page.evaluate("window.__notes=[];PushManager.prototype.getSubscription=()=>Promise.resolve({endpoint:'x'})")
+    page.unroute("**/alerts.json*")
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#hval")).to_have_text("$12,133")
+    page.evaluate("PushManager.prototype.getSubscription=()=>Promise.resolve({endpoint:'x'})")
+    _serve_with_a_new_alert(page)
+    page.evaluate("load()")
+    page.wait_for_timeout(800)
+    assert page.evaluate("window.__notes") == []
+
+
+def test_the_alerts_card_shows_how_fast_pushes_arrive(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#pushlog")).to_be_hidden()                     # nothing received yet
+    page.evaluate("""(async()=>{const c=await caches.open('hlg-meta');const t=Date.now();
+      await c.put('push-log',new Response(JSON.stringify([{sent:t-600e3,got:t-596e3},{sent:t-300e3,got:t-297e3},{sent:t-60e3,got:t-55e3}])));
+      await renderPushLog()})()""")
+    el = page.locator("#alerts").locator("xpath=..").locator("#pushlog")
+    expect(el).to_have_text("push 5 s")                                 # one small badge in the Alerts title
+    assert "Median delay of the last 3: 4 s" in el.get_attribute("data-tip")
+    expect(el).not_to_have_class("slow")
+    page.evaluate("""(async()=>{const c=await caches.open('hlg-meta');const t=Date.now();
+      await c.put('push-log',new Response(JSON.stringify([{sent:t-900e3,got:t-180e3}])));await renderPushLog()})()""")
+    expect(el).to_have_text("push 12 min")
+    expect(el).to_have_class(re.compile(r"slow"))

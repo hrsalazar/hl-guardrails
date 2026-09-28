@@ -2,6 +2,13 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-09-29
+
+- **Notifications: prompt, and no replays when the app opens.**
+  - **Replays on open:** opening the app replayed alerts as notifications. It notified for every alert the device hadn't displayed yet, including ones pushed hours before, so notifications seemed to come only when the app was opened. Local notifications are now only a fallback for a device *without* Web Push, and only for alerts that appear while the app is open.
+  - **Delivery delay:** pushes carried no urgency, so Android (Doze) and iOS could hold them until the phone woke. They now go out as `Urgency: high`.
+  - **Measured on the phone:** each push carries its send time, and the service worker records when it arrived. A small badge in the Alerts title shows it (`push 4 s`), in red when a push took over 5 minutes. The send and arrival times and the median are in its tooltip.
+
 ## 2026-09-28
 
 - **Fix: Today / This week started up to ~2h20m early.**

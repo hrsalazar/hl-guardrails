@@ -281,6 +281,7 @@ dialog#urge::backdrop{background:rgba(5,7,12,.55);backdrop-filter:blur(3px)}
 dialog#urge{max-height:88vh;overflow:auto}
 .lesson p{font-size:14px;line-height:1.55;margin:10px 0;color:var(--text-2)}
 .lsec{margin:10px 0;font-size:13.5px;line-height:1.5}
+#pushlog{font-weight:500;color:var(--muted)}#pushlog[hidden]{display:none}#pushlog.slow{color:var(--neg);box-shadow:0 0 0 1px var(--neg) inset}
 .mkchip{display:inline-block;font-size:11.5px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px;
   background:var(--surface-2);border:1px solid var(--line-2);color:var(--text-2);margin-right:4px}
 .mkchip::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--axis)}
@@ -445,7 +446,7 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
     <div class="chart" id="eqchart"></div>
   </section>
   <section class="gauges" id="gauges"></section>
-  <section class="card alerts"><h3 data-ic="bell">Alerts <span class="badge" id="ncount"></span></h3><div id="alerts"></div></section>
+  <section class="card alerts"><h3 data-ic="bell">Alerts <span class="badge" id="ncount"></span><span class="badge" id="pushlog" hidden></span></h3><div id="alerts"></div></section>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="tech" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16M6 15l4-5 3 3 5-7"/></svg>Technical</button>
@@ -597,14 +598,19 @@ async function render(){
   renderNow(d);renderHero(d);renderGauges(d);renderAlerts(d);
   renderPositions(d);renderScan(d);renderJournal(d.journal);
   renderMacro(d);renderFlow(d);
-  // local notifications for keys not seen on this device -- same rule as Web Push: dashboard-only
-  // alerts (funding carry, breakouts on coins already held) never notify
-  const fresh=d.alerts.filter(a=>!lastKeys.has(a.key)&&a.push!==false);
+  // Local notifications are only a fallback for a device WITHOUT Web Push (a desktop tab left open).
+  // They used to fire for every alert this device hadn't displayed yet -- so opening the app replayed
+  // alerts pushed hours ago, and it looked as if notifications only came when the app was opened.
+  // Now: never on a device that has a push subscription, and only for alerts that first appeared
+  // after this page was opened. Same rule as Web Push: dashboard-only alerts never notify.
+  const fresh=d.alerts.filter(a=>!lastKeys.has(a.key)&&a.push!==false&&(a.first_seen||0)>SESSION_T0);
   if(fresh.length&&hasNotif&&Notification.permission==='granted'){
     const reg=await navigator.serviceWorker?.getRegistration();
+    const sub=await reg?.pushManager?.getSubscription().catch(()=>null);
     const opts={body:fresh.map(a=>a.text.split('\n')[0]).join('\n').slice(0,300),icon:'icon-192.png',tag:'hlg'};
-    reg?reg.showNotification(`HL guardrails: ${fresh.length} alert(s)`,opts):new Notification('HL guardrails',opts);
+    if(!sub)reg?reg.showNotification(`HL guardrails: ${fresh.length} alert(s)`,opts):new Notification('HL guardrails',opts);
   }
+  renderPushLog();
   d.alerts.forEach(a=>lastKeys.add(a.key));
   try{localStorage.setItem('seenKeys',JSON.stringify([...lastKeys].slice(-500)))}catch(e){}
 }
@@ -1097,6 +1103,25 @@ const IC={
 const icon=k=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[k]}"/></svg>`;
 for(const h of document.querySelectorAll('h3[data-ic]'))h.insertAdjacentHTML('afterbegin',`<span class="hic" aria-hidden="true">${icon(h.dataset.ic)}</span>`);
 const GROUP_IC={position:'guard',entry:'up',heads_up:'zap',info:'info',ended:'clock'};
+// When did the last pushes reach this phone? The service worker logs sent (by the monitor) vs arrived
+// (on this device), so "are notifications prompt?" is measured, not guessed.
+const SESSION_T0=Date.now();
+async function renderPushLog(){
+  const el=$('#pushlog');if(!el)return;
+  let log=[];
+  try{const r=await (await caches.open('hlg-meta')).match('push-log');if(r)log=await r.json()}catch(e){}
+  if(!log.length){el.hidden=true;return}
+  const hms=t=>new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const dur=s=>s<90?`${Math.round(s)} s`:s<5400?`${Math.round(s/60)} min`:`${fmt(s/3600,1)} h`;
+  const last=log[log.length-1],lag=Math.max(0,(last.got-last.sent)/1000);
+  const lags=log.map(x=>Math.max(0,(x.got-x.sent)/1000)).sort((a,b)=>a-b),med=lags[lags.length>>1];
+  // one small badge: muted when pushes arrive promptly, red when the last one took over 5 minutes;
+  // the times are in the tooltip, not on screen -- it's a health check, not something to act on
+  el.hidden=false;el.textContent=`push ${dur(lag)}`;el.classList.toggle('slow',lag>300);
+  el.dataset.tip=`Last push: sent ${hms(last.sent)}, arrived ${hms(last.got)} on this device.`
+    +(log.length>2?` Median delay of the last ${log.length}: ${dur(med)}.`:'')
+    +(lag>300?' Slow: check battery saver / Focus / notification summary for this app.':'');
+}
 function renderAlerts(d){
   lastAlerts=d;
   const all=[...(d.alerts||[]),...(d.ended||[])];

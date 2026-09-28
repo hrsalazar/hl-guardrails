@@ -163,10 +163,16 @@ def web_push(new_alerts, cfg):
         try:
             webpush(
                 subscription_info=s,
-                data=json.dumps({"title": title, "body": body, "url": os.environ.get("SITE_URL", "")}),
+                # `sent` lets the phone measure delivery delay (the Alerts card shows it)
+                data=json.dumps({"title": title, "body": body, "url": os.environ.get("SITE_URL", ""),
+                                 "sent": int(time.time() * 1000)}),
                 vapid_private_key=key,
                 vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "mailto:alerts@example.com")},
                 ttl=3600,
+                # Without it the push services default to "normal": Android (FCM) then holds the message
+                # in Doze until the phone wakes, and iOS may batch it -- a breakout or a missing stop
+                # that arrives when you next pick up the phone. Every alert pushed here is time-bound.
+                headers={"Urgency": "high"},
             )
             sent += 1
         except WebPushException as e:

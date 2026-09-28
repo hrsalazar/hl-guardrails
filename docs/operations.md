@@ -118,6 +118,7 @@ For each phone or computer:
 | Local run can't read `config.local.yaml` | file saved as UTF-16 or with a BOM (PowerShell `>`, Notepad) | handled since the encoding fix; otherwise re-save as UTF-8 |
 | No notifications at all | `PUSH_SUBSCRIPTIONS` not set, or the iOS app isn't installed to the Home Screen | complete *Devices*; run the test push |
 | Log shows `webpush failed: HTTP 410` or `404` | the device's subscription expired, or site data was cleared | *Push* on that device again and update the secret |
+| Notifications arrive late | the phone held them (battery saver, Focus, iOS Scheduled Summary); pushes are sent `Urgency: high` | the *push N s* badge in the Alerts title shows the real delay (red over 5 min; times in its tooltip); allow the app to run in the background / exclude it from the summary |
 | Log shows `push: 1/1 device(s)` but nothing arrives | the home-screen app was removed and added again (a new subscription; the saved one is stale, and some push services keep accepting it), or a Focus / battery-saver mode | *Push* on that device, replace the secret, run the test push |
 | Updates only every few hours | the external scheduler stopped or its token expired | check the scheduler's history; renew the token |
 | Day/week PnL restarted | the passphrase changed, so previous state was unreadable | expected once; it recovers the next day or week |
@@ -135,7 +136,7 @@ For each phone or computer:
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 echo "account: '0x…'" > config.local.yaml
-pytest -q                          # 277 tests, no network
+pytest -q                          # 278 tests, no network
 python -m hlg.guardrails           # continuous, console / Telegram
 python -m hlg.scanner
 python -m hlg.report               # one CI-style run; writes plaintext site/*.json (gitignored)
