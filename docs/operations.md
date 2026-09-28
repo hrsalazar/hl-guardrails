@@ -67,7 +67,9 @@ For each phone or computer:
    Screen*, then open it **from the icon**. iOS only allows notifications for installed web apps.
    Android and desktop work in the browser.
 2. Enter the passphrase. The device stays unlocked until you press *Lock*.
-3. *Enable notifications* → allow, then *Enable push* → *Copy*.
+3. Tap **Push** in the header (the radio-waves icon) → allow notifications → the *Push subscription*
+   box opens at the top of the page → *Copy*. If something stops it (notifications blocked, the app
+   not installed on iPhone), the box says what, instead of the code.
 4. Save the copied text as the `PUSH_SUBSCRIPTIONS` secret. For several devices, merge them into
    one list: `[{…phone…},{…laptop…}]`.
 5. Check it: *Actions → monitor → Run workflow*, tick **"Also send a test notification"**, then
@@ -115,7 +117,8 @@ For each phone or computer:
 | Run fails with "no account configured" | `HLG_ACCOUNT` missing, or it carried whitespace before the fix | re-set it with `gh secret set … --body 0x…` or the web form |
 | Local run can't read `config.local.yaml` | file saved as UTF-16 or with a BOM (PowerShell `>`, Notepad) | handled since the encoding fix; otherwise re-save as UTF-8 |
 | No notifications at all | `PUSH_SUBSCRIPTIONS` not set, or the iOS app isn't installed to the Home Screen | complete *Devices*; run the test push |
-| Log shows `webpush failed: HTTP 410` or `404` | the device's subscription expired, or site data was cleared | *Enable push* on that device again and update the secret |
+| Log shows `webpush failed: HTTP 410` or `404` | the device's subscription expired, or site data was cleared | *Push* on that device again and update the secret |
+| Log shows `push: 1/1 device(s)` but nothing arrives | the home-screen app was removed and added again (a new subscription; the saved one is stale, and some push services keep accepting it), or a Focus / battery-saver mode | *Push* on that device, replace the secret, run the test push |
 | Updates only every few hours | the external scheduler stopped or its token expired | check the scheduler's history; renew the token |
 | Day/week PnL restarted | the passphrase changed, so previous state was unreadable | expected once; it recovers the next day or week |
 | `gh` "not recognised as a cmdlet" | PATH not refreshed in that terminal | open a new terminal, or use the full path |

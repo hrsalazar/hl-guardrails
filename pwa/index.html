@@ -421,6 +421,13 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
   <div id="skel" aria-hidden="true"><div class="skel" style="height:250px"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="skel" style="height:96px;margin:0"></div><div class="skel" style="height:96px;margin:0"></div></div>
     <div class="skel" style="height:180px"></div></div>
+  <section class="card" id="pushbox" hidden><h3 data-ic="radio">Push subscription</h3>
+    <p class="desc" id="pushdesc">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
+      <a id="secretslink" href="#" target="_blank" rel="noopener">the repo's Actions secrets</a>,
+      and save it as <code>PUSH_SUBSCRIPTIONS</code> (replacing the old value if this device was subscribed before).
+      For several devices, put their entries in one list: <code>[{...},{...}]</code>.</p>
+    <p id="pushmsg" class="neg" hidden style="font-size:13.5px;margin:8px 0"></p>
+    <pre id="sub"></pre><div class="actions" style="display:flex;gap:8px"><button id="copy">Copy</button><button id="pushclose">Close</button></div></section>
   <div id="app" hidden>
   <!-- Hero, gauges and alerts live outside the tabs on purpose: they are the act-now layer and must
        never be one tap away behind a tab you happen not to be on. -->
@@ -470,11 +477,6 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
     <section class="card"><h3 data-ic="zap">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></section>
   </div>
   </div>
-  <section class="card" id="pushbox" hidden><h3 data-ic="radio">Push subscription</h3>
-    <p class="desc">One-time step so this device gets alerts with the app closed: press <b>Copy</b>, open
-      <a id="secretslink" href="#" target="_blank" rel="noopener">the repo's Actions secrets</a>,
-      and save it as <code>PUSH_SUBSCRIPTIONS</code>. For several devices, put their entries in one list: <code>[{...},{...}]</code>.</p>
-    <pre id="sub"></pre><button id="copy">Copy</button></section>
   <p class="foot">Refreshed whenever the monitor runs — the dot in the header turns amber, then red, as data ages. Advisory only — nothing here places orders.</p>
 </main>
 <dialog id="urge" aria-labelledby="urgetitle"><div class="body" id="urgebody"></div></dialog>
@@ -1574,19 +1576,39 @@ showTab((()=>{try{return localStorage.getItem('hlgTab')||'tech'}catch(e){return 
 let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(!D)return;renderEquity();renderPositions(D);renderJournal(D.journal);renderLiqMap(D.liqmap);renderFng(D.fng);renderAlerts(D)},150)});
 $('#notif').onclick=async()=>{if(!hasNotif){alert('Notifications are not available in this browser. On iPhone: open in Safari, Share -> Add to Home Screen, then launch from the icon.');return}
   const p=await Notification.requestPermission();$('#notif .bl').textContent=p==='granted'?'Alerts on':'Blocked';
-  if(p==='granted'&&window.VAPID_PUBLIC_KEY)$('#push').disabled=false};
+  };
 function b64ToU8(b){const p='='.repeat((4-b.length%4)%4);const s=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(s,c=>c.charCodeAt(0))}
+// Push: one tap does the whole thing -- asks for permission if needed, subscribes, and puts the code
+// on screen. Every way it can fail says so in the box, instead of the button silently doing nothing.
+function showPush(code,err){
+  $('#pushbox').hidden=false;$('#sub').hidden=!code;$('#copy').hidden=!code;$('#pushdesc').hidden=!code;
+  $('#sub').textContent=code||'';$('#pushmsg').hidden=!err;$('#pushmsg').textContent=err||'';$('#copy').textContent='Copy';
+  $('#pushbox').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+}
 $('#push').onclick=async()=>{
-  const reg=await navigator.serviceWorker.ready;
-  // reuse an existing subscription: subscribing again can rotate the endpoint and orphan the saved secret
-  const sub=await reg.pushManager.getSubscription()||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
-  $('#sub').textContent=JSON.stringify([sub.toJSON()]);$('#pushbox').hidden=false;$('#push .bl').textContent='Push on';
+  try{
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)||!hasNotif)
+      throw new Error('Push is not available in this browser. On iPhone: open the site in Safari, Share → Add to Home Screen, then open it from the icon and tap Push there.');
+    if(Notification.permission!=='granted'){
+      const p=await Notification.requestPermission();
+      $('#notif .bl').textContent=p==='granted'?'Alerts on':'Blocked';
+      if(p!=='granted')throw new Error('Notifications are blocked for this app. Allow them in the phone\'s settings for HL Guardrails, then tap Push again.');
+    }
+    const reg=await Promise.race([navigator.serviceWorker.ready,
+      new Promise((_,no)=>setTimeout(()=>no(new Error('The app\'s background worker did not start. Reload the page and tap Push again.')),8000))]);
+    // reuse an existing subscription: subscribing again can rotate the endpoint and orphan the saved secret
+    const sub=await reg.pushManager.getSubscription()||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(window.VAPID_PUBLIC_KEY)});
+    showPush(JSON.stringify([sub.toJSON()]));$('#push .bl').textContent='Push on';
+  }catch(e){showPush(null,e.message||String(e))}
 };
+$('#pushclose').onclick=()=>{$('#pushbox').hidden=true};
 // <owner>.github.io/<repo>/ -> that repo's secrets page, so a fork links to its own settings
 (()=>{const o=location.hostname.split('.')[0],r=location.pathname.split('/')[1];$('#secretslink').href=`https://github.com/${o}/${r}/settings/secrets/actions`})();
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#sub').textContent);$('#copy').textContent='Copied'}catch(e){$('#copy').textContent='Select the text and copy it'}};
 if(!hasNotif)$('#notif .bl').textContent='Alerts n/a';
-if(hasNotif&&Notification.permission==='granted'){$('#notif .bl').textContent='Alerts on';if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false}
+if(hasNotif&&Notification.permission==='granted')$('#notif .bl').textContent='Alerts on';
+// enabled whenever push is configured: the button asks for permission itself (a reinstall resets it)
+if(window.VAPID_PUBLIC_KEY)$('#push').disabled=false;
 if(!window.VAPID_PUBLIC_KEY)$('#push').title='Set repo variable VAPID_PUBLIC_KEY to enable Web Push';
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 load();setInterval(load,5*60*1000);

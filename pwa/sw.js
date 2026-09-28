@@ -1,4 +1,4 @@
-const CACHE = "hlg-v25";
+const CACHE = "hlg-v26";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png", "config.js"];
 
 self.addEventListener("install", (e) => {
@@ -29,7 +29,11 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("push", (e) => {
   let d = { title: "HL guardrails", body: "new alert" };
   try { d = e.data.json(); } catch (_) { d.body = e.data && e.data.text(); }
-  e.waitUntil(self.registration.showNotification(d.title, { body: d.body, icon: "icon-192.png", tag: "hlg-push", data: { url: d.url } }));
+  // One slot in the tray (tag), but renotify: without it a new alert that replaces one still sitting in
+  // the tray arrives silently -- no sound, no banner -- and reads as "no notifications".
+  e.waitUntil(self.registration.showNotification(d.title, {
+    body: d.body, icon: "icon-192.png", badge: "icon-192.png", tag: "hlg-push", renotify: true, data: { url: d.url },
+  }));
 });
 
 self.addEventListener("notificationclick", (e) => {

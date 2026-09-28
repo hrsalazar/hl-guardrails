@@ -4,6 +4,11 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-09-28
 
+- **Push notifications, easier to set up and harder to miss.**
+  - Every alert now buzzes (`renotify`). Before, a new alert that replaced one still sitting in the tray arrived silently.
+  - The *Push* button no longer waits for the bell button: it asks for permission itself, which matters after a reinstall resets it.
+  - The subscription code opens at the top of the page. It used to appear below the footer, off-screen on a phone.
+  - Any failure is explained in the box: blocked permission, not installed on iPhone, or the background worker not starting.
 - **Wallet behavior study** (`scripts/wallet_behavior_study.py`, docs/research/wallet-behavior-study.md; exploratory, not pre-registered): 200 random Hyperliquid wallets, 20,138 closed positions over 90 days.
   - Losses concentrate in a few positions (worst 5% = half of a wallet's losses), and 83% of the worst 1% broke a guardrail rule (averaged down, liquidated, or no stop).
   - 48% of wallets were liquidated at least once, and 96% of those liquidations had no stop.

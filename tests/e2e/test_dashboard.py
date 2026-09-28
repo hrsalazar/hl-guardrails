@@ -887,3 +887,25 @@ def test_icons_are_decorative_and_the_app_icon_is_complete(page, base_url):
     assert any(i.get("purpose") == "maskable" for i in m["icons"])
     for i in m["icons"]:                                                                  # every listed file is served
         assert page.evaluate(f"fetch('{i['src']}').then(r=>r.ok)"), i["src"]
+
+
+# ---------------------------------------------------------------------- push
+def test_push_button_explains_a_blocked_permission_instead_of_doing_nothing(page, base_url):
+    page.add_init_script("window.VAPID_PUBLIC_KEY='BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U'")
+    page.add_init_script("Notification.requestPermission=async()=>'denied'")
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#push")).to_be_enabled()                      # no longer waits on the bell button
+    page.locator("#push").click()
+    box = page.locator("#pushbox")
+    expect(box).to_be_visible()
+    expect(page.locator("#pushmsg")).to_contain_text("Notifications are blocked for this app")
+    expect(page.locator("#sub")).to_be_hidden()
+    assert box.bounding_box()["y"] < page.viewport_size["height"]      # on screen, not below the footer
+    page.locator("#pushclose").click()
+    expect(box).to_be_hidden()
+
+
+def test_a_new_alert_buzzes_even_when_one_is_still_in_the_tray(page, base_url):
+    page.goto(url(base_url, "empty"))
+    sw = page.evaluate("fetch('sw.js').then(r=>r.text())")
+    assert 'tag: "hlg-push"' in sw and "renotify: true" in sw
