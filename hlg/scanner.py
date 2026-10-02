@@ -75,6 +75,21 @@ def signal_lines(inf, r):
         return None
 
 
+# docs/research/signal-grade-study.md (2026-10-02): no grade separated good entries from bad ones out
+# of sample, so every breakout alert carries the honest base rates of the rule instead
+BASE_RATES = {"1d": {"n": 246, "win": 38, "hit1": 56, "avg_r": 0.35},
+              "4h": {"n": 906, "win": 35, "hit1": 50, "avg_r": 0.18}}
+
+
+def base_rate_note(tf):
+    b = BASE_RATES.get(tf)
+    if not b:
+        return ""
+    return (f"\n  odds: of {b['n']} past {tf} breakouts {b['win']}% won and {100 - b['hit1']}% never reached +1R before "
+            f"the stop; avg {b['avg_r']:+.2f}R a trade, all of it (and more) from the top 20% that ran. No setup feature "
+            f"predicted which one this is (signal-grade study): take it as planned; the stop is the cost of the winners")
+
+
 def ema(s, n):
     return s.ewm(span=n, adjust=False).mean()
 
@@ -402,6 +417,7 @@ def run_once(cfg, inf, notif, state):
                     f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = {R['risk_per_trade_pct']}% of {equity:,.0f} {model['base_label']}\n"
                     f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
                 )
+                msg += base_rate_note(a["tf"])
                 if mac:
                     msg += f"\n  macro: {mac['label']} (HY {mac['hy']:.2f}, VIX {mac['vix']:.1f}) - context only, not part of the rule"
                 if a.get("liq"):

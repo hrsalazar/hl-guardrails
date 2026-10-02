@@ -4,6 +4,9 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-02
 
+- **Signal grade study** (`hlg/signal_grade.py`, pre-registered in docs/research/signal-grade-study.md). Can a breakout be graded Low / Neutral / High before entry? Eleven setup features fed a walk-forward logistic regression for "reaches +1R before the stop" across 246 (1d) and 906 (4h) signals.
+  - **Not adopted on either timeframe:** on 4h every grade averaged ~+0.15R; on 1d the gap's CI crossed zero and the order was backwards; the model was overconfident (promised 64–69%, got 47–58%).
+  - **Breakout alerts now carry the honest base rates instead:** 35–38% win, and about half never reach +1R before the stop. The top 20% of trades make more than all the profit.
 - **Loss limits: measured on the money actually in the account, with a realised / open split.**
   - **Percent base:** the limits' % now divides by the period's starting value plus net deposits and withdrawals, i.e. the value now minus the P&L. The old base, the starting value alone, stayed sized to withdrawn money: after a 60% mid-week withdrawal, the week read −7.8% instead of −13.7%.
   - **Total kept:** the limits still use the total P&L, open positions included. A limit on realised losses alone rewards holding losers.

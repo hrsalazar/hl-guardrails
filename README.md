@@ -983,6 +983,30 @@ Neither `btc_above_bmsb` nor `coin_above_bmsb` passed on either timeframe.
   version held up, and only just.
 - **So neither is clearly more relevant.** The coin's 50-week SMA stays the one line tracked live.
 
+### Signal grade: can a breakout be rated Low / Neutral / High? — tested, no
+
+`python -m hlg.signal_grade`, pre-registered in [docs/research/signal-grade-study.md](docs/research/signal-grade-study.md).
+
+**The test.** Eleven features known at the signal fed a logistic regression for "reaches +1R before
+the stop", graded in thirds and tested walk-forward by quarter. The features were:
+- the breakout bar's close location, size past the level and volume;
+- the squeeze and the extension above EMA20;
+- RSI and funding;
+- relative strength and whether the coin is above its 50-week line;
+- the market state;
+- recent failed breakouts on the same coin.
+
+**The result: no grade separates entries out of sample.**
+- **4h, 795 signals:** every grade averages ~+0.15R. The "High" grade reached +1R first 47% of the
+  time against a predicted 64%.
+- **1d, 149 signals:** High's higher average R has a confidence interval of −0.60 to +1.49R, flips
+  between halves, and High reached +1R *less* often than Low.
+
+**What is solid is the base rate.** About half of all breakouts never reach +1R before the stop
+(56% do on 1d, 50% on 4h). The top 20% of trades make more than all the profit. Every breakout alert
+now says so, with the numbers. The alternative, implying a confidence nothing in the data supports,
+would make the stop feel like a mistake rather than the planned cost of catching the runners.
+
 ### Stablecoins: does supply growth predict returns? — tested, and the opposite of the claim
 
 The common trading claim is that stablecoin dominance and crypto prices move inversely: money
