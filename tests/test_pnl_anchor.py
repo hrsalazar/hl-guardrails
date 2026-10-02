@@ -28,7 +28,8 @@ def test_first_run_after_midnight_interpolates_between_the_two_runs_around_it(tm
     live, a = g.pnl_anchors(port(now, 130.0, [(T0 - 140 * M, 0), (now, 50)]), "day", "week", st, STARTS)
     assert a["day"]["how"] == "runs" and abs(a["day"]["pnl"] - 120.0) < 1e-9         # 10 of 15 minutes
     pnl, base = g.period_since(live, a["day"])
-    assert abs(pnl - 10.0) < 1e-9 and base == 1000.0
+    assert abs(pnl - 10.0) < 1e-9
+    assert base == 1000.0 - 10.0          # value flat while P&L rose 10: 10 must have left the account
     assert st.get("pnl_live")["t"] == now
 
 
@@ -62,3 +63,22 @@ def test_the_anchor_is_kept_for_the_period_and_moves_on_at_the_next(tmp_path):
     _, a3 = g.pnl_anchors(port(T0 + 1440 * M + 5 * M, 170.0, [(T0 + 1440 * M - 30 * M, 0), (T0 + 1440 * M + 5 * M, 1)]),
                           "day", "week", st, tue)
     assert a3["day"]["t0"] == T0 + 1440 * M and a3["week"] == a1["week"]               # new day, same week
+
+
+def test_the_base_follows_money_moved_in_or_out():
+    """A week that starts at 29,000, loses 2,000 and has 13,000 withdrawn: the limit is measured on
+    the 16,000 actually at risk, not the 29,000 the week started with."""
+    live = (T0 + 3 * 864e5, 7000.0, 14_000.0)                          # all-time P&L 7000, value 14,000
+    anchor = {"t0": T0, "pnl": 9000.0, "av": 29_000.0}
+    pnl, base = g.period_since(live, anchor)
+    assert pnl == -2000.0 and base == 16_000.0                          # 29,000 - 13,000 withdrawn
+    assert round(pnl / base * 100, 1) == -12.5                          # not -6.9% of 29,000
+
+
+def test_realised_is_closes_less_fees_plus_funding_since_the_start():
+    fills = [{"time": T0 - 1, "coin": "ETH", "closedPnl": "500", "fee": "1"},       # before the start
+             {"time": T0 + 1, "coin": "ETH", "closedPnl": "300", "fee": "2"},
+             {"time": T0 + 2, "coin": "@107", "closedPnl": "50", "fee": "0.5"},     # spot: fee counts, P&L doesn't
+             {"time": T0 + 3, "coin": "xyz:GOLD", "closedPnl": "40", "fee": "0"}]   # other dex: not this account's perps
+    funding = [{"time": T0 + 5, "delta": {"usdc": "-7"}}, {"time": T0 - 5, "delta": {"usdc": "-100"}}]
+    assert g.realised_since(fills, funding, T0) == 300 - 2 - 0.5 - 7

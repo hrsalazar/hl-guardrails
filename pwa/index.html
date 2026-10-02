@@ -282,6 +282,7 @@ dialog#urge{max-height:88vh;overflow:auto}
 .lesson p{font-size:14px;line-height:1.55;margin:10px 0;color:var(--text-2)}
 .lsec{margin:10px 0;font-size:13.5px;line-height:1.5}
 #pushlog{font-weight:500;color:var(--muted)}#pushlog[hidden]{display:none}#pushlog.slow{color:var(--neg);box-shadow:0 0 0 1px var(--neg) inset}
+.hsplit{font-size:12px;color:var(--text-2);margin-top:6px;display:grid;gap:2px}.hsplit[hidden]{display:none}
 .mkchip{display:inline-block;font-size:11.5px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px;
   background:var(--surface-2);border:1px solid var(--line-2);color:var(--text-2);margin-right:4px}
 .mkchip::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--axis)}
@@ -438,7 +439,7 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
   <section class="card hero fade-in">
     <div class="hero-top">
       <div><div class="label" id="hlabel">Portfolio</div><div class="big num" id="hval">—</div><div class="collat" id="hcollat"></div>
-        <div class="chips" id="hchips"></div></div>
+        <div class="chips" id="hchips"></div><div id="hsplit" class="hsplit" hidden></div></div>
       <div class="state" id="hstate"></div>
     </div>
     <div class="chart-head"><div class="legend" id="eqlegend"></div>
@@ -996,7 +997,7 @@ function periodStarts(now=Date.now()){
   const dw=t=>new Date(t).toLocaleDateString([], {weekday:'short'})+' '+hm(t);
   const note=" Hyperliquid's app shows rolling 24h / 7d figures instead, so the two can differ.";
   return {dayLocal:hm(d0),weekLocal:dw(w0),
-    dayTip:`Since 00:00 UTC (${hm(d0)} your time): the daily loss limit's day. Deposits, withdrawals and transfers are netted out.`+note,
+    dayTip:`Since 00:00 UTC (${hm(d0)} your time): the daily loss limit's day. Deposits, withdrawals and transfers are not P&L; the % is of the money in the account after them.`+note,
     weekTip:`Since Monday 00:00 UTC (${dw(w0)} your time): the weekly loss limit's week.`+note}}
 function pnlOf(d){
   const day=d.day_pnl!=null?d.day_pnl:(d.day_start_equity?d.equity-d.day_start_equity:0);
@@ -1016,6 +1017,18 @@ function renderHero(d){
   $('#hchips').innerHTML=`<span class="chip" data-tip="${esc(P.dayTip)}">Today <b class="${cls(day)}">${sgn(day)}$${fmt(Math.abs(day))}</b>${pc(day,d.day_start_equity)}<span class="mut">from ${P.dayLocal}</span></span>`
     +`<span class="chip" data-tip="${esc(P.weekTip)}">This week <b class="${cls(week)}">${sgn(week)}$${fmt(Math.abs(week))}</b>${pc(week,d.week_start_equity)}<span class="mut">from ${P.weekLocal}</span></span>`
     +`<span class="chip">Positions <b>${d.positions.length}</b><span class="mut">/ ${d.rules.max_positions}</span></span>`;
+  // What the period's P&L is made of. The loss limits count all of it -- open positions included,
+  // because a limit on realised losses alone rewards holding losers -- but a week of profitable closes
+  // and falling open positions shouldn't read as a week of realised losses.
+  const SP=d.pnl_split||{};
+  const usd=v=>`<b class="${cls(v)}">${sgn(v)}$${fmt(Math.abs(v))}</b>`;
+  const split=(k,w)=>{const x=SP[k];if(!x)return '';
+    return `<div><span class="mut">${w}:</span> realised ${usd(x.realised)} · open positions ${usd(x.open)}${uni||x.spot?` · spot ${usd(x.spot)}`:''}</div>`};
+  $('#hsplit').innerHTML=split('day','Today')+split('week','This week');
+  $('#hsplit').hidden=!(SP.day||SP.week);
+  $('#hsplit').dataset.tip='Realised = closed trades less fees, plus funding. Open positions = how much their value changed in the period'
+    +' (including profit given back). Spot = tokens held, which count as collateral on a unified account.'
+    +' The loss limits use the total, measured against the money in the account after deposits and withdrawals.';
   const locked=d.locked_until&&d.locked_until>Date.now();
   $('#hstate').className='state'+(locked?' lock':'');
   $('#hstate').innerHTML=locked?`<span style="color:var(--crit)">■</span> Locked until ${new Date(d.locked_until).toUTCString().slice(5,22)} UTC`

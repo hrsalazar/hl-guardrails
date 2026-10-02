@@ -287,6 +287,8 @@ def main():
         "week_start_equity": state.get("week_start_equity"),
         "day_pnl": state.get("day_pnl"),
         "week_pnl": state.get("week_pnl"),
+        # what each period's P&L is made of: realised, change in open positions, spot (hlg.guardrails)
+        "pnl_split": state.get("pnl_split"),
         "positions": positions,
         "alerts": alerts,
         "ended": ended,  # signals that expired, ran away or failed in the last 24h (hlg.alerts)

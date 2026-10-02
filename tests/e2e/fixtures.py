@@ -207,6 +207,9 @@ def build_full(*, age_min=2, journal_closed=8):
                  "maint_margin": 1117.0, "notional": 18620.0},
         "locked_until": 0, "day_start_equity": day_start, "week_start_equity": week_start,
         "day_pnl": day_pnl, "week_pnl": week_pnl,
+        # made-up split; each sums to its total (-330 / -430)
+        "pnl_split": {"day": {"realised": 120.0, "open": -390.0, "spot": -60.0},
+                      "week": {"realised": 410.0, "open": -780.0, "spot": -60.0}},
         "positions": positions, "alerts": alerts, "ended": ended, "scan": scan,
         "macro": {"as_of": "2026-09-21", "hy": 3.21, "vix": 16.4, "hy_stress": False, "spx_bull": True, "risk_on": True},
         "market_state": {"state": "risk_on", "trend": "btc_up", "macro": "macro_on", "crowd": "greed", "fng": 71,

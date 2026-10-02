@@ -2,6 +2,17 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-02
+
+- **Loss limits: measured on the money actually in the account, with a realised / open split.**
+  - **Percent base:** the limits' % now divides by the period's starting value plus net deposits and withdrawals, i.e. the value now minus the P&L. The old base, the starting value alone, stayed sized to withdrawn money: after a 60% mid-week withdrawal, the week read −7.8% instead of −13.7%.
+  - **Total kept:** the limits still use the total P&L, open positions included. A limit on realised losses alone rewards holding losers.
+  - **The split:** the hero card and the limit alert's second line now show what the total is made of:
+    - realised: closes less fees, plus funding;
+    - the change in open positions;
+    - spot tokens.
+  - **Precision:** the perps-only part is anchored like the total, so the split is exact. Spot is the total minus perps.
+
 ## 2026-09-29
 
 - **Notifications: prompt, and no replays when the app opens.**

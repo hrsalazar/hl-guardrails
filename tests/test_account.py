@@ -183,3 +183,19 @@ def test_coin_exposure_rule_is_off_when_not_configured(tmp_path):
     stop = make_stop_order("HYPE", "A", 80, trigger_px=85)
     problems, _ = run(unified_info([pos], orders=[stop], mids={"HYPE": "87"}), tmp_path, allowed_coins=["HYPE"])
     assert not any("concentrated bet" in p for p in problems)
+
+
+def test_unified_split_and_the_limit_alert_say_what_the_loss_is_made_of(tmp_path):
+    """The loss stays on the total (open positions included); the split says how much was realised."""
+    st = State(tmp_path / "s.json")
+    cfg = base_cfg()
+    notif = Notifier(cfg)
+    guardrails.run_once(cfg, unified_info([], day_pnl=-900, week_pnl=-900), notif, st)
+    sp = st.get("pnl_split")
+    for k in ("day", "week"):
+        assert set(sp[k]) == {"realised", "open", "spot"}
+    # whole -900, perps -999 (fixture): spot +99; no fills or funding -> realised 0, open = perps
+    assert sp["day"] == {"realised": 0.0, "open": -999.0, "spot": 99.0}
+    msg = next(t for t in notif.collected.values() if "DAILY LOSS LIMIT" in str(t))
+    first, second = str(msg).split(chr(10), 1)
+    assert "USD" in first and "incl. open positions" in second and "spot +99" in second

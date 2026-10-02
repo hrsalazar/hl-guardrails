@@ -274,6 +274,15 @@ What else changes on a unified account:
   This fixed a real error, found by checking against live data. The old start was "the last history
   point before midnight", up to ~2h20m early. One Monday it counted −$162 of Sunday evening in Today,
   and the loss limits are measured from that same start.
+- **What the % is of.** The loss limits divide the period's P&L by the money actually in the
+  account: the starting value plus net deposits and withdrawals since. That is simply the value
+  now minus the P&L, exact from HL's own numbers. The old base, the starting value alone, stayed
+  sized to money that had been withdrawn: one week with a 60% withdrawal mid-week read −7.8%
+  instead of −13.7%.
+- **Open positions count.** The limits use the total P&L, realised or not, because a limit on
+  realised losses alone rewards holding losers. The dashboard and the limit alert show the split:
+  realised (closes less fees, plus funding), the change in open positions (profit given back
+  included), and spot tokens on a unified account.
 - **Spot tokens are exposure, not capacity.** They never raise the sizing base — counting a HYPE bag
   as room for more HYPE risk would double-count it. `max_coin_exposure_x` instead nets spot into
   the same coin's perp position, so a perp long stacked on a spot bag is flagged as the one bet it
@@ -1175,7 +1184,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-85 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+86 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

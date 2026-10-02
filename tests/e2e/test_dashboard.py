@@ -987,3 +987,14 @@ def test_the_alerts_card_shows_how_fast_pushes_arrive(page, base_url):
       await c.put('push-log',new Response(JSON.stringify([{sent:t-900e3,got:t-180e3}])));await renderPushLog()})()""")
     expect(el).to_have_text("push 12 min")
     expect(el).to_have_class(re.compile(r"slow"))
+
+
+def test_the_pnl_chips_say_how_much_was_realised_and_how_much_is_open(page, base_url):
+    page.goto(url(base_url, "full"))
+    sp = page.locator("#hsplit")
+    expect(sp).to_be_visible()
+    expect(sp).to_contain_text("Today: realised +$120 · open positions −$390 · spot −$60")
+    expect(sp).to_contain_text("This week: realised +$410 · open positions −$780 · spot −$60")
+    assert "loss limits use the total" in sp.get_attribute("data-tip")
+    page.goto(url(base_url, "empty"))                                   # no split published: no line
+    expect(page.locator("#hsplit")).to_be_hidden()

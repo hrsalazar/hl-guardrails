@@ -54,6 +54,12 @@ def _interp(a, b, t):
 
 
 def pnl_anchors(port, dwin, wwin, state, starts):
+    """The account's total P&L series: all-time on a unified account, perp all-time on a classic one."""
+    awin = "allTime" if dwin == "day" else "perpAllTime"
+    return _anchors(port, awin, {"day": dwin, "week": wwin}, state, starts, "")
+
+
+def _anchors(port, awin, wins, state, starts, sfx):
     """Where Today and This week start, on HL's own flow-adjusted P&L (deposits, withdrawals and
     transfers already netted out).
 
@@ -68,15 +74,15 @@ def pnl_anchors(port, dwin, wwin, state, starts):
     The old anchor, "the last history point at or before the start", sat up to ~2h20m early and so
     counted the previous evening's P&L in Today.
 
+    `sfx` keeps a second series' anchors apart in the state (the perps-only one, for the split).
     Returns (live, {period: anchor}) where live and anchors are (t, all_time_pnl, account_value)."""
-    awin = "allTime" if dwin == "day" else "perpAllTime"
     t_now, p_now = port[awin]["pnlHistory"][-1]
     live = (int(t_now), float(p_now), float(port[awin]["accountValueHistory"][-1][1]))
-    prev = state.get("pnl_live")
+    prev = state.get(f"pnl_live{sfx}")
     anchors = {}
-    for period, win in (("day", dwin), ("week", wwin)):
+    for period, win in wins.items():
         t0 = int(starts[period].timestamp() * 1000)
-        a = state.get(f"pnl_anchor_{period}")
+        a = state.get(f"pnl_anchor_{period}{sfx}")
         if not (isinstance(a, dict) and a.get("t0") == t0):
             if isinstance(prev, dict) and prev["t"] <= t0 <= live[0] and live[0] - prev["t"] <= LIVE_GAP_MS:
                 p, v = _interp((prev["t"], prev["pnl"], prev["av"]), live, t0)
@@ -91,15 +97,37 @@ def pnl_anchors(port, dwin, wwin, state, starts):
                 p = live[1] - (rows[-1][1] - p_w)          # this window's scale -> the all-time scale
                 how = "history"
             a = {"t0": t0, "pnl": p, "av": v, "how": how}
-            state.set(f"pnl_anchor_{period}", a)
+            state.set(f"pnl_anchor_{period}{sfx}", a)
         anchors[period] = a
-    state.set("pnl_live", {"t": live[0], "pnl": live[1], "av": live[2]})
+    state.set(f"pnl_live{sfx}", {"t": live[0], "pnl": live[1], "av": live[2]})
     return live, anchors
 
 
 def period_since(live, anchor):
-    """(P&L since the anchor, the account value at it) -- the loss limits' numerator and base."""
-    return live[1] - anchor["pnl"], anchor["av"]
+    """(P&L since the anchor, the capital it was made on) -- the loss limits' numerator and base.
+
+    The base is the value at the start plus the money moved in or out since, which is simply the
+    value now minus the P&L (HL's P&L excludes flows, its account value doesn't). A start-of-period
+    value alone stays sized to money that has since been withdrawn: after a 60% withdrawal the
+    weekly limit's dollar amount was still 6% of the old balance -- too lenient by more than half."""
+    pnl = live[1] - anchor["pnl"]
+    return pnl, live[2] - pnl
+
+
+def _perp_pairs(port, state, starts):
+    """(live, anchor) for day and week on the perps-only series of a unified account."""
+    live, a = _anchors(port, "perpAllTime", {"day": "perpDay", "week": "perpWeek"}, state, starts, "_perp")
+    return (live, a["day"]), (live, a["week"])
+
+
+def realised_since(fills, funding, t0_ms):
+    """Closed P&L on perp fills, less all fees, plus funding, since t0 -- the realised part of a
+    period's P&L. The rest of the perps' P&L is the change in open positions."""
+    closed = sum(fnum(f.get("closedPnl")) for f in fills
+                 if f["time"] >= t0_ms and not f["coin"].startswith("@") and ":" not in f["coin"])
+    fees = sum(fnum(f.get("fee")) for f in fills if f["time"] >= t0_ms)
+    fund = sum(fnum(x["delta"].get("usdc")) for x in funding if x["time"] >= t0_ms)
+    return closed - fees + fund
 
 
 def episode_start(fills, coin, cur_sz):
@@ -196,23 +224,50 @@ def run_once(cfg, inf, notif, state):
     day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week0 = day0 - dt.timedelta(days=now.weekday())
 
+    split = {}
     try:
-        live, anchors = pnl_anchors(port, dwin, wwin, state, {"day": day0, "week": week0})
+        starts = {"day": day0, "week": week0}
+        live, anchors = pnl_anchors(port, dwin, wwin, state, starts)
         (day_pnl, day_base), (week_pnl, week_base) = (period_since(live, anchors[k]) for k in ("day", "week"))
+        # What the period's P&L is made of: realised (closes, fees, funding), the change in open
+        # positions, and on a unified account spot tokens (collateral there, so part of the total).
+        # The loss limits stay on the total -- a limit on realised losses alone rewards holding losers.
+        try:
+            perp = ({k: period_since(*x)[0] for k, x in zip(("day", "week"), _perp_pairs(port, state, starts))}
+                    if model["unified"] else {"day": day_pnl, "week": week_pnl})
+            funding = inf.post("/info", {"type": "userFunding", "user": acct,
+                                         "startTime": int(week0.timestamp() * 1000), "endTime": now_ms}) or []
+            for k, t0, tot in (("day", day0, day_pnl), ("week", week0, week_pnl)):
+                rl = realised_since(fills, funding, int(t0.timestamp() * 1000))
+                split[k] = {"realised": round(rl, 2), "open": round(perp[k] - rl, 2), "spot": round(tot - perp[k], 2)}
+        except Exception as e:  # noqa: BLE001 - the split is context; the limits never depend on it
+            log.error("pnl split unavailable: %s", e)
     except (KeyError, IndexError) as e:
         log.error("portfolio pnl unavailable (%s); falling back to equity snapshot", e)
-        if state.get("day_start_equity") is None or state.get("day_start_day") != dk:
-            state.set("day_start_equity", equity), state.set("day_start_ts", now_ms), state.set("day_start_day", dk)
-        if state.get("week_start_equity") is None or state.get("week_start_week") != wk:
-            state.set("week_start_equity", equity), state.set("week_start_ts", now_ms), state.set("week_start_week", wk)
-        day_pnl = equity - state.get("day_start_equity") - flows_since(state.get("day_start_ts"))
-        week_pnl = equity - state.get("week_start_equity") - flows_since(state.get("week_start_ts"))
-        day_base, week_base = state.get("day_start_equity"), state.get("week_start_equity")
+        # its own snapshot keys: day_start_equity / week_start_equity hold the published base below
+        if state.get("day_snap_equity") is None or state.get("day_start_day") != dk:
+            state.set("day_snap_equity", equity), state.set("day_start_ts", now_ms), state.set("day_start_day", dk)
+        if state.get("week_snap_equity") is None or state.get("week_start_week") != wk:
+            state.set("week_snap_equity", equity), state.set("week_start_ts", now_ms), state.set("week_start_week", wk)
+        day_flows, week_flows = flows_since(state.get("day_start_ts")), flows_since(state.get("week_start_ts"))
+        day_pnl = equity - state.get("day_snap_equity") - day_flows
+        week_pnl = equity - state.get("week_snap_equity") - week_flows
+        # same base as above: the start value plus money moved in or out since
+        day_base, week_base = state.get("day_snap_equity") + day_flows, state.get("week_snap_equity") + week_flows
     day_base, week_base = max(day_base, 1e-9), max(week_base, 1e-9)
     state.set("day_start_equity", day_base)
     state.set("week_start_equity", week_base)
     state.set("day_pnl", day_pnl)
     state.set("week_pnl", week_pnl)
+    state.set("pnl_split", split or None)
+
+    def parts(k):
+        """Second line of a loss-limit alert: the push shows only the first, the dashboard both."""
+        x = split.get(k)
+        if not x:
+            return ""
+        return (f"\n  incl. open positions: realised {x['realised']:+,.0f} · open positions {x['open']:+,.0f}"
+                + (f" · spot {x['spot']:+,.0f}" if model["unified"] else "") + " USD")
 
     positions = [p["position"] for p in st["assetPositions"]]
     problems = []
@@ -228,7 +283,7 @@ def run_once(cfg, inf, notif, state):
         state.set("lock_until", int(nxt.timestamp() * 1000))
         locked = True
         breach(
-            f"DAILY LOSS LIMIT hit: {day_pnl:+.0f} USD ({day_pnl / day_base * 100:+.1f}%). You should be flat; no trading advised until {nxt:%Y-%m-%d %H:%M} UTC.",
+            f"DAILY LOSS LIMIT hit: {day_pnl:+.0f} USD ({day_pnl / day_base * 100:+.1f}%). You should be flat; no trading advised until {nxt:%Y-%m-%d %H:%M} UTC." + parts("day"),
             "daily_limit",
         )
     if week_pnl / week_base * 100 <= -R["weekly_loss_limit_pct"]:
@@ -236,7 +291,7 @@ def run_once(cfg, inf, notif, state):
         state.set("lock_until", int(nxt.timestamp() * 1000))
         locked = True
         breach(
-            f"WEEKLY LOSS LIMIT hit: {week_pnl:+.0f} USD ({week_pnl / week_base * 100:+.1f}%). You should be flat; no trading advised until {nxt:%Y-%m-%d} UTC.",
+            f"WEEKLY LOSS LIMIT hit: {week_pnl:+.0f} USD ({week_pnl / week_base * 100:+.1f}%). You should be flat; no trading advised until {nxt:%Y-%m-%d} UTC." + parts("week"),
             "weekly_limit",
         )
     if locked and positions:

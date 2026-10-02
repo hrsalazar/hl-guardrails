@@ -168,6 +168,8 @@ class FakeInfo:
             return self._open_orders
         if t == "userFillsByTime":
             return self._fills
+        if t == "userFunding":
+            return []
         if t == "userNonFundingLedgerUpdates":
             return self._ledger
         if t == "portfolio":
