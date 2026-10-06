@@ -36,12 +36,15 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # A normal run takes under 1.5 minutes. One that hangs would hold the `monitor` concurrency slot,
+    # and every run queued behind it is cancelled when the next one arrives (only one may wait).
+    timeout-minutes: 10
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy_retry.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -77,11 +80,20 @@ jobs:
           if [ -n "${{ vars.VAPID_PUBLIC_KEY }}" ]; then
             echo "window.VAPID_PUBLIC_KEY='${{ vars.VAPID_PUBLIC_KEY }}';" > site/config.js
           fi
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         with:
           enablement: true
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+      # GitHub's OIDC token service occasionally times out ("Failed to get ID Token: Request timeout"),
+      # which failed the whole run. One retry. It matters beyond the failure email: an undeployed run
+      # means the next one reads the previous published state, and its new alerts get pushed twice.
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - if: steps.deploy.outcome == 'failure'
+        run: sleep 20
+      - id: deploy_retry
+        if: steps.deploy.outcome == 'failure'
+        uses: actions/deploy-pages@v5

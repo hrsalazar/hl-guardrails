@@ -2,6 +2,13 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-06
+
+- **Fewer failed monitor runs.** Two GitHub-side causes of the occasional failure emails:
+  - **Deploy timeouts:** Pages deploys timing out on GitHub's token service. The deploy step now retries once, which also prevents the duplicate pushes an undeployed run caused.
+  - **Runner congestion:** runs queued with no runner were cancelled when the next one arrived. That is unchanged, because the next run does the job. Runs are now capped at 10 minutes so a hung one can't hold the slot.
+- **GitHub Actions on Node 24:** checkout v7, setup-python v7, configure-pages v6, upload-pages-artifact v5 and deploy-pages v5, in every workflow. The v4/v5 releases targeted the deprecated Node 20.
+
 ## 2026-10-02
 
 - **Signal grade study** (`hlg/signal_grade.py`, pre-registered in docs/research/signal-grade-study.md). Can a breakout be graded Low / Neutral / High before entry? Eleven setup features fed a walk-forward logistic regression for "reaches +1R before the stop" across 246 (1d) and 906 (4h) signals.
