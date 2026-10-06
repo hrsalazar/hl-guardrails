@@ -29,9 +29,14 @@ permissions:
   pages: write
   id-token: write
 
+# One run at a time (two would race on the published state). A new run REPLACES the one in progress:
+# runs take under a minute and start 15 minutes apart, so this almost never cuts off a working run,
+# but it clears one GitHub has left stuck -- e.g. "waiting" on the github-pages environment with
+# nothing to approve, which once held the slot for 4.5 hours while every queued run was cancelled.
+# (timeout-minutes can't catch that: a waiting run never starts executing.)
 concurrency:
   group: monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run:

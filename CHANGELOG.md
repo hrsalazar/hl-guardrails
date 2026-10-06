@@ -2,6 +2,11 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-07
+
+- **Fix: a stuck run can no longer freeze the dashboard.** A monitor run sat "waiting" on the `github-pages` environment for 4.5 hours, with nothing to approve (a GitHub-side glitch). It held the one-at-a-time slot while every queued run was cancelled, so nothing was published. A new run now replaces the one in progress (`cancel-in-progress: true`), which clears a stuck run within 15 minutes.
+- **TradingView and OpenMarket versions of the rule:** `tradingview/hlg_breakout.pine` (Pine v6: status table, sizing, labels) and `tradingview/hlg_breakout.wrun.ts` (wrun: the simplified rule and two alerts). Both decide on closed bars only.
+
 ## 2026-10-06
 
 - **Now card, readable at a glance.** It's organised in layers:
