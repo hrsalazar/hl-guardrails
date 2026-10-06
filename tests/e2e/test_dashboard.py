@@ -464,8 +464,9 @@ def test_decision_point_counts_down_to_the_next_bar_close(page, base_url):
     _at(page, "2026-09-25T14:47:00+00:00")                          # scan has 4h and 1d rows
     page.goto(url(base_url, "full"))
     dec = page.locator("#decide")
-    expect(dec).to_contain_text("Next decision point: 4h close in 1h 13m")
-    expect(dec).to_contain_text("No entry can signal before then.")
+    expect(dec.locator(".gl")).to_have_text("Next close")              # a glance tile now
+    expect(dec).to_contain_text("4h close in 1h 13m")
+    assert "No entry can signal before then" in dec.get_attribute("data-tip")
     width = float(page.locator("#decidebar span").get_attribute("style").split("width:")[1].split("%")[0])
     assert abs(width - 69.6) < 0.5, width                              # 2h47m into a 4h bar
 
@@ -585,8 +586,8 @@ def test_now_card_names_the_market_state_as_pressure_not_a_signal_and_the_releas
     page.goto(url(base_url, "full"))                                   # fixture: risk-on, CPI in ~14h
     line = page.locator("#now .mktline")
     expect(line.locator(".mkchip")).to_have_text("Risk-on")
-    expect(line).to_contain_text("In greed the pull is to chase moves you missed")
-    expect(line).to_contain_text("CPI m/m, Core CPI m/m in 14h.")
+    expect(page.locator("#now .nowmore")).to_contain_text("In greed the pull is to chase moves you missed")  # the why, in the fold
+    expect(page.locator("#now .newsline")).to_contain_text("CPI m/m, Core CPI m/m in 14h.")
     tip = line.locator(".mkchip").get_attribute("data-tip")
     assert "BTC above its 200-day" in tip and "never a signal" in tip
     page.goto(url(base_url, "empty"))                                  # no state, no release: no line
@@ -606,7 +607,7 @@ def test_risk_off_shifts_the_pull_the_lesson_and_the_urge_check(page, base_url):
     _with_market(page, market_state={"state": "risk_off", "trend": "btc_down", "macro": "macro_off", "crowd": "fear", "fng": 18})
     page.goto(url(base_url, "full"))
     expect(page.locator("#now .mkchip")).to_have_text("Risk-off")
-    expect(page.locator("#now .mktline")).to_contain_text("the pull is to buy the dip")
+    expect(page.locator("#now .nowmore")).to_contain_text("the pull is to buy the dip")
     page.locator("#lessonbtn").click()
     expect(page.locator("#urge")).to_contain_text("Risk-off today: dips look like bargains")
     page.locator("#urge").get_by_role("button", name="Got it").click()
@@ -998,3 +999,39 @@ def test_the_pnl_chips_say_how_much_was_realised_and_how_much_is_open(page, base
     assert "loss limits use the total" in sp.get_attribute("data-tip")
     page.goto(url(base_url, "empty"))                                   # no split published: no line
     expect(page.locator("#hsplit")).to_be_hidden()
+
+
+
+# ---------------------------------------------------------------------- Now card at a glance, scanner folds
+def test_now_card_leads_with_state_three_tiles_and_actions_and_folds_the_rest(page, base_url):
+    page.goto(url(base_url, "full"))
+    now = page.locator("#now")
+    expect(now.locator(".glance .gt")).to_have_count(3)                # next close, market, last signal
+    expect(now.locator(".glance")).to_contain_text("Next close")
+    expect(now.locator(".glance")).to_contain_text("Market")
+    expect(now.locator(".glance")).to_contain_text("Last signal")
+    expect(now.locator("#urgebtn")).to_be_visible()
+    expect(now.locator("#lessonbtn")).to_be_visible()
+    more = now.locator(".nowmore")
+    expect(more).not_to_have_attribute("open", "")                      # folded by default
+    expect(now.locator(".nowmore .stats")).to_be_hidden()
+    more.locator("summary").click()
+    expect(now.locator(".nowmore .stats")).to_be_visible()
+    expect(more).to_contain_text("Clean trades 7/10")
+    page.reload()                                                        # the choice is remembered
+    expect(page.locator("#now .nowmore .stats")).to_be_visible()
+
+
+def test_scanner_groups_fold_from_their_heading_and_remember_it(page, base_url):
+    page.goto(url(base_url, "full"))
+    daily = page.locator(".tfgroup[data-k='1d']")
+    expect(daily.locator("table")).to_be_visible()
+    expect(page.locator(".tfgroup[data-k='watch'] table")).to_be_hidden()   # TradFi starts folded
+    daily.locator(".tfhead").click()
+    expect(daily.locator("table")).to_be_hidden()
+    expect(daily.locator(".tfhead")).to_contain_text("1 signal")          # counts stay in the heading
+    expect(daily.locator(".tfhead")).to_have_attribute("aria-expanded", "false")
+    page.reload()
+    expect(page.locator(".tfgroup[data-k='1d'] table")).to_be_hidden()
+    page.locator(".tfgroup[data-k='watch'] .tfhead").click()
+    expect(page.locator(".tfgroup[data-k='watch'] table")).to_be_visible()

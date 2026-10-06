@@ -4,6 +4,14 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-06
 
+- **Now card, readable at a glance.** It's organised in layers:
+  - the state and one line;
+  - three tiles: *Next close* (countdown and bar), *Market* and *Last signal*;
+  - one line for a big release within 24h;
+  - the two actions.
+
+  The record (no-adds streak, clean trades, urges), the strategy's series, the market explanation and your plan move into a fold, closed by default and remembered.
+- **Scanner groups fold** from their heading (Daily, 4-hour, TradFi), remembered on the device. A folded group keeps its signal / breaking-out / near counts in the heading. TradFi starts folded.
 - **Fewer failed monitor runs.** Two GitHub-side causes of the occasional failure emails:
   - **Deploy timeouts:** Pages deploys timing out on GitHub's token service. The deploy step now retries once, which also prevents the duplicate pushes an undeployed run caused.
   - **Runner congestion:** runs queued with no runner were cancelled when the next one arrived. That is unchanged, because the next run does the job. Runs are now capped at 10 minutes so a hung one can't hold the slot.
