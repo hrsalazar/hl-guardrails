@@ -81,6 +81,62 @@ def summarise(st, mode=None, spot=None, portfolio_value=None):
     }
 
 
+# HIP-3 builder exchanges whose positions count as yours: Hyperliquid's TradFi perps (xyz:SP500,
+# xyz:GOLD...) trade on the separate "xyz" exchange, which the default clearinghouse state leaves out
+# -- a TradFi position was invisible to every rule until this.
+EXTRA_DEXES = ("xyz",)
+
+
+def dex_states(inf, acct, dexes=EXTRA_DEXES):
+    """The account's state on each extra exchange (an empty list where a call fails: degrade, not raise)."""
+    out = []
+    for d in dexes:
+        try:
+            s = inf.post("/info", {"type": "clearinghouseState", "user": acct, "dex": d})
+            if isinstance(s, dict):
+                out.append(s)
+        except Exception as e:  # noqa: BLE001
+            log.warning("positions on dex %s unavailable (%s)", d, e)
+    return out
+
+
+def merge_dexes(st, extra):
+    """Main-exchange state + the extra exchanges' positions and notional, so every rule, the dashboard
+    and the scanner's 'already held' check see them. Margin and value stay the main account's."""
+    pos = list(st.get("assetPositions") or [])
+    ntl = 0.0
+    for s in extra:
+        pos += s.get("assetPositions") or []
+        ntl += fnum((s.get("marginSummary") or {}).get("totalNtlPos", 0))
+    if len(pos) == len(st.get("assetPositions") or []):
+        return st
+    ms = dict(st.get("marginSummary") or {})
+    if ms.get("totalNtlPos") is not None:
+        ms["totalNtlPos"] = str(fnum(ms["totalNtlPos"]) + ntl)
+    return {**st, "assetPositions": pos, "marginSummary": ms}
+
+
+def open_orders(inf, acct, dexes=EXTRA_DEXES):
+    """Open orders on the main exchange and the extra ones (a stop on xyz:SP500 lives on xyz)."""
+    oo = list(inf.post("/info", {"type": "frontendOpenOrders", "user": acct}) or [])
+    for d in dexes:
+        try:
+            oo += inf.post("/info", {"type": "frontendOpenOrders", "user": acct, "dex": d}) or []
+        except Exception as e:  # noqa: BLE001
+            log.warning("open orders on dex %s unavailable (%s)", d, e)
+    return oo
+
+
+def all_mids(inf, dexes=EXTRA_DEXES):
+    mids = dict(inf.all_mids() or {})
+    for d in dexes:
+        try:
+            mids.update(inf.post("/info", {"type": "allMids", "dex": d}) or {})
+        except Exception as e:  # noqa: BLE001
+            log.warning("mids on dex %s unavailable (%s)", d, e)
+    return mids
+
+
 def load(inf, acct, port=None):
     """Fetch and summarise. `port` is the already-fetched `portfolio` payload when the caller has
     one (guardrails does), to avoid a second request.
@@ -88,7 +144,7 @@ def load(inf, acct, port=None):
     Every extra call degrades rather than raises. If `userAbstraction` fails the account is
     treated as classic -- which on a unified account means sizing off the small perp value, i.e.
     too conservative, never too aggressive. That is the right direction to fail for a guardrail."""
-    st = inf.user_state(acct)
+    st = merge_dexes(inf.user_state(acct), dex_states(inf, acct))
     mode = spot = None
     try:
         mode = inf.post("/info", {"type": "userAbstraction", "user": acct})

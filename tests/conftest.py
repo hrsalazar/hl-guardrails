@@ -137,7 +137,7 @@ class FakeInfo:
 
     def __init__(self, *, user_state=None, open_orders=None, mids=None, fills=None,
                  ledger=None, portfolio=None, candles=None, meta_ctxs=None, meta=None,
-                 abstraction="disabled", spot=None):
+                 abstraction="disabled", spot=None, dexes=None):
         self._user_state = user_state if user_state is not None else make_user_state(10000, [])
         self._open_orders = open_orders if open_orders is not None else []
         self._mids = mids if mids is not None else {}
@@ -149,6 +149,8 @@ class FakeInfo:
         self._meta = meta
         self._abstraction = abstraction  # "disabled" = classic, the most common real value
         self._spot = spot if spot is not None else {"balances": []}
+        # HIP-3 exchanges (xyz = TradFi): {dex: {"state": clearinghouseState, "orders": [...], "mids": {...}}}
+        self._dexes = dexes or {}
 
     def user_state(self, acct):
         return self._user_state
@@ -164,6 +166,15 @@ class FakeInfo:
 
     def post(self, path, body):
         t = body.get("type")
+        dex = body.get("dex")
+        if dex is not None:
+            d = self._dexes.get(dex, {})
+            if t == "frontendOpenOrders":
+                return d.get("orders", [])
+            if t == "clearinghouseState":
+                return d.get("state", {"assetPositions": [], "marginSummary": {"accountValue": "0", "totalNtlPos": "0"}})
+            if t == "allMids":
+                return d.get("mids", {})
         if t == "frontendOpenOrders":
             return self._open_orders
         if t == "userFillsByTime":

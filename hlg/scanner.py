@@ -14,6 +14,7 @@ momentum -- price moved > momentum_alert_pct in momentum_window_hours -- for mov
 levels to catch in time. Momentum alerts are a heads-up only: no backtested edge, so no stop/size/target.
 Every setup alert includes the position size that keeps the stop loss at risk_per_trade_pct of equity.
 """
+import os
 import time
 
 import numpy as np
@@ -194,7 +195,10 @@ def macro_context(S):
     credit is deteriorating were 27 of 126 trades but 63% of the profit. Inverting the gate to only
     trade those is a 27-trade, post-hoc rule, which is how you overfit. So it rides along as context
     you can log against outcomes, and changes no decision by itself."""
-    if not S.get("macro_context", True):
+    on = S.get("macro_context", True)
+    if on == "auto":                       # on wherever FRED answers: locally, or in CI with an API key
+        on = bool(os.environ.get("FRED_API_KEY")) or os.environ.get("GITHUB_ACTIONS") != "true"
+    if not on:
         return None
     try:
         from . import macro
@@ -209,6 +213,26 @@ def macro_context(S):
     except Exception as e:  # noqa: BLE001
         log.error("macro context failed: %s", e)
         return None
+
+
+MACRO_REFRESH_H = 6     # FRED prints once a business day; a failure retries after an hour
+
+
+def macro_cached(S, state, now_ms):
+    """macro_context kept in the (encrypted) state: five FRED requests every 6 hours rather than every
+    15-minute run, and the last good reading kept through an outage."""
+    if state is None:
+        return macro_context(S)
+    cur = state.get("macro_ctx")
+    if isinstance(cur, dict) and now_ms - cur.get("t", 0) < MACRO_REFRESH_H * 3_600_000:
+        return cur.get("ctx")
+    new = macro_context(S)
+    if new is not None:
+        state.set("macro_ctx", {"t": now_ms, "ctx": new})
+        return new
+    old = cur.get("ctx") if isinstance(cur, dict) else None
+    state.set("macro_ctx", {"t": now_ms - (MACRO_REFRESH_H - 1) * 3_600_000, "ctx": old})
+    return old
 
 
 def momentum_pct(inf, coin, S):
@@ -362,7 +386,7 @@ def run_once(cfg, inf, notif, state):
     open_coins = {p["position"]["coin"] for p in st["assetPositions"]}
     tfs = S.get("timeframes") or [S.get("timeframe", "1d")]
     breakout_tfs = tfs if S.get("strategy", "breakout") == "breakout" else [None]  # pullback ignores tf, one pass
-    mac = macro_context(S)
+    mac = macro_cached(S, state, int(time.time() * 1000))
     now_ms = int(time.time() * 1000)
     req0 = CANDLE_REQUESTS[0]
     # bar stats per coin|tf, reused until that bar closes (see analyse_breakout); lives in the

@@ -192,3 +192,69 @@ def test_bootstrap_flags_a_random_subset_as_noise():
 
     cherry = np.sort(base)[-250:]  # the 250 best trades: must land at the top
     assert backtest.bootstrap_pf(base, 250, backtest._pf_of(cherry), n_boot=2000) > 99
+
+
+# --------------------------------------------------------------- the official API (FRED_API_KEY)
+class _R:
+    def __init__(self, status=200, payload=None):
+        self.status_code, self._p = status, payload
+
+    def json(self):
+        return self._p
+
+
+def test_api_reply_is_parsed_like_the_download_and_holidays_drop(monkeypatch, tmp_path):
+    monkeypatch.setenv("FRED_API_KEY", "k" * 32)
+    seen = {}
+
+    def get(url, params, headers, timeout):
+        seen.update(url=url, **params)
+        return _R(payload={"observations": [{"date": "2026-01-02", "value": "17.2"}, {"date": "2026-01-05", "value": "."},
+                                            {"date": "2026-01-06", "value": "18.4"}]})
+    monkeypatch.setattr(macro.requests, "get", get)
+    s = macro.fetch("vix", "VIXCLS", "2026-01-01", cache_dir=str(tmp_path))
+    assert seen["url"] == macro.FRED_API and seen["series_id"] == "VIXCLS" and seen["file_type"] == "json"
+    assert list(s.values) == [17.2, 18.4]
+
+
+def test_an_api_failure_never_carries_the_key_into_the_log(monkeypatch, tmp_path):
+    key = "SECRETKEY" + "x" * 23
+    monkeypatch.setenv("FRED_API_KEY", key)
+
+    def boom(url, params, headers, timeout):
+        raise macro.requests.ConnectionError(f"Max retries exceeded with url: {url}?api_key={params['api_key']}")
+    monkeypatch.setattr(macro.requests, "get", boom)
+    with pytest.raises(RuntimeError) as e:
+        macro.fetch("vix", "VIXCLS", "2026-01-01", cache_dir=str(tmp_path))
+    assert key not in str(e.value) and "ConnectionError" in str(e.value)
+    monkeypatch.setattr(macro.requests, "get", lambda *a, **k: _R(400))
+    with pytest.raises(RuntimeError) as e:
+        macro.fetch("vix", "VIXCLS", "2026-01-02", cache_dir=str(tmp_path))
+    assert str(e.value) == "FRED API HTTP 400"
+
+
+def test_macro_context_auto_is_on_locally_and_in_ci_only_with_a_key(monkeypatch):
+    calls = []
+    monkeypatch.setattr(macro, "frame", lambda **k: calls.append(1) or pd.DataFrame())
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    assert scanner.macro_context({"macro_context": "auto"}) is None and calls == []      # CI, no key: off
+    monkeypatch.setenv("FRED_API_KEY", "k")
+    scanner.macro_context({"macro_context": "auto"})
+    assert calls == [1]                                                                   # CI with a key: on
+
+
+def test_macro_is_cached_six_hours_and_keeps_the_last_good_reading(monkeypatch, tmp_path):
+    from hlg.common import State
+    st = State(tmp_path / "s.json")
+    H = 3_600_000
+    out = [{"label": "credit calm"}]
+    monkeypatch.setattr(scanner, "macro_context", lambda S: out[0])
+    assert scanner.macro_cached({}, st, 0)["label"] == "credit calm"
+    out[0] = {"label": "changed"}
+    assert scanner.macro_cached({}, st, 5 * H)["label"] == "credit calm"                 # within 6h: no fetch
+    out[0] = None                                                                         # FRED down
+    assert scanner.macro_cached({}, st, 7 * H)["label"] == "credit calm"                 # last good kept
+    out[0] = {"label": "back"}
+    assert scanner.macro_cached({}, st, 7 * H + 30 * 60_000)["label"] == "credit calm"   # retry waits an hour
+    assert scanner.macro_cached({}, st, 8 * H + 60_000)["label"] == "back"

@@ -164,8 +164,8 @@ def run_once(cfg, inf, notif, state):
     # the USDC collateral on a unified one (see hlg.account for why those differ ~13x).
     model, st = account.load(inf, acct, port)
     equity = model["base"]
-    oo = inf.post("/info", {"type": "frontendOpenOrders", "user": acct})
-    mids = inf.all_mids()
+    oo = account.open_orders(inf, acct)       # main exchange + xyz (TradFi), so their stops count
+    mids = account.all_mids(inf)
     now = utc_now()
     now_ms = int(time.time() * 1000)
     fills = inf.post(

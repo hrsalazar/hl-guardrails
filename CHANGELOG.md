@@ -4,6 +4,10 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-07
 
+- **TradFi positions are tracked.** Hyperliquid's TradFi perps (`xyz:SP500`, `xyz:GOLD`, …) trade on the separate `xyz` exchange, which the monitor never read. A TradFi position was invisible to every rule and to the dashboard. Positions, open orders (so a stop there counts) and prices now include `xyz`, and the position counts toward account leverage. If `xyz` is unreachable, the monitor falls back to the main account. `allowed_coins` gains the TradFi perps.
+- **Macro backdrop in production.** It was off on GitHub because FRED's keyless download times out from Actions runners, which also left the market state without its credit / S&P leg. With the new optional `FRED_API_KEY` secret, it reads FRED's official API instead:
+  - refreshed every 6 hours, keeping the last good reading through an outage;
+  - the key never reaches the public log, because errors are reduced to type / status.
 - **Fix: a stuck run can no longer freeze the dashboard.** A monitor run sat "waiting" on the `github-pages` environment for 4.5 hours, with nothing to approve (a GitHub-side glitch). It held the one-at-a-time slot while every queued run was cancelled, so nothing was published. A new run now replaces the one in progress (`cancel-in-progress: true`), which clears a stuck run within 15 minutes.
 - **TradingView and OpenMarket versions of the rule:** `tradingview/hlg_breakout.pine` (Pine v6: status table, sizing, labels) and `tradingview/hlg_breakout.wrun.ts` (wrun: the simplified rule and two alerts). Both decide on closed bars only.
 

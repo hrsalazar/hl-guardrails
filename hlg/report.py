@@ -101,7 +101,7 @@ def add_stops(positions, inf, cfg, acct):
     cap the loss at risk_per_trade_pct. One extra request; a failure just leaves the ladder without
     them."""
     try:
-        oo = inf.post("/info", {"type": "frontendOpenOrders", "user": cfg["account"]})
+        oo = account.open_orders(inf, cfg["account"])
     except Exception as e:  # noqa: BLE001
         log.error("open orders for the ladder failed: %s", e)
         return
@@ -272,7 +272,7 @@ def main():
         sentiment.refresh(state, now_ms)  # one small request every 6h
     except Exception as e:  # noqa: BLE001
         log.error("fear & greed failed: %s", e)
-    macro_ctx = scanner.macro_context(cfg["scanner"])  # cached on disk by hlg.macro, so no second fetch
+    macro_ctx = scanner.macro_cached(cfg["scanner"], state, now_ms)  # FRED, refreshed every 6h (hlg.scanner)
     # today's risk-on / mixed / risk-off, for the lessons -- context for you, never a signal (hlg.market_state)
     mstate = market_state.build(market_state.btc_trend(inf, state, now_ms), macro_ctx, state.get("fng"))
     out = {

@@ -936,14 +936,12 @@ backdrop ships as **context only**: a line on breakout alerts and a strip on the
 no decision, there to be logged against outcomes until there is enough fresh data to say something
 honest.
 
-> **`scanner.macro_context` ships off**, because `fred.stlouisfed.org` read-times-out from GitHub
-> Actions runners — 10 of 10 requests hit the timeout, adding ~300 s to a job that runs every 15
-> minutes and returning nothing (`"macro": null`). It degrades cleanly rather than failing a scan,
-> but it is dead weight there. FRED answers normally from a workstation, so set it to `true` if you
-> run `python -m hlg.scanner` locally; `python -m hlg.macro` prints the current backdrop, and the
-> backtest filters above use the same data. If you want it on the hosted dashboard, the FRED *API*
-> host (`api.stlouisfed.org`, needs a free key) is a different endpoint and may not be blocked —
-> untested.
+> **`scanner.macro_context: auto`**: on locally, and in CI when the `FRED_API_KEY` secret is set. The
+> official API (`api.stlouisfed.org`) is a different host from the keyless download, which times out there.
+> It is refreshed every 6 hours and the last good reading is kept through an outage.
+> It shipped off at first, because the keyless download (`fred.stlouisfed.org`) read-times-out from
+> Actions runners: 10 of 10 requests hit the timeout, adding ~300 s a run and returning nothing.
+> `python -m hlg.macro` prints the current backdrop; the backtest filters above use the same data.
 
 ### Long-term lines: 50-week and 200-day averages (Benjamin Cowen) — tested, not adopted
 

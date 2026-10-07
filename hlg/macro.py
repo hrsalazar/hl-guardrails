@@ -1,4 +1,8 @@
-"""Macro / TradFi backdrop from FRED (no API key needed).
+"""Macro / TradFi backdrop from FRED.
+
+Two ways in. With FRED_API_KEY set (a free key from fred.stlouisfed.org), the official JSON API --
+the one that answers from GitHub Actions, where the fredgraph.csv download times out, so the live
+monitor gets the backdrop too. Without it, the keyless CSV download, fine for local research.
 
 Why bother: the breakout rule is pure price action on a single coin. Crypto trades as a
 high-beta risk asset, so the same chart pattern is not worth the same in a credit-stress tape
@@ -18,6 +22,7 @@ does not) and then shifted one day. A filter reading row T therefore sees data p
 later than T-1 -- conservative on purpose: a lookahead bug would invalidate every number here.
 """
 import datetime as dt
+import os
 import time
 from pathlib import Path
 
@@ -27,11 +32,38 @@ import requests
 from .common import log
 
 FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+FRED_API = "https://api.stlouisfed.org/fred/series/observations"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; hl-guardrails/0.1)"}
 SERIES = {"hy": "BAMLH0A0HYM2", "vix": "VIXCLS", "spx": "SP500", "dxy": "DTWEXBGS", "y10": "DGS10"}
 CACHE_TTL_S = 24 * 3600  # these series print once a business day, so refetching sooner buys nothing
                          # -- and the monitor workflow keys its Actions cache by UTC date to match,
                          # so exactly one run a day pays FRED's ~60s-per-series latency.
+
+
+def _download_csv(series_id, start):
+    # Short timeout on purpose: this endpoint is unreachable from some networks (GitHub Actions
+    # runners among them) and a caller that has it enabled there should lose seconds, not minutes.
+    r = requests.get(FRED, params={"id": series_id, "cosd": start}, headers=UA, timeout=10)
+    r.raise_for_status()
+    return r.text
+
+
+def _api_csv(series_id, start, key):
+    """The official API, returned in the download's CSV shape so the parser stays one. The key rides
+    in the query string, and requests puts the URL in its error messages -- which would print the key
+    into the public Actions log -- so every failure is re-raised as its type or status alone."""
+    try:
+        r = requests.get(FRED_API, params={"series_id": series_id, "api_key": key, "file_type": "json",
+                                           "observation_start": start}, headers=UA, timeout=15)
+    except requests.RequestException as e:
+        raise RuntimeError(f"FRED API {type(e).__name__}") from None
+    if r.status_code != 200:
+        raise RuntimeError(f"FRED API HTTP {r.status_code}")
+    try:
+        obs = r.json()["observations"]
+    except (ValueError, KeyError):
+        raise RuntimeError("FRED API reply without observations") from None
+    return "observation_date," + series_id + "\n" + "\n".join(f"{o['date']},{o['value']}" for o in obs) + "\n"
 
 
 def fetch(name, series_id, start="2020-01-01", cache_dir="miner_cache"):
@@ -41,11 +73,8 @@ def fetch(name, series_id, start="2020-01-01", cache_dir="miner_cache"):
     if p.exists() and time.time() - p.stat().st_mtime < CACHE_TTL_S:
         raw = p.read_text()
     else:
-        # Short timeout on purpose: FRED is unreachable from some networks (GitHub Actions runners
-        # among them) and a caller that has it enabled there should lose seconds, not minutes.
-        r = requests.get(FRED, params={"id": series_id, "cosd": start}, headers=UA, timeout=10)
-        r.raise_for_status()
-        raw = r.text
+        key = (os.environ.get("FRED_API_KEY") or "").strip()
+        raw = _api_csv(series_id, start, key) if key else _download_csv(series_id, start)
         p.parent.mkdir(exist_ok=True)
         p.write_text(raw)
     df = pd.read_csv(pd.io.common.StringIO(raw))

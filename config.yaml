@@ -25,7 +25,9 @@ rules:
   daily_loss_limit_pct: 3.0      # vs start-of-day value: whole account (spot incl.) when unified,
                                  # perps only on a classic account where spot is a separate wallet
   weekly_loss_limit_pct: 6.0
-  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE, AVAX]   # or: auto (= today's scanner universe)
+  allowed_coins: [BTC, ETH, SOL, HYPE, XRP, NEAR, DOGE, LINK, SUI, ZEC, PENDLE, AVAX,
+                  xyz:SP500, xyz:GOLD, xyz:SILVER, xyz:CL, xyz:COPPER, xyz:NATGAS, xyz:EUR, xyz:JPY,
+                  xyz:MSTR, xyz:COIN, xyz:XYZ100]   # TradFi perps on HL's xyz exchange: tradeable, outside the tested strategy   # or: auto (= today's scanner universe)
   no_add_underwater: true
 
 scanner:
@@ -68,9 +70,9 @@ scanner:
   momentum_alert_pct: 8          # alert if price moved more than this % within momentum_window_hours
   # Macro backdrop (FRED, no key) shown on alerts and the dashboard. Context ONLY - it gates nothing:
   # every risk-on filter tested worse than dropping the same trades at random (README "Macro").
-  # OFF by default because FRED read-times-out from GitHub Actions runners, so the scheduled
-  # monitor would burn 300s a run for nothing. Turn it on when running the scanner locally.
-  macro_context: false
+  # auto = on wherever FRED answers: locally, and in CI when the FRED_API_KEY secret is set (the
+  # official API answers from Actions; the keyless CSV download times out there). Refreshed every 6h.
+  macro_context: auto
 
 # Flow section: recent liquidations from OKX (Hyperliquid publishes none - no endpoint exists).
 # These are RECENT events, not 24h totals, and they are OKX's book rather than HL's. One request

@@ -54,7 +54,7 @@ read back at the start of the next run.
 | `hlg/market_state.py` | today's risk-on / mixed / risk-off (BTC vs 200-day EMA, credit and S&P, Fear & Greed) for the Now card and the lessons; the same classifier the market-state study used; context, never a signal | HL (one BTC daily-candle request a day) |
 | `hlg/sentiment.py` | Crypto Fear & Greed: live reading for the dashboard, daily history for the backtest | alternative.me |
 | `hlg/digest.py` | daily brief: public RSS headlines digested by a model into a tilt and cited points (`OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`) | RSS feeds, OpenRouter / Anthropic API |
-| `hlg/macro.py` | FRED macro series for research and backtests (off in CI, see below) | FRED |
+| `hlg/macro.py` | FRED macro series: the Macro backdrop, the market state's credit / S&P leg, and research. In CI via the official API with `FRED_API_KEY`; refreshed every 6h | FRED |
 | `hlg/vault.py` | AES-256-GCM encryption of everything published | – |
 | `hlg/report.py` | the one-shot CI entry point that ties the modules together | via the modules above |
 | `hlg/vapid.py` | one-off VAPID key generator for Web Push | – |
@@ -154,7 +154,7 @@ only for bars that have closed since the last run.
 | Hyperliquid `xyz` dex | TradFi perps (indices, metals, energy, FX, equities) | many listings are dead; liquidity-filtered |
 | Hyperliquid leaderboard | the account list for the liquidation map | ~40 MB, fetched once a day |
 | OKX public API | recent liquidation events, BTC/ETH/SOL | HL publishes no liquidation data; CORS-open, so the browser can fall back |
-| FRED | macro series for research | unreachable from Actions runners, so `macro_context: false` |
+| FRED | macro series | the keyless CSV download is unreachable from Actions runners; the official API with `FRED_API_KEY` is used there (`macro_context: auto`) |
 | FairEconomy weekly calendar | high-impact releases, current week only | unofficial Forex Factory feed; rate-limits hard (429), fetched 6-hourly |
 | federalreserve.gov | FOMC meeting schedule, years ahead | HTML page, parsed; a parse returning < 6 meetings keeps the old list |
 | alternative.me | Crypto Fear & Greed | daily, back to 2018 |
@@ -179,7 +179,7 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 288 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 295 tests in about 2 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config

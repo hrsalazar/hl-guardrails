@@ -199,3 +199,39 @@ def test_unified_split_and_the_limit_alert_say_what_the_loss_is_made_of(tmp_path
     msg = next(t for t in notif.collected.values() if "DAILY LOSS LIMIT" in str(t))
     first, second = str(msg).split(chr(10), 1)
     assert "USD" in first and "incl. open positions" in second and "spot +99" in second
+
+
+# --------------------------------------------------------- TradFi positions live on the xyz exchange
+def _xyz(positions, orders=()):
+    ntl = sum(abs(float(p["positionValue"])) for p in positions)
+    return {"xyz": {"state": {"assetPositions": [{"position": p} for p in positions],
+                              "marginSummary": {"accountValue": "500", "totalNtlPos": str(ntl)}},
+                    "orders": list(orders), "mids": {"xyz:SP500": "6800"}}}
+
+
+def test_a_tradfi_position_on_the_xyz_exchange_is_seen_by_every_rule(tmp_path):
+    spx = make_position("xyz:SP500", sz=0.1, entry=6800, upnl=-5, position_value=680)
+    info = FakeInfo(user_state=make_user_state(10000, []), dexes=_xyz([spx]))
+    problems, _ = run(info, tmp_path, allowed_coins=["BTC", "xyz:SP500"])
+    assert any("xyz:SP500" in p and "NO STOP" in p for p in problems)   # was invisible before
+    model, st = account.load(info, "0xTEST")
+    assert [p["position"]["coin"] for p in st["assetPositions"]] == ["xyz:SP500"]
+    assert model["notional"] == 680                                      # counts toward leverage
+
+
+def test_a_stop_resting_on_the_xyz_exchange_covers_its_position(tmp_path):
+    spx = make_position("xyz:SP500", sz=0.1, entry=6800, upnl=-5, position_value=680)
+    stop = make_stop_order("xyz:SP500", "A", 0.1, trigger_px=6750)
+    info = FakeInfo(user_state=make_user_state(10000, []), dexes=_xyz([spx], [stop]))
+    problems, _ = run(info, tmp_path, allowed_coins=["BTC", "xyz:SP500"])
+    assert not any("NO STOP" in p for p in problems)
+
+
+def test_an_unreachable_xyz_exchange_degrades_to_the_main_account(tmp_path):
+    class Flaky(FakeInfo):
+        def post(self, path, body):
+            if body.get("dex"):
+                raise RuntimeError("502")
+            return super().post(path, body)
+    model, st = account.load(Flaky(user_state=make_user_state(10000, [])), "0xTEST")
+    assert st["assetPositions"] == []

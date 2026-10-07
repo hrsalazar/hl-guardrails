@@ -115,6 +115,7 @@ later rather than every 15 minutes.
 | `VAPID_SUBJECT` | secret | low | – |
 | `PUSH_SUBSCRIPTIONS` | secret | medium: device push endpoints | re-subscribe the devices |
 | `VAPID_PUBLIC_KEY` | variable | public by design | – |
+| `FRED_API_KEY` | secret | low: read-only public economic data, free | delete it at fredaccount.stlouisfed.org → API Keys, request a new one; it never appears in logs (errors are reduced to type / status) |
 | `OPENROUTER_API_KEY` | secret | medium: spend on your OpenRouter credit | delete it at openrouter.ai → Keys, set a new one; give the key a credit limit when creating it |
 | `ANTHROPIC_API_KEY` | secret | medium: spend on your Anthropic account | revoke it in the Anthropic console, set a new one; consider a spend limit on that key |
 | scheduler token | external | low: can only trigger the workflow | revoke it in GitHub settings |

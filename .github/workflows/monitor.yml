@@ -54,10 +54,8 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      # No macro step here on purpose: fred.stlouisfed.org read-times-out from Actions runners
-      # (verified - 10/10 requests hit the 30s timeout, adding 300s to a job that runs every 15
-      # minutes and producing nothing). config.yaml ships with scanner.macro_context off for that
-      # reason; hlg.macro is for local research and backtests, where FRED answers fine.
+      # The macro backdrop reads FRED's official API (FRED_API_KEY below): the keyless download,
+      # fred.stlouisfed.org/graph/fredgraph.csv, read-times-out from Actions runners (10/10 at 30s).
       - name: Run guardrails + scanner
         env:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
@@ -77,6 +75,9 @@ jobs:
           # are set); with neither, that step is skipped. Only public headlines and market data are
           # sent, never account data.
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Macro backdrop (hlg.macro): FRED's official API, which answers from Actions (the keyless
+          # download doesn't). Optional: without it the backdrop and the market state's macro leg are off.
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m hlg.report
       - name: Stamp site
