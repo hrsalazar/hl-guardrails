@@ -258,3 +258,12 @@ def test_macro_is_cached_six_hours_and_keeps_the_last_good_reading(monkeypatch, 
     out[0] = {"label": "back"}
     assert scanner.macro_cached({}, st, 7 * H + 30 * 60_000)["label"] == "credit calm"   # retry waits an hour
     assert scanner.macro_cached({}, st, 8 * H + 60_000)["label"] == "back"
+
+
+def test_switched_off_is_not_a_failure_so_turning_it_on_fetches_at_once(monkeypatch, tmp_path):
+    from hlg.common import State
+    st = State(tmp_path / "s.json")
+    monkeypatch.setattr(scanner, "macro_context", lambda S: {"label": "fresh", "as_of": "2026-10-06"})
+    assert scanner.macro_cached({"macro_context": False}, st, 0) is None
+    assert st.get("macro_backdrop") is None                                    # nothing recorded while off
+    assert scanner.macro_cached({"macro_context": True}, st, 60_000)["label"] == "fresh"

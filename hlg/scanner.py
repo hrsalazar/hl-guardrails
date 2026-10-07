@@ -187,6 +187,13 @@ def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=Non
     return classify(st, px if px is not None else st["live_c"], S, coin, funding_apr)
 
 
+def macro_enabled(S):
+    on = S.get("macro_context", True)
+    if on == "auto":                       # on wherever FRED answers: locally, or in CI with an API key
+        on = bool(os.environ.get("FRED_API_KEY")) or os.environ.get("GITHUB_ACTIONS") != "true"
+    return bool(on)
+
+
 def macro_context(S):
     """Current macro backdrop as a short label for alerts, or None if unavailable/disabled.
 
@@ -195,10 +202,7 @@ def macro_context(S):
     credit is deteriorating were 27 of 126 trades but 63% of the profit. Inverting the gate to only
     trade those is a 27-trade, post-hoc rule, which is how you overfit. So it rides along as context
     you can log against outcomes, and changes no decision by itself."""
-    on = S.get("macro_context", True)
-    if on == "auto":                       # on wherever FRED answers: locally, or in CI with an API key
-        on = bool(os.environ.get("FRED_API_KEY")) or os.environ.get("GITHUB_ACTIONS") != "true"
-    if not on:
+    if not macro_enabled(S):
         return None
     try:
         from . import macro
@@ -223,15 +227,18 @@ def macro_cached(S, state, now_ms):
     15-minute run, and the last good reading kept through an outage."""
     if state is None:
         return macro_context(S)
-    cur = state.get("macro_ctx")
+    if not macro_enabled(S):               # switched off is not a failure: no backoff to inherit later
+        return None
+    cur = state.get("macro_backdrop")
     if isinstance(cur, dict) and now_ms - cur.get("t", 0) < MACRO_REFRESH_H * 3_600_000:
         return cur.get("ctx")
     new = macro_context(S)
     if new is not None:
-        state.set("macro_ctx", {"t": now_ms, "ctx": new})
+        state.set("macro_backdrop", {"t": now_ms, "ctx": new})
+        log.info("macro: FRED backdrop as of %s refreshed", new.get("as_of"), extra={"safe": True})
         return new
     old = cur.get("ctx") if isinstance(cur, dict) else None
-    state.set("macro_ctx", {"t": now_ms - (MACRO_REFRESH_H - 1) * 3_600_000, "ctx": old})
+    state.set("macro_backdrop", {"t": now_ms - (MACRO_REFRESH_H - 1) * 3_600_000, "ctx": old})
     return old
 
 
