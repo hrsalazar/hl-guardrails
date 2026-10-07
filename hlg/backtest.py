@@ -60,6 +60,15 @@ VARIANTS = {
                                     target=None, min_rr=0, max_days=21, trail_atr=3.0),
     "breakout_both": dict(side="both", trend="with", rsi_max=100, rsi_min=0, level="breakout", stop_atr=2.0,
                           target=None, min_rr=0, max_days=21, trail_atr=3.0),
+    # Emmanuel Malyarovich's 9 EMA / 20 SMA / 200 SMA pullback, long and short (ma_pullback_study)
+    "ma_pullback": dict(side="both", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5,
+                        target=None, min_rr=0, max_days=10_000, trail_atr=None),
+    "ma_pullback_long": dict(side="long", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5,
+                             target=None, min_rr=0, max_days=10_000, trail_atr=None),
+    "ma_pullback_short": dict(side="short", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5,
+                              target=None, min_rr=0, max_days=10_000, trail_atr=None),
+    "ma_reclaim": dict(side="both", level="ma_reclaim", entry="open", ma_exit=True, stop_atr=0.5,
+                       target=None, min_rr=0, max_days=10_000, trail_atr=None),
     # control: mirror of pullback_long on the short side (miner says this should be poor)
     "pullback_short": dict(side="short", trend="any", rsi_min=50, level="pullback", stop_atr=1.5,
                            target=None, min_rr=0, max_days=21, trail_atr=3.0),
@@ -146,6 +155,13 @@ def features(df, k=1):
     rng = (df.h - df.l).replace(0, np.nan)
     df["close_loc"] = (df.c - df.l) / rng                              # 1 = closed at the high, 0 = at the low
     df["brk_atr"] = (df.c - df.hi20) / df.atr                          # how far past the level it closed
+    # the 9 EMA / 20 SMA / 200 SMA pullback (ma_pullback_study), native windows on this timeframe
+    df["ema9"], df["sma20"], df["sma200"] = ema(df.c, 9), df.c.rolling(20).mean(), df.c.rolling(200).mean()
+    df["ma_slope"] = (df.sma20 - df.sma20.shift(5)) / (5 * df.atr)    # ATR per bar
+    df["ext20"] = (df.c - df.sma20) / df.atr
+    df["ext_max10"], df["ext_min10"] = df.ext20.shift(1).rolling(10).max(), df.ext20.shift(1).rolling(10).min()
+    df["c_prev"], df["sma20_prev"], df["sma20_lag20"] = df.c.shift(1), df.sma20.shift(1), df.sma20.shift(20)
+    df["lo5"], df["hi5"] = df.l.rolling(5).min(), df.h.rolling(5).max()
     return df
 
 
@@ -270,8 +286,38 @@ for _f in FILTERS:
 
 
 # ----------------------------------------------------------------------------- signals
+def _ma_signal(k, V):
+    """The 9 EMA / 20 SMA / 200 SMA rules (docs/research/ma-pullback-study.md). Returns (side, stop,
+    target) or None. ma_pullback enters on a stop order past this bar (run() reads the trigger off
+    the bar's high / low); ma_reclaim at the next open."""
+    if any(pd.isna(getattr(k, c, np.nan)) for c in ("ema9", "sma20", "ma_slope", "ext20", "atr")) or k.atr <= 0:
+        return None
+    a, s200, side = k.atr, getattr(k, "sma200", np.nan), V["side"]
+    has200 = not pd.isna(s200)
+    if V["level"] == "ma_pullback":
+        if side in ("long", "both") and k.ema9 > k.sma20 and k.ma_slope > 0 and k.l <= k.ema9 and k.c >= k.sma20 \
+                and k.ext20 <= 2 and not (k.ext_max10 > 3) and not (has200 and k.c < s200 <= k.c + a):
+            trig = k.h
+            return "L", min(k.l, trig - 0.5 * a), (s200 if has200 and s200 >= trig + a else None)
+        if side in ("short", "both") and k.ema9 < k.sma20 and k.ma_slope < 0 and k.h >= k.ema9 and k.c <= k.sma20 \
+                and k.ext20 >= -2 and not (k.ext_min10 < -3) and not (has200 and k.c - a <= s200 < k.c):
+            trig = k.l
+            return "S", max(k.h, trig + 0.5 * a), (s200 if has200 and s200 <= trig - a else None)
+        return None
+    # ma_reclaim
+    if pd.isna(k.c_prev) or pd.isna(k.sma20_prev) or pd.isna(k.sma20_lag20) or not has200:
+        return None
+    if side in ("long", "both") and k.c_prev < k.sma20_prev and k.c > k.sma20 and k.sma20 > k.sma20_lag20 and k.c > s200:
+        return "L", min(k.lo5, k.c - 0.5 * a), None
+    if side in ("short", "both") and k.c_prev > k.sma20_prev and k.c < k.sma20 and k.sma20 < k.sma20_lag20 and k.c < s200:
+        return "S", max(k.hi5, k.c + 0.5 * a), None
+    return None
+
+
 def signal(k, V):
     """k = completed daily bar. Returns (side, stop, target) or None."""
+    if V.get("level") in ("ma_pullback", "ma_reclaim"):
+        return _ma_signal(k, V)
     if np.isnan(k.ema50) or np.isnan(k.atr) or np.isnan(k.lo20):
         return None
     for f in V.get("filters", ()):
@@ -376,7 +422,8 @@ def run(V, data, fund, P):
     # next open (the rule as backtested); "confirm" = only after the next bar also closes above the
     # level; "fib" = limit order at a retrace of the breakout leg (entry study, README "Entries").
     pending = {}
-    entry = V.get("entry", "open")
+    V_of = P.get("V_of") or {}
+    Vc = lambda c: V_of.get(c, V)  # noqa: E731 - a combined book can run a different rule per stream
     for d in days:
         # 1) fills for pending signals at today's open
         # Same-day signals compete for max_positions slots. Fill the most liquid first (trailing
@@ -389,13 +436,22 @@ def run(V, data, fund, P):
             k = df.loc[d]
             if q["mode"] == "await":      # confirm: waiting for this bar's close (step 3)
                 continue
-            if q["mode"] == "fib":
+            if q["mode"] == "stop":     # a stop order past the signal bar, good for one bar
+                del pending[coin]
+                if q["side"] == "L" and k.h >= q["trig"]:
+                    px, intrabar = max(k.o, q["trig"]), True
+                elif q["side"] == "S" and k.l <= q["trig"]:
+                    px, intrabar = min(k.o, q["trig"]), True
+                else:
+                    continue
+                pending[coin] = q   # restored so the shared fill path below runs
+            elif q["mode"] == "fib":
                 q["bars"] += 1
-                if q["bars"] > V.get("fib_valid", 5):
+                if q["bars"] > Vc(coin).get("fib_valid", 5):
                     del pending[coin]
                     continue
                 # level from the leg as known before this bar: no peeking at today's high
-                lim = q["leg_hi"] - V["fib"] * (q["leg_hi"] - q["leg_lo"])
+                lim = q["leg_hi"] - Vc(coin)["fib"] * (q["leg_hi"] - q["leg_lo"])
                 q["leg_hi"] = max(q["leg_hi"], k.h)
                 if k.l > lim:
                     continue
@@ -403,8 +459,9 @@ def run(V, data, fund, P):
             else:
                 px, intrabar = k.o, False
             del pending[coin]
+            entry = Vc(coin).get("entry", "open")
             if q.get("add"):
-                eq -= _pyramid_add(open_pos.get(coin), px, d, V, P, eq)
+                eq -= _pyramid_add(open_pos.get(coin), px, d, Vc(coin), P, eq)
                 continue
             if coin in open_pos:
                 continue
@@ -422,7 +479,7 @@ def run(V, data, fund, P):
                 rows, eq = _close(open_pos[v], data[v].loc[d].o, d, "preempted", P, eq)
                 trades += rows
                 del open_pos[v]
-            stop = q["stop"] if entry == "open" else px - V["stop_atr"] * q["atr"]
+            stop = q["stop"] if entry in ("open", "stop") else px - Vc(coin)["stop_atr"] * q["atr"]
             dist = abs(px - stop)
             if dist <= 0:
                 continue
@@ -459,13 +516,16 @@ def run(V, data, fund, P):
                 elif p["tgt"] and k.l <= p["tgt"]:
                     exit_px, why = min(k.o, p["tgt"]), "target"
             p["bars"] = p.get("bars", 0) + 1
-            if exit_px is None and V.get("fail_exit_bars") and p["bars"] <= V["fail_exit_bars"] and k.c < p["level"]:
+            Vk = Vc(coin)
+            if exit_px is None and Vk.get("ma_exit") and not pd.isna(k.sma20) and sgn * (k.c - k.sma20) < 0:
+                exit_px, why = k.c, "ma"  # closed back through the 20 SMA: the trend broke
+            if exit_px is None and Vk.get("fail_exit_bars") and p["bars"] <= Vk["fail_exit_bars"] and k.c < p["level"]:
                 exit_px, why = k.c, "failed"  # closed back below the breakout level: out now, not at the 2 ATR stop
-            if exit_px is None and (d - p["start"]) >= pd.Timedelta(days=V["max_days"]):
+            if exit_px is None and (d - p["start"]) >= pd.Timedelta(days=Vk["max_days"]):
                 exit_px, why = k.c, "time"
-            if exit_px is None and V["trail_atr"] and p.get("intrabar_day") != d:  # today's high may predate the fill
+            if exit_px is None and Vk["trail_atr"] and p.get("intrabar_day") != d:  # today's high may predate the fill
                 p["best"] = max(p["best"], k.h) if sgn > 0 else min(p["best"], k.l)
-                new_stop = p["best"] - sgn * V["trail_atr"] * k.atr
+                new_stop = p["best"] - sgn * Vk["trail_atr"] * k.atr
                 p["stop"] = max(p["stop"], new_stop) if sgn > 0 else min(p["stop"], new_stop)
             if exit_px is not None:
                 rows, eq = _close(p, exit_px, d, why, P, eq)
@@ -486,14 +546,15 @@ def run(V, data, fund, P):
                     del pending[coin]
         elig = P.get("elig_by_day")
         for coin in (elig.get(d.floor("D"), ()) if elig is not None else data):
-            df = data[coin]
+            df, Vk = data[coin], Vc(coin)
+            entry = Vk.get("entry", "open")
             if d not in df.index:
                 continue
             if coin in open_pos:
                 # pyramiding: a fresh breakout on a coin already held becomes an add order for the
                 # next open; _pyramid_add decides at the fill whether the rules allow it
-                if V.get("pyramid") and entry == "open":
-                    s = signal(df.loc[d], V)
+                if Vk.get("pyramid") and entry == "open":
+                    s = signal(df.loc[d], Vk)
                     if s and s[0] == "L":
                         pending[coin] = dict(side="L", stop=s[1], tgt=None, sd=d, level=df.loc[d].hi20,
                                              atr=df.loc[d].atr, mode="open", add=True)
@@ -501,11 +562,12 @@ def run(V, data, fund, P):
             if coin in pending and pending[coin]["mode"] in ("fib", "await"):
                 continue  # a retrace order or a confirmation is already working
             k = df.loc[d]
-            s = signal(k, V)
+            s = signal(k, Vk)
             if s:
                 side, stop, tgt = s
                 pending[coin] = dict(side=side, stop=stop, tgt=tgt, sd=d, level=k.hi20, atr=k.atr, leg_lo=k.lo20,
-                                     leg_hi=k.h, bars=0, mode={"open": "open", "confirm": "await", "fib": "fib"}[entry])
+                                     leg_hi=k.h, bars=0, mode={"open": "open", "confirm": "await", "fib": "fib", "stop": "stop"}[entry],
+                                     trig=k.h if side == "L" else k.l)
     T = pd.DataFrame(trades)
     C = pd.Series(dict(curve))
     return T, C, dd
@@ -1474,6 +1536,100 @@ def short_study(P):
     return res, rules, adopted
 
 
+MA_STUDY = ("ma_pullback", "ma_pullback_long", "ma_pullback_short", "ma_reclaim", "breakout_long")
+
+
+def _ma_window(P, iv, start, end=None):
+    cache = Path(P["cache_dir"])
+    t0 = pd.Timestamp(start, tz="UTC")
+    data, fund = {}, {}
+    for c in DEF["coins"]:
+        df = bars(c, cache, iv)
+        if df is None or len(df) < 250:
+            continue
+        data[c] = features(df, 1)
+        fund[c] = funding(c, int(t0.timestamp() * 1000), cache, iv)
+    return data, fund
+
+
+def ma_pullback_study(P):
+    """python -m hlg.backtest --ma-pullback-study
+
+    Emmanuel Malyarovich's 9 EMA / 20 SMA / 200 SMA trend pullback, long and short, made mechanical
+    and run on the same coins, engine and costs as everything else. Pre-registered in
+    docs/research/ma-pullback-study.md: the rules, windows and the four-part adoption bar fixed
+    before the first run; only ma_pullback (both sides) can be adopted."""
+    out = Path(P["out_dir"])
+    out.mkdir(exist_ok=True)
+    rep = ["# The 9 EMA / 20 SMA / 200 SMA pullback (Malyarovich), mechanical version\n"]
+    checks, res = {}, {}
+    first_1h = None
+    for win, iv, start in (("A", "1d", P["start"]), ("A", "4h", P["start"]), ("B", "1d", HOLDOUT[0]), ("1h", "1h", None)):
+        if iv == "1h":
+            d0 = bars("BTC", Path(P["cache_dir"]), "1h")
+            first_1h = d0.index[0] + pd.Timedelta(hours=210)      # after the 200 SMA has warmed up
+            start = str(first_1h.date())
+        data, fund = _ma_window(P, iv, start)
+        Q = {**P, "start": start}
+        rows = {}
+        for name in MA_STUDY:
+            T, C, dd = run(VARIANTS[name], data, fund, Q)
+            if win == "B" and len(T):
+                T = T[T.start < pd.Timestamp(HOLDOUT[1], tz="UTC")]
+            h1, h2 = _own_halves(T)
+            r = T.net_pct / Q["risk_pct"] if len(T) else pd.Series(dtype=float)
+            rows[name] = dict(trades=len(T), longs=int((T.side == "L").sum()) if len(T) else 0,
+                              win_rate=(T.net > 0).mean() if len(T) else np.nan,
+                              pf=_pf_of(T.net.values) if len(T) else np.nan, avg_r=r.mean() if len(T) else np.nan,
+                              net_pct_of_equity0=T.net.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              max_dd_pct=dd * 100, half1_pf=h1, half2_pf=h2,
+                              fees_pct_of_equity0=T.fees.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              avg_bars=(T.days / BAR_DAYS[iv]).mean() if len(T) else np.nan,
+                              exit_ma=(T.why == "ma").mean() if len(T) else np.nan,
+                              exit_stop=(T.why == "stop").mean() if len(T) else np.nan)
+            T.to_csv(out / f"ma_{win}_{iv}_{name}.csv", index=False)
+            log.info("%s %s %s: %d trades", win, iv, name, len(T), extra={"safe": True})
+        c = rows["ma_pullback"]
+        key = f"{win}-{iv}"
+        res[key] = rows
+        checks[key] = dict(n=c["trades"] >= (30 if win == "B" else 100), pf=bool(c["pf"] >= 1.3) if c["trades"] else False,
+                           halves=bool(c["half1_pf"] > 1.0 and c["half2_pf"] > 1.0))
+        lab = {"A": f"{start} -> now", "B": "holdout 2021-04 -> 2023-05, no funding data",
+               "1h": f"{start} -> now, descriptive only (too short)"}[win]
+        rep.append(f"\n## {iv}, window {win} ({lab})\n\n" + pd.DataFrame(rows).T.astype(float).round(2).to_markdown() + "\n")
+    # rule 4: the live book (1d + 4h breakout longs, 3 shared slots, 1.0% risk) with ma_pullback added
+    data, fund, extra, mid = _combined_book(P)
+    Qc = {**P, "risk_pct": 1.0, **extra}
+    _, live = _combined_run(data, fund, Qc, mid)
+    V_of = {}
+    for k in list(data):
+        c, tf = k.split("|")
+        mk = f"{c}|{tf}|ma"
+        data[mk], fund[mk], extra["coin_of"][mk] = data[k], fund[k], c
+        V_of[mk] = VARIANTS["ma_pullback"]
+    Tb, both = _combined_run(data, fund, {**Qc, "coin_of": extra["coin_of"], "V_of": V_of}, mid)
+    live["ma_trades"], both["ma_trades"] = 0, int(Tb.coin.str.endswith("|ma").sum()) if len(Tb) else 0
+    book_ok = bool(both["sharpe"] >= live["sharpe"] and both["max_dd_pct"] >= live["max_dd_pct"] - 2)
+    cols = ["trades", "ma_trades", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf", "worst_day_pct"]
+    B = pd.DataFrame({"live book (breakout longs)": live, "live book + ma_pullback": both}).T
+    rep.append("\n## The live book with ma_pullback added (1d + 4h, 1.0% risk, 3 shared slots, window A)\n\n"
+               + B[cols].astype(float).round(2).to_markdown() + "\n")
+    A1, A4, B1 = checks["A-1d"], checks["A-4h"], checks["B-1d"]
+    rules = {
+        "1. >= 100 trades in A-1d and A-4h, >= 30 in B-1d": A1["n"] and A4["n"] and B1["n"],
+        "2. PF >= 1.3 in A-1d, A-4h, B-1d": A1["pf"] and A4["pf"] and B1["pf"],
+        "3. PF > 1.0 in both halves of its own trades, A-1d and A-4h": A1["halves"] and A4["halves"],
+        "4. live book + ma_pullback: Sharpe >= live, DD within 2pp": book_ok,
+    }
+    adopted = all(rules.values())
+    rep.append("\n## Adoption bar (fixed before running)\n\n"
+               + "\n".join(f"- {k}: **{'pass' if v else 'FAIL'}**" for k, v in rules.items())
+               + f"\n\n**ma_pullback: {'ADOPTED as an alert' if adopted else 'not adopted'}**\n")
+    (out / "ma_pullback_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return res, rules, adopted
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -1496,6 +1652,7 @@ def main():
     ap.add_argument("--priority-study", action="store_true", help="should 1d signals get slot priority over 4h in the live book?")
     ap.add_argument("--ma-study", action="store_true", help="50-week / 200-day SMA/EMA (BTC and each coin) as breakout entry filters")
     ap.add_argument("--bmsb-study", action="store_true", help="bull market support band (20w SMA / 21w EMA) vs the 50-week SMA as entry filters")
+    ap.add_argument("--ma-pullback-study", action="store_true", help="9 EMA / 20 SMA / 200 SMA trend pullback, long and short (pre-registered)")
     ap.add_argument("--short-study", action="store_true", help="breakdown shorts only while BTC is below its 200-day EMA (pre-registered)")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
@@ -1535,6 +1692,8 @@ def main():
         return regime_study(P)
     if a.short_study:
         return short_study(P)
+    if a.ma_pullback_study:
+        return ma_pullback_study(P)
     if a.ma_study:
         return ma_study(P)
     if a.bmsb_study:

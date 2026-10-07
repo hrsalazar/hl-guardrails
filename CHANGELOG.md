@@ -2,6 +2,15 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-08
+
+- **MA pullback study** (`--ma-pullback-study`, pre-registered in docs/research/ma-pullback-study.md): Emmanuel Malyarovich's 9 EMA / 20 SMA / 200 SMA trend pullback, long and short, made mechanical. Not adopted.
+  - **By timeframe:** PF 1.56 on 1d, 0.94 on 4h, 1.16 on the 1d holdout and 0.93 on 1h.
+  - **In the live book:** Sharpe fell from 1.03 to 0.76 and drawdown widened from −18.5% to −47%.
+  - **One lead:** the daily long side, which would need a fresh test.
+
+  New in the backtester: `_ma_signal`, a one-bar stop-entry mode, an exit on a close back through the 20 SMA (`ma_exit`), and per-stream rules in `run()` (`P["V_of"]`) so a combined book can mix strategies.
+
 ## 2026-10-07
 
 - **Reinforcing the process, not the trading** (Now card; the evidence is in docs/research/behaviour-change.md):

@@ -568,6 +568,21 @@ these shorts to the live book cut its Sharpe from 1.03 to 0.58. Breakdown shorts
 working in the same downtrends: PF 2.82 on 1d and 1.59 on 4h, from fewer signals. Run it with
 `python -m hlg.backtest --short-study`.
 
+**The 9 EMA / 20 SMA / 200 SMA pullback (Malyarovich), tested, not adopted** (2026-10-08,
+pre-registered in [docs/research/ma-pullback-study.md](docs/research/ma-pullback-study.md)). The
+YouTube strategy, made mechanical, long and short: buy a dip into the 9 EMA–20 SMA zone in a rising
+trend, a buy-stop over the bar, the stop under it, the exit on a close back through the 20 SMA,
+and the 200 SMA as a target or as resistance.
+- **1d:** PF 1.56, with a −32% drawdown.
+- **4h:** PF 0.94 (fees came to 56% of equity).
+- **1d holdout:** PF 1.16, with 0.47 in its second half.
+- **Added to the live book:** Sharpe fell from 1.03 to 0.76, drawdown widened from −18.5% to −47%,
+  and the worst day went from −4.8% to −19%.
+- **The one lead, the daily long side** (PF 1.97, but a −46% drawdown), needs its own fresh test
+  before it means anything.
+
+Run it with `python -m hlg.backtest --ma-pullback-study`.
+
 ### Timeframe
 
 `scanner.timeframes` is a list of bars the breakout rule runs on independently - each timeframe gets its own
