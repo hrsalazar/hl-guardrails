@@ -4,6 +4,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-07
 
+- **Weekly review card** (top of the Technical tab): this week or last, graded on the process, not the P&L.
+  - **Grade:** A (every rule kept) / B (one slip) / C, listing each slip: rule-breaking trades, off-plan positions, signals taken without a stop.
+  - **The week's numbers:** clean trades, signals taken / skipped, strategy trades closed in R, urges waited out, and predictions scored.
+  - **The cue:** on Sundays and Mondays a *Weekly review due* button sits on the Now card until last week is marked reviewed.
+
+  `hlg/execution.py` now adds per-week counts (Monday 00:00 UTC).
 - **Execution gap** (`hlg/execution.py`, Signal journal → *Your execution*). Your real fills are matched to the journal's signals hourly:
   - signals taken vs skipped, and what the skipped ones made;
   - entry vs the next open, in ATR;

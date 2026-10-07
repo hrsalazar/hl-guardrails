@@ -68,3 +68,19 @@ def test_refresh_is_hourly_and_fail_soft(tmp_path):
     assert ex.refresh(st, "0xA", T + 40 * H + 60_000, 10_000, 1.0, fetch=lambda *a, **k: 1 / 0) == x   # cached
     boom = ex.refresh(st, "0xA", T + 42 * H, 10_000, 1.0, fetch=lambda *a, **k: 1 / 0, orders_fetch=lambda a: [])
     assert boom == x                                                     # failure keeps the last summary
+
+
+def test_weekly_counts_split_at_monday_utc():
+    import datetime as dt
+    mon = int(dt.datetime(2026, 10, 5, tzinfo=dt.timezone.utc).timestamp() * 1000)   # a Monday
+    e_last = entry(coin="ETH", sig_t=mon - 2 * D, r=-1.0, status="stopped")         # skipped, last week
+    e_this = entry(coin="SOL", sig_t=mon + 4 * H)                                    # taken, this week, no stop
+    close = mon + 8 * H
+    fills = [fill(close + 60_000, "SOL", "B", 10, 100, 0), fill(mon + 30 * H, "DOGE", "B", 100, 0.2, 0),
+             fill(mon + 31 * H, "DOGE", "A", 100, 0.19, 100, closed=-1)]
+    x = ex.evaluate([e_last, e_this], fills, [], 10_000, 1.0, now_ms=mon + 3 * D)
+    w = x["weeks"]
+    assert w["this"]["start"] == mon and w["last"]["start"] == mon - 7 * D
+    assert (w["this"]["signals"], w["this"]["taken"], w["this"]["no_stop"]) == (1, 1, 1)
+    assert (w["last"]["signals"], w["last"]["skipped"], w["last"]["skipped_r"]) == (1, 1, -1.0)
+    assert w["this"]["offplan"] == 1 and w["this"]["offplan_net"] == round(-1 - 0.2, 2)

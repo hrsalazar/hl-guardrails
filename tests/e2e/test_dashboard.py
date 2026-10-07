@@ -1063,3 +1063,31 @@ def test_a_prediction_is_taken_once_before_it_resolves_and_scored_against_the_ru
     expect(p).to_contain_text("your score 0.040 vs 0.250")
     page.reload()
     expect(page.locator("#jpred")).to_contain_text("1 scored")                 # kept on this device
+
+
+# ---------------------------------------------------------------------- weekly review
+def test_weekly_review_grades_the_process_and_toggles_weeks(page, base_url):
+    page.goto(url(base_url, "full"))
+    rv = page.locator("#reviewcard")
+    expect(rv.locator(".grade b")).to_have_text(re.compile(r"^[ABC]$"))
+    expect(rv).to_contain_text("graded on the process, not the P&L")
+    expect(rv.locator(".slips")).to_contain_text("1 off-plan position (net −$120)")     # this week, from the fixture
+    expect(rv).to_contain_text("1 taken · 1 skipped")
+    rv.get_by_role("button", name="Last week").click()
+    expect(rv).to_contain_text("3 taken · 0 skipped")
+    expect(rv).not_to_contain_text("This week P&L")
+    rv.get_by_role("button", name="Mark last week reviewed").click()
+    expect(rv.locator("#reviewdone")).to_have_text("Reviewed ✓")
+    page.reload()
+    expect(page.locator("#reviewcard #reviewdone")).to_have_text("Reviewed ✓")            # remembered (last week still selected)
+
+
+def test_a_review_due_cue_appears_on_monday_until_last_week_is_reviewed(page, base_url):
+    _at(page, "2026-10-12T02:00:00+00:00")                               # a Monday, local and UTC
+    page.goto(url(base_url, "full"))
+    cue = page.locator("#reviewcue")
+    expect(cue).to_have_text("Weekly review due")
+    cue.click()
+    expect(page.locator("#reviewcard")).to_contain_text("Mark last week reviewed")
+    page.locator("#reviewdone").click()
+    expect(page.locator("#reviewcue")).to_have_count(0)

@@ -21,6 +21,7 @@ from . import behavior
 from .common import API, fnum, log
 
 H_MS = 3_600_000
+D_MS = 86_400_000
 BAR_MS = {"1d": 86_400_000, "4h": 4 * H_MS, "1h": H_MS}
 WINDOW_BARS = 2          # a fill up to two bars after the signal close still counts as taking it
 LOOKBACK_DAYS = 60
@@ -95,7 +96,7 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
         if match is None and now_ms < end:
             continue                                     # still inside the window: no verdict yet
         row = {"coin": e["coin"], "tf": e["tf"], "signal_day": e["signal_day"], "r": e.get("r"),
-               "status": e.get("status"), "taken": match is not None}
+               "status": e.get("status"), "taken": match is not None, "tc": tc}
         if match is not None:
             used.add(match)
             p = pos[match]
@@ -109,6 +110,17 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
     taken = [r for r in rows if r["taken"]]
     skipped = [r for r in rows if not r["taken"]]
     med = lambda xs: (sorted(xs)[len(xs) // 2] if xs else None)  # noqa: E731
+    # the weekly review: this week and last, Monday 00:00 UTC (the weekly loss limit's week)
+    w0 = now_ms - ((now_ms // D_MS + 3) % 7) * D_MS - now_ms % D_MS      # 1970-01-01 was a Thursday
+    weeks = {}
+    for name, a, b in (("this", w0, now_ms + 1), ("last", w0 - 7 * D_MS, w0)):
+        wr = [r for r in rows if a <= r["tc"] < b]
+        wo = [p for p in off if a <= p["t0"] < b]
+        wt = [r for r in wr if r["taken"]]
+        weeks[name] = {"start": a, "signals": len(wr), "taken": len(wt), "skipped": len(wr) - len(wt),
+                       "no_stop": sum(r.get("stop_min") is None for r in wt),
+                       "skipped_r": round(sum(r["r"] or 0 for r in wr if not r["taken"] and r["status"] in ("stopped", "time")), 2),
+                       "offplan": len(wo), "offplan_net": round(sum(p["net"] for p in wo if p["t_end"] is not None), 2)}
     stops = [r["stop_min"] for r in taken]
     return {
         "t": now_ms, "since": since, "signals": len(rows), "taken": len(taken), "skipped": len(skipped),
@@ -121,7 +133,7 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
         "size_x_med": med([r["size_x"] for r in taken if r.get("size_x") is not None]),
         "offplan": len(off), "offplan_net": round(sum(p["net"] for p in off if p["t_end"] is not None), 2),
         "offplan_open": sum(p["t_end"] is None for p in off),
-        "rows": rows[-10:],
+        "rows": rows[-10:], "weeks": weeks,
     }
 
 
