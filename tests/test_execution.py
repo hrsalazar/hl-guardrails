@@ -84,3 +84,13 @@ def test_weekly_counts_split_at_monday_utc():
     assert (w["this"]["signals"], w["this"]["taken"], w["this"]["no_stop"]) == (1, 1, 1)
     assert (w["last"]["signals"], w["last"]["skipped"], w["last"]["skipped_r"]) == (1, 1, -1.0)
     assert w["this"]["offplan"] == 1 and w["this"]["offplan_net"] == round(-1 - 0.2, 2)
+
+
+def test_your_r_on_taken_signals_against_the_rule_on_the_same_signals():
+    close = T + 4 * H
+    fills = [fill(close + 60_000, "SOL", "B", 25, 100.5, 0, fee=0.0),
+             fill(close + 9 * H, "SOL", "A", 25, 96, 25, closed=-112.5, fee=0.0)]
+    e = entry(r=-1.0, status="stopped")
+    x = ex.evaluate([e], fills, [], 10_000, 1.0, now_ms=close + 20 * H)
+    assert x["rows"][0]["your_r"] == -1.12                    # -112.5 USD on a 100 USD 1R
+    assert x["same"] == {"n": 1, "rule_r": -1.0, "your_r": -1.12}

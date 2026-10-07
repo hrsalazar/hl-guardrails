@@ -150,3 +150,13 @@ def test_lines_are_kept_and_closed_entries_are_split_by_side():
     assert L["sma50w"]["above"]["n"] == 2 and L["sma50w"]["below"]["n"] == 1
     assert L["sma50w"]["above"]["win_rate"] == 0.5 and L["sma50w"]["below"]["win_rate"] == 0
     assert "below" in L["sma200d"] and L["sma200d"]["below"]["n"] == 1 and L["sma200d"]["above"]["n"] == 1  # None skipped
+
+
+def test_per_timeframe_summary_for_plan_vs_reality():
+    jr = []
+    for i, (tf, lo, c) in enumerate([("4h", 100, 130), ("4h", 95, 96), ("1d", 95, 96)]):
+        journal.add(jr, row(tf=tf), f"k{i}", 0, S)
+        journal.update(jr[-1], [bar(1, 101, 131, lo, c)] + [bar(j, c, c + 1, c - 1, c) for j in range(2, 25)], S, 21)
+    b = journal.summary(jr)["by_tf"]
+    assert b["4h"]["n"] == 2 and b["4h"]["win"] == 0.5 and b["4h"]["hit1"] == 0.5 and b["4h"]["sd_r"] > 0
+    assert b["1d"]["n"] == 1 and b["1d"]["sd_r"] is None

@@ -139,7 +139,22 @@ def summary(journal):
         "failed_early": len(fe), "failed_early_recovered": sum(e["r"] > 0 for e in fe),
         "adds": add_summary(journal),
         "lines": lines_summary(done),
+        "by_tf": tf_summary(done),
     }
+
+
+def tf_summary(done):
+    """Per timeframe, for the plan-vs-reality card: closed signals, win rate, the share that reached
+    +1R before the stop, average R and its standard deviation (for the verdict's error band)."""
+    out = {}
+    for tf in sorted({e["tf"] for e in done}):
+        rs = [e["r"] for e in done if e["tf"] == tf]
+        n = len(rs)
+        mean = sum(rs) / n
+        sd = (sum((r - mean) ** 2 for r in rs) / (n - 1)) ** 0.5 if n > 1 else None
+        out[tf] = {"n": n, "win": sum(r > 0 for r in rs) / n, "avg_r": mean, "sd_r": sd,
+                   "hit1": sum((e.get("max_r") or 0) >= 1 for e in done if e["tf"] == tf) / n}
+    return out
 
 
 # Live rule for the ma-lines lead, fixed before any live data (docs/research/ma-lines-study.md): on 4h,

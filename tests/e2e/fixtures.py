@@ -211,6 +211,7 @@ def build_full(*, age_min=2, journal_closed=8):
         "execution": {"t": gen, "since": gen - 30 * D, "signals": 7, "taken": 3, "skipped": 4, "taken_r": 1.2, "skipped_r": 2.1,
                       "slip_atr_med": 0.15, "stop_before": 2, "stop_delay_med": 3.0, "no_stop": 1, "stop_unknown": 0,
                       "size_x_med": 0.9, "offplan": 5, "offplan_net": -1230.0, "offplan_open": 1, "rows": [],
+                      "same": {"n": 9, "rule_r": 2.1, "your_r": -1.5},
                       "weeks": {"this": {"start": 0, "signals": 2, "taken": 1, "skipped": 1, "no_stop": 0, "skipped_r": 0.0,
                                          "offplan": 1, "offplan_net": -120.0},
                                 "last": {"start": 0, "signals": 3, "taken": 3, "skipped": 0, "no_stop": 0, "skipped_r": 0.0,
@@ -237,6 +238,9 @@ def build_full(*, age_min=2, journal_closed=8):
             "summary": {
                 "closed": journal_closed, "open": 2, "win_rate": 3 / 8, "avg_r": 0.34, "pf": 1.59,
                 "failed_early": 3, "failed_early_recovered": 1,
+                # made up: 1d still gathering, 4h at 40 closed and below the backtest by > 2 SE
+                "by_tf": {"1d": {"n": 12, "win": 0.42, "hit1": 0.58, "avg_r": 0.41, "sd_r": 1.9},
+                          "4h": {"n": 40, "win": 0.30, "hit1": 0.45, "avg_r": -0.35, "sd_r": 1.2}},
                 "adds": {"4h": {"closed": 3, "open": 1, "skipped": 2, "r_sum": 1.4, "pf": 2.1,
                                 "base_r_sum": 2.0, "with_add_r_sum": 3.4}},
                 "lines": {"4h": {"sma50w": {"above": {"n": 6, "win_rate": 0.5, "avg_r": 0.42, "pf": 1.9},

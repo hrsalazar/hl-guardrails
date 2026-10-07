@@ -300,6 +300,13 @@ dialog#urge{max-height:88vh;overflow:auto}
 .lsec{margin:10px 0;font-size:13.5px;line-height:1.5}
 #pushlog{font-weight:500;color:var(--muted)}#pushlog[hidden]{display:none}#pushlog.slow{color:var(--neg);box-shadow:0 0 0 1px var(--neg) inset}
 .badge:empty{display:none}
+.planrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:10px}
+.plantf{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.plantf table{width:100%;font-size:13px}.plantf td,.plantf th{padding:4px 0;text-align:right}.plantf td:first-child,.plantf th:first-child{text-align:left;color:var(--text-2)}
+.pth{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+.pv{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:999px;background:var(--surface-3);color:var(--text-2)}
+.pv-ok{color:var(--pos)}.pv-below{color:var(--neg)}.pv-above{color:var(--blue)}
+.planyou{margin-top:12px;font-size:13.5px;line-height:1.5}.planyou h4{margin:0 0 4px;font-size:12.5px;font-weight:650}
 .grade{display:flex;align-items:center;gap:12px;margin:12px 0 4px}
 .grade>b{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;font-size:22px;color:#fff;background:var(--axis)}
 .grade.g-A>b{background:var(--pos)}.grade.g-B>b{background:var(--warn)}.grade.g-C>b{background:var(--neg)}
@@ -493,6 +500,8 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
     <button class="tab" role="tab" data-tab="flow" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12c3-5 6 5 9 0s6 5 9 0M3 18c3-5 6 5 9 0s6 5 9 0" opacity=".5"/><path d="M3 6c3-5 6 5 9 0s6 5 9 0"/></svg>Flow</button>
   </div>
   <div class="pane" id="pane-tech">
+    <section class="card" id="plancard"><h3 data-ic="plan">Plan vs reality <span class="badge" id="planbadge"></span></h3>
+      <p class="desc">Is the rule doing live what it did in the backtest, and are you getting what the rule gets? Each verdict waits for 30 closed trades.</p><div id="plan"></div></section>
     <section class="card" id="reviewcard"><h3 data-ic="review">Weekly review <span class="badge" id="reviewbadge"></span></h3><div id="review"></div></section>
     <section class="card"><h3 data-ic="layers">Positions <span class="badge" id="poscount"></span></h3><div id="positions"></div></section>
     <section class="card" id="nearcard" hidden><h3 data-ic="target">Watch closely <span class="badge" id="nearcount"></span></h3>
@@ -636,7 +645,7 @@ async function render(){
   $('#gen').innerHTML=`<span class="acct">${esc(d.account.slice(0,6))}…${esc(d.account.slice(-4))} · </span>`
     +`${age<1?'updated just now':'updated '+fmt(age)+' min ago'}${age>40?' — stale':''}`;
   renderNow(d);renderHero(d);renderGauges(d);renderAlerts(d);
-  renderPositions(d);renderScan(d);renderJournal(d.journal);renderReview(d);
+  renderPositions(d);renderScan(d);renderJournal(d.journal);renderReview(d);renderPlan(d);
   renderMacro(d);renderFlow(d);
   // Local notifications are only a fallback for a device WITHOUT Web Push (a desktop tab left open).
   // They used to fire for every alert this device hadn't displayed yet -- so opening the app replayed
@@ -1167,6 +1176,7 @@ const IC={
   info:'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M12 11v5 M12 8h.01',
   clock:'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M12 8v4l3 2',
   review:'M9 4h6v3H9z M7 5.5H5V21h14V5.5h-2 M9 13.5l2 2 4-4',
+  plan:'M4 19h16 M6 15l4-4 3 3 5-6 M15 8h3v3',
 };
 const icon=k=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[k]}"/></svg>`;
 for(const h of document.querySelectorAll('h3[data-ic]'))h.insertAdjacentHTML('afterbegin',`<span class="hic" aria-hidden="true">${icon(h.dataset.ic)}</span>`);
@@ -1255,6 +1265,41 @@ function renderReview(d){
   $('#reviewbadge').textContent=reviewDue()?'review due':done?'reviewed':'';
   $('#reviewseg').onclick=e=>{const b=e.target.closest('button');if(!b)return;kv('hlgReviewWeek',b.dataset.w);renderReview(d)};
   $('#reviewdone').onclick=()=>{const r=reviewed();if(!r.includes(a))r.push(a);kv('hlgReviewed',r.slice(-60));renderReview(d);renderNow(d)};
+}
+// Plan vs reality. The journal follows every signal with the same mechanics as the signal-grade
+// backtest (each signal simulated on its own), so the two compare like for like. Verdict, fixed in
+// advance: none before 30 closed; then "on track" if the live average R is within 2 standard errors
+// of the backtest's, "below" / "above" outside that band. One small sample is not a broken system.
+const PLAN_BT={'1d':{n:246,win:0.38,hit1:0.56,avg_r:0.35},'4h':{n:906,win:0.35,hit1:0.50,avg_r:0.18}};
+const PLAN_N=30;
+function planVerdict(L,bt){
+  if(!L||L.n<PLAN_N)return {k:'wait',w:`not enough data · ${L?L.n:0}/${PLAN_N}`};
+  const se=(L.sd_r||0)/Math.sqrt(L.n),diff=L.avg_r-bt.avg_r;
+  if(se>0&&diff<-2*se)return {k:'below',w:'below the backtest'};
+  if(se>0&&diff>2*se)return {k:'above',w:'above the backtest'};
+  return {k:'ok',w:'on track'};
+}
+function renderPlan(d){
+  const el=$('#plan');if(!el)return;
+  const by=((d.journal||{}).summary||{}).by_tf||{}, pc=v=>v==null?'—':Math.round(v*100)+'%';
+  const Rf=r=>r==null?'—':`${r>=0?'+':'−'}${fmt(Math.abs(r),2)}R`;
+  const verdicts=[];
+  const rows=['1d','4h'].map(tf=>{const bt=PLAN_BT[tf],L=by[tf],v=planVerdict(L,bt);verdicts.push(v);
+    return `<div class="plantf"><div class="pth"><b>${tf==='1d'?'Daily':'4-hour'}</b><span class="pv pv-${v.k}">${v.w}</span></div>`
+      +`<table class="nocard"><tr><th></th><th>Backtest</th><th>Live (rule)</th></tr>`
+      +`<tr><td>Trades closed</td><td>${bt.n}</td><td>${L?L.n:0}</td></tr>`
+      +`<tr><td>Won</td><td>${pc(bt.win)}</td><td>${pc(L&&L.win)}</td></tr>`
+      +`<tr><td>Reached +1R first</td><td>${pc(bt.hit1)}</td><td>${pc(L&&L.hit1)}</td></tr>`
+      +`<tr><td>Average per trade</td><td>${Rf(bt.avg_r)}</td><td>${Rf(L&&L.avg_r)}</td></tr></table></div>`}).join('');
+  const X=d.execution||{},S=X.same||{};
+  const you=S.n?`On the <b>${S.n}</b> signal${S.n>1?'s':''} you took that have closed, the rule made <b>${Rf(S.rule_r)}</b> and you made <b>${Rf(S.your_r)}</b>: `
+      +`<b class="${cls(S.your_r-S.rule_r)}">${Rf((S.your_r-S.rule_r)/S.n)}</b> a trade ${S.your_r<S.rule_r?'lost to execution':'gained in execution'}`
+      +(S.n<PLAN_N?` <span class="mut">(judge at ${PLAN_N})</span>`:'')+'.'
+    :'None of the signals you took has closed yet, so there is nothing to compare.';
+  const off=X.offplan?` Outside the plan: ${X.offplan} position${X.offplan>1?'s':''} that matched no signal, net ${money(X.offplan_net)}.`:'';
+  el.innerHTML=`<div class="planrow">${rows}</div><div class="planyou"><h4>You vs the rule, same signals</h4>${you}${off}</div>`;
+  const bad=verdicts.some(v=>v.k==='below');
+  $('#planbadge').textContent=bad?'below the backtest':verdicts.every(v=>v.k==='wait')?'gathering data':'on track';
 }
 function renderAlerts(d){
   lastAlerts=d;
@@ -1767,7 +1812,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab
 // Wide tables read as labelled cards on a phone: each cell carries its column name (CSS shows it
 // above the value under 640px). Runs on every re-render, so no render function needs to know.
 function cardify(root){
-  for(const t of root.querySelectorAll('table:not(.cardable)')){
+  for(const t of root.querySelectorAll('table:not(.cardable):not(.nocard)')){  // .nocard: small tables that fit a phone as they are
     const head=t.querySelector('tr');if(!head||!head.querySelector('th'))continue;
     const labels=[...head.children].map(th=>th.textContent.trim());
     head.classList.add('thead');t.classList.add('cardable');

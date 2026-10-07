@@ -4,6 +4,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-07
 
+- **Plan vs reality card** (top of the Technical tab):
+  - **The rule vs its backtest,** per timeframe (from the journal's new `by_tf` summary): win rate, reached +1R first, average R.
+  - **You vs the rule** on the signals you took: your realised R (new in `hlg/execution.py`) against the rule's, i.e. the execution cost per trade, plus off-plan positions.
+  - **The verdict,** fixed in advance: not before 30 closed trades; then *on track* within 2 standard errors of the backtest's average R, *below* / *above* outside it.
+
+  Small tables can now opt out of the phone card layout (`.nocard`).
 - **Weekly review card** (top of the Technical tab): this week or last, graded on the process, not the P&L.
   - **Grade:** A (every rule kept) / B (one slip) / C, listing each slip: rule-breaking trades, off-plan positions, signals taken without a stop.
   - **The week's numbers:** clean trades, signals taken / skipped, strategy trades closed in R, urges waited out, and predictions scored.

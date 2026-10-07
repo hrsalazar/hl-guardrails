@@ -1091,3 +1091,22 @@ def test_a_review_due_cue_appears_on_monday_until_last_week_is_reviewed(page, ba
     expect(page.locator("#reviewcard")).to_contain_text("Mark last week reviewed")
     page.locator("#reviewdone").click()
     expect(page.locator("#reviewcue")).to_have_count(0)
+
+
+# ---------------------------------------------------------------------- plan vs reality
+def test_plan_vs_reality_compares_the_rule_with_its_backtest_and_you_with_the_rule(page, base_url):
+    page.goto(url(base_url, "full"))
+    c = page.locator("#plancard")
+    daily, h4 = c.locator(".plantf").nth(0), c.locator(".plantf").nth(1)
+    expect(daily.locator(".pv")).to_have_text("not enough data · 12/30")
+    # 4h: -0.35R vs +0.18R with SE 1.2/sqrt(40) = 0.19 -> more than 2 SE below
+    expect(h4.locator(".pv")).to_have_text("below the backtest")
+    expect(h4).to_contain_text("Average per trade+0.18R−0.35R")
+    expect(c.locator("#planbadge")).to_have_text("below the backtest")
+    you = c.locator(".planyou")
+    expect(you).to_contain_text("On the 9 signals you took that have closed, the rule made +2.10R and you made −1.50R")
+    expect(you).to_contain_text("−0.40R a trade lost to execution")
+    expect(you).to_contain_text("5 positions that matched no signal, net −$1,230")
+    page.goto(url(base_url, "empty"))
+    expect(page.locator("#plancard .pv").first).to_have_text("not enough data · 0/30")
+    expect(page.locator("#plancard .planyou")).to_contain_text("None of the signals you took has closed yet")

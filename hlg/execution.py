@@ -105,11 +105,14 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
             row["stop_min"] = first_stop(orders, p["coin"], p["side"], p["t0"], p["t_end"])
             plan_qty = risk_usd / e["risk"] if risk_usd and e.get("risk") else None
             row["size_x"] = round(p["qty"] / plan_qty, 2) if plan_qty and p["qty"] else None
+            # your realised result on this signal in R (1R = the rule's risk at the current equity base)
+            row["your_r"] = round(p["net"] / risk_usd, 2) if risk_usd and p["t_end"] is not None else None
         rows.append(row)
     off = [p for i, p in enumerate(pos) if i not in used and p["t0"] >= since]
     taken = [r for r in rows if r["taken"]]
     skipped = [r for r in rows if not r["taken"]]
     med = lambda xs: (sorted(xs)[len(xs) // 2] if xs else None)  # noqa: E731
+    both = [r for r in taken if r.get("your_r") is not None and r["status"] in ("stopped", "time") and r["r"] is not None]
     # the weekly review: this week and last, Monday 00:00 UTC (the weekly loss limit's week)
     w0 = now_ms - ((now_ms // D_MS + 3) % 7) * D_MS - now_ms % D_MS      # 1970-01-01 was a Thursday
     weeks = {}
@@ -133,6 +136,8 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
         "size_x_med": med([r["size_x"] for r in taken if r.get("size_x") is not None]),
         "offplan": len(off), "offplan_net": round(sum(p["net"] for p in off if p["t_end"] is not None), 2),
         "offplan_open": sum(p["t_end"] is None for p in off),
+        # the same signals, both closed: what the rule made vs what you made (the execution cost in R)
+        "same": {"n": len(both), "rule_r": round(sum(r["r"] for r in both), 2), "your_r": round(sum(r["your_r"] for r in both), 2)},
         "rows": rows[-10:], "weeks": weeks,
     }
 
