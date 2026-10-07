@@ -466,6 +466,8 @@ but your own open risk outranks it: an under-water position always brings the av
 The text is fixed and written here, not generated: the numbers are filled in by the browser from the
 decrypted data, so no figure of yours goes to a model or leaves the device. Which lessons you've read
 stays in browser storage, like the urge log.
+| **Your execution** (Signal journal) | your real fills matched to the journal's signals, hourly (`hlg/execution.py`):<br>• signals taken vs skipped, and what the skipped ones made;<br>• entry vs plan in ATR;<br>• when the stop went in: before the entry, minutes after, or never;<br>• size vs the rule's;<br>• off-plan positions that matched no signal, with their net | the backtest assumes perfect execution; this measures the gap, which is where this account's losses came from |
+| **Your read vs the rule** (prediction log) | on each live entry alert, one tap before it resolves: does it reach +1R before the stop? (yes/no, lean/sure). It's scored automatically from the journal against the rule's own rate (~50% on 4h, 56% on 1d), with a Brier score. Judged at 50; stored on this device | about half of entries reach +1R and no setup feature predicted which (signal-grade study). This tests whether your read of the chart adds anything, with your own numbers |
 
 Nothing here blocks a trade — the tool can't, and shouldn't pretend to. Every aid is either a warning
 with your own evidence attached or friction you chose. The fills analysis refreshes hourly; the urge
@@ -1206,7 +1208,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-88 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+90 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

@@ -4,6 +4,15 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-07
 
+- **Execution gap** (`hlg/execution.py`, Signal journal → *Your execution*). Your real fills are matched to the journal's signals hourly:
+  - signals taken vs skipped, and what the skipped ones made;
+  - entry vs the next open, in ATR;
+  - when the first stop went in (before the entry / minutes after / never);
+  - size vs the rule's;
+  - off-plan positions that matched no signal, with their net.
+
+  P&L stays in the encrypted payload.
+- **Prediction log** (Signal journal → *Your read vs the rule*): one tap on a live entry alert, before it resolves: does it reach +1R before the stop? It's scored from the journal against the rule's own rate (~50% / 56%) with a Brier score, judged at 50, and kept on the device.
 - **TradFi positions are tracked.** Hyperliquid's TradFi perps (`xyz:SP500`, `xyz:GOLD`, …) trade on the separate `xyz` exchange, which the monitor never read. A TradFi position was invisible to every rule and to the dashboard. Positions, open orders (so a stop there counts) and prices now include `xyz`, and the position counts toward account leverage. If `xyz` is unreachable, the monitor falls back to the main account. `allowed_coins` gains the TradFi perps.
 - **Macro backdrop in production.** It was off on GitHub because FRED's keyless download times out from Actions runners, which also left the market state without its credit / S&P leg. With the new optional `FRED_API_KEY` secret, it reads FRED's official API instead:
   - refreshed every 6 hours, keeping the last good reading through an outage;

@@ -207,6 +207,10 @@ def build_full(*, age_min=2, journal_closed=8):
                  "maint_margin": 1117.0, "notional": 18620.0},
         "locked_until": 0, "day_start_equity": day_start, "week_start_equity": week_start,
         "day_pnl": day_pnl, "week_pnl": week_pnl,
+        # made-up execution summary (hlg.execution)
+        "execution": {"t": gen, "since": gen - 30 * D, "signals": 7, "taken": 3, "skipped": 4, "taken_r": 1.2, "skipped_r": 2.1,
+                      "slip_atr_med": 0.15, "stop_before": 2, "stop_delay_med": 3.0, "no_stop": 1, "stop_unknown": 0,
+                      "size_x_med": 0.9, "offplan": 5, "offplan_net": -1230.0, "offplan_open": 1, "rows": []},
         # made-up split; each sums to its total (-330 / -430)
         "pnl_split": {"day": {"realised": 120.0, "open": -390.0, "spot": -60.0},
                       "week": {"realised": 410.0, "open": -780.0, "spot": -60.0}},

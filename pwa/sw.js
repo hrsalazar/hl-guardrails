@@ -1,4 +1,4 @@
-const CACHE = "hlg-v30";
+const CACHE = "hlg-v31";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png", "config.js"];
 
 self.addEventListener("install", (e) => {

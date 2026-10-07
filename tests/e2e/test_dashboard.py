@@ -1035,3 +1035,31 @@ def test_scanner_groups_fold_from_their_heading_and_remember_it(page, base_url):
     expect(page.locator(".tfgroup[data-k='1d'] table")).to_be_hidden()
     page.locator(".tfgroup[data-k='watch'] .tfhead").click()
     expect(page.locator(".tfgroup[data-k='watch'] table")).to_be_visible()
+
+
+# ---------------------------------------------------------------------- execution gap, prediction log
+def test_the_journal_shows_your_execution_against_the_signals(page, base_url):
+    page.goto(url(base_url, "full"))
+    x = page.locator("#jexec")
+    expect(x).to_contain_text("Took 3 of 7 signals")
+    expect(x).to_contain_text("skipped 4, which made +2.10R once closed")
+    expect(x).to_contain_text("entry vs plan +0.15 ATR")
+    expect(x).to_contain_text("stop: 2 placed before entry, median 3 min after, 1 never")
+    expect(x).to_contain_text("size 0.90× the rule's")
+    expect(x).to_contain_text("off-plan: 5 positions that matched no signal, net −$1,230 (1 still open)")
+
+
+def test_a_prediction_is_taken_once_before_it_resolves_and_scored_against_the_rule(page, base_url):
+    page.goto(url(base_url, "full"))
+    row = page.locator('.al[data-key="setup_ENA_LONG_2026-09-19 16:00"]')
+    expect(page.locator("#jpred")).to_contain_text("On a live entry alert, tap")
+    row.get_by_role("button", name="Yes, sure").click()
+    expect(row.locator(".pred")).to_contain_text("Your read: reaches +1R first (80%)")
+    expect(row.get_by_role("button", name="No, sure")).to_have_count(0)          # can't be changed after
+    # the journal fixture's ENA entry already reached +1.4R: scored as a hit
+    p = page.locator("#jpred")
+    expect(p).to_contain_text("1 scored")
+    expect(p).to_contain_text("when you said yes, 100% reached +1R first (of 1)")
+    expect(p).to_contain_text("your score 0.040 vs 0.250")
+    page.reload()
+    expect(page.locator("#jpred")).to_contain_text("1 scored")                 # kept on this device

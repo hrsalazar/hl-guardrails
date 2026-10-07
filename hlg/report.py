@@ -25,8 +25,8 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import (account, behavior, cascade_watch, digest, events, guardrails, journal, liqmap, liquidations, market,
-               market_state, scanner, sentiment, universe, vault)
+from . import (account, behavior, cascade_watch, digest, events, execution, guardrails, journal, liqmap,
+               liquidations, market, market_state, scanner, sentiment, universe, vault)
 
 # README "Discipline aids": if-then plans (implementation intentions) shown in the Now card and the
 # urge check. Overridable in config.yaml -> discipline; written as the trader's own rules.
@@ -311,6 +311,7 @@ def main():
         "cascades": cascade_watch.summary(state),  # early-warning tracking, as of the previous run
         # your own record from fills (hlg.behavior) and your if-then plans: the Now card and urge check
         "behavior": state.get("behavior"),
+        "execution": state.get("execution"),   # your trades vs the signals (hlg.execution)
         "discipline": {**DISCIPLINE, **(cfg.get("discipline") or {})},
         # the page can't see secrets: this is how it tells "no key" from "not written yet"
         "digest_status": digest.status(state, now_ms, digest.settings(cfg),
@@ -357,6 +358,10 @@ def main():
     # Your own trading record (hlg.behavior): hourly, from public fills; P&L stays in the encrypted state.
     b0 = state.get("behavior")
     if behavior.refresh(state, cfg["account"], now_ms) is not b0:
+        publish("state.json", state.d, vlt, in_ci)
+    # Execution gap (hlg.execution): your fills against the journal's signals, hourly; evidence only.
+    x0 = state.get("execution")
+    if execution.refresh(state, cfg["account"], now_ms, acct["base"], cfg["rules"]["risk_per_trade_pct"]) is not x0:
         publish("state.json", state.d, vlt, in_ci)
     # Cascade early-warning tracking (hlg.cascade_watch): hourly 1h candles per scanned coin, after
     # the push for the same reason as liqmap. Evidence only -- nothing is alerted from it.
