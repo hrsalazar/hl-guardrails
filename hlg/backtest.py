@@ -257,6 +257,8 @@ FILTERS = {
     "fng_not_extreme_fear": lambda k: _pass(getattr(k, "fng_extreme_fear", None), lambda v: not v),
     # scheduled event risk (hlg.events): don't open into an FOMC decision
     "no_fomc_entry": lambda k: _pass(getattr(k, "fomc_next24", None), lambda v: not v),
+    # BTC's daily trend as the live market state reads it (short_study, docs/research/short-study.md)
+    "btc_down": lambda k: _pass(getattr(k, "btc_down", None), bool),
     # long-term lines from daily / weekly bars (ma_study, docs/research/ma-lines-study.md)
     **{f"{who}_above_{ln}": (lambda col: lambda k: _pass(getattr(k, col, None), bool))(f"{who}_above_{ln}")
        for who in ("btc", "coin") for ln in MA_LINES},
@@ -296,6 +298,9 @@ def signal(k, V):
             ok = ok_trend and k.rsi >= V["rsi_min"] and at
         else:
             ok = ok_trend and px < k.lo20
+        # filters on the short side only (a combined book whose shorts are gated, its longs not)
+        if ok and not all(FILTERS[f](k) for f in V.get("short_filters", ())):
+            ok = False
         if ok:
             stop = px + V["stop_atr"] * k.atr
             tgt = k.lo20 if V["target"] == "range" else None
@@ -1151,8 +1156,8 @@ def _combined_book(P):
     return data, fund, {"coin_of": coin_of, "mark": mark}, days[len(days) // 2]
 
 
-def _combined_run(data, fund, Q, mid):
-    T, C, dd = run(VARIANTS["breakout_long"], data, fund, Q)
+def _combined_run(data, fund, Q, mid, V=None):
+    T, C, dd = run(V or VARIANTS["breakout_long"], data, fund, Q)
     s = stats(T, C, dd, Q) | halves(T, mid)
     daily = C.resample("1D").last().dropna().pct_change().dropna() * 100
     tf = T.coin.str.split("|").str[1]
@@ -1353,6 +1358,122 @@ def regime_study(P, risk=1.0, n_boot=20_000, seed=0):
     return R, T
 
 
+def bear_context(data, cache):
+    """Adds btc_down to every stream's bars: BTC's daily close below its 200-day EMA as of the
+    previous daily close (regime_states' trend leg, the live market state's), by the bar's UTC day."""
+    S = regime_states(bars("BTC", cache, "1d"), None, None)
+    down = S.trend.map({"btc_down": True, "btc_up": False}, na_action="ignore")
+    for d in data.values():
+        d["btc_down"] = down.reindex(d.index.floor("D")).set_axis(d.index).astype("object")
+    return data
+
+
+def _own_halves(T):
+    """PF in each half of a run's own trades, split at its median entry date (short_study rule 3)."""
+    if len(T) < 2:
+        return 0.0, 0.0
+    t = T.sort_values("start")
+    mid = t.start.iloc[len(t) // 2]
+    return _pf_of(t.net[t.start < mid].values), _pf_of(t.net[t.start >= mid].values)
+
+
+SHORT_STUDY = {
+    # fixed before running (docs/research/short-study.md): short_bear is the candidate
+    "short_bear": {**VARIANTS["breakout_short"], "filters": ["btc_down"]},
+    "breakout_short": VARIANTS["breakout_short"],
+    "long_bear": {**VARIANTS["breakout_long"], "filters": ["btc_down"]},
+}
+HOLDOUT = ("2021-04-01", "2023-06-01")
+
+
+def short_study(P):
+    """python -m hlg.backtest --short-study
+
+    Do breakdown shorts pay when BTC is in a downtrend (daily close below the 200-day EMA)? The
+    unconditional short lost (README "Shorting"); this asks whether it only loses in bull phases.
+    Pre-registered in docs/research/short-study.md: windows, variants and the five-part adoption
+    bar fixed before the first run."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    rep = [f"# Breakdown shorts in a BTC downtrend ({', '.join(DEF['coins'])})\n"]
+    res, checks = {}, {}
+    for win, iv, start in (("A", "1d", P["start"]), ("A", "4h", P["start"]), ("B", "1d", HOLDOUT[0])):
+        Q = {**P, "start": start}
+        t0 = pd.Timestamp(start, tz="UTC")
+        data, fund = {}, {}
+        for c in DEF["coins"]:
+            df = bars(c, cache, iv)
+            if df is None or len(df) < 80:
+                continue
+            data[c] = features(df, 1)
+            fund[c] = funding(c, int(t0.timestamp() * 1000), cache, iv)
+        bear_context(data, cache)
+        days = [d for d in sorted(set().union(*[set(d.index) for d in data.values()])) if d >= t0]
+        if win == "B":
+            days = [d for d in days if d < pd.Timestamp(HOLDOUT[1], tz="UTC")]
+        btc = data["BTC"].btc_down
+        bear_days = len({d.floor("D") for d in days if d in btc.index and btc[d] is True})
+        all_days = len({d.floor("D") for d in days})
+        rows, trades = {}, {}
+        for name, V in SHORT_STUDY.items():
+            T, C, dd = run(V, data, fund, Q)
+            if win == "B" and len(T):
+                T = T[T.start < pd.Timestamp(HOLDOUT[1], tz="UTC")]
+            h1, h2 = _own_halves(T)
+            rows[name] = dict(trades=len(T), win_rate=(T.net > 0).mean() if len(T) else np.nan,
+                              pf=_pf_of(T.net.values) if len(T) else np.nan,
+                              avg_r=(T.net_pct / Q["risk_pct"]).mean() if len(T) else np.nan,
+                              net_pct_of_equity0=T.net.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              max_dd_pct=dd * 100, half1_pf=h1, half2_pf=h2,
+                              funding_pct_of_equity0=T.fund.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              avg_days=T.days.mean() if len(T) else np.nan)
+            trades[name] = T
+            T.to_csv(out / f"short_{win}_{iv}_{name}.csv", index=False)
+            log.info("%s %s %s: trades %d", win, iv, name, len(T), extra={"safe": True})
+        c, base = rows["short_bear"], trades["breakout_short"]
+        pct = (bootstrap_pf(base.net.values, c["trades"], c["pf"])
+               if 0 < c["trades"] < len(base) else float("nan"))
+        key = f"{win}-{iv}"
+        res[key] = rows
+        checks[key] = dict(n=c["trades"] >= 30, pf=bool(c["pf"] >= 1.3) if c["trades"] else False,
+                           halves=(c["half1_pf"] > 1.0 and c["half2_pf"] > 1.0) if win == "A" else None,
+                           chance=bool(pct > 95) if win == "A" else None, pctile=pct)
+        lab = "holdout 2021-04 -> 2023-05, no funding data" if win == "B" else f"{start} -> now"
+        rep.append(f"\n## Window {win}, {iv} ({lab}; BTC below its 200-day EMA on {bear_days} of {all_days} days)\n\n"
+                   + pd.DataFrame(rows).T.astype(float).round(2).to_markdown() + "\n")
+        if win == "A":
+            rep.append(f"short_bear PF vs random same-size subsets of breakout_short: percentile {pct:.0f}\n")
+    # rule 5: the live book (1d + 4h longs, 3 shared slots, 1.0% risk) with short_bear shorts added
+    data, fund, extra, mid = _combined_book(P)
+    bear_context(data, cache)
+    Qc = {**P, "risk_pct": 1.0, **extra}
+    _, live = _combined_run(data, fund, Qc, mid)
+    Tb, both = _combined_run(data, fund, Qc, mid, V={**VARIANTS["breakout_both"], "short_filters": ["btc_down"]})
+    live["shorts"] = 0
+    both["shorts"] = int((Tb.side == "S").sum()) if len(Tb) else 0
+    book_ok = bool(both["sharpe"] >= live["sharpe"] and both["max_dd_pct"] >= live["max_dd_pct"] - 2
+                   and both["pf"] >= live["pf"] - 0.05)
+    cols = ["trades", "shorts", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf", "worst_day_pct"]
+    B = pd.DataFrame({"live book (longs)": live, "live book + short_bear": both}).T
+    rep.append("\n## The live book with shorts added (1d + 4h, 1.0% risk, 3 shared slots, window A)\n\n"
+               + B[cols].astype(float).round(2).to_markdown() + "\n")
+    A1, A4, B1 = checks["A-1d"], checks["A-4h"], checks["B-1d"]
+    rules = {
+        "1. >= 30 trades in A-1d, A-4h, B-1d": A1["n"] and A4["n"] and B1["n"],
+        "2. PF >= 1.3 in A-1d, A-4h, B-1d": A1["pf"] and A4["pf"] and B1["pf"],
+        "3. PF > 1.0 in both halves of its own trades, A-1d and A-4h": A1["halves"] and A4["halves"],
+        "4. above the 95th pctile of random breakout_short subsets, A-1d and A-4h": A1["chance"] and A4["chance"],
+        "5. live book + shorts: Sharpe >= live, DD within 2pp, PF within 0.05": book_ok,
+    }
+    adopted = all(rules.values())
+    rep.append("\n## Adoption bar (fixed before running)\n\n"
+               + "\n".join(f"- {k}: **{'pass' if v else 'FAIL'}**" for k, v in rules.items())
+               + f"\n\n**short_bear: {'ADOPTED as an alert' if adopted else 'not adopted'}**\n")
+    (out / "short_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return res, rules, adopted
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -1375,6 +1496,7 @@ def main():
     ap.add_argument("--priority-study", action="store_true", help="should 1d signals get slot priority over 4h in the live book?")
     ap.add_argument("--ma-study", action="store_true", help="50-week / 200-day SMA/EMA (BTC and each coin) as breakout entry filters")
     ap.add_argument("--bmsb-study", action="store_true", help="bull market support band (20w SMA / 21w EMA) vs the 50-week SMA as entry filters")
+    ap.add_argument("--short-study", action="store_true", help="breakdown shorts only while BTC is below its 200-day EMA (pre-registered)")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
                      help="does adding these specific coins to the live scanner.coins list pay for itself?")
@@ -1411,6 +1533,8 @@ def main():
         return priority_study(P)
     if a.regime_study:
         return regime_study(P)
+    if a.short_study:
+        return short_study(P)
     if a.ma_study:
         return ma_study(P)
     if a.bmsb_study:

@@ -558,6 +558,15 @@ out-of-sample it barely breaks even. Adding it to the book doesn't diversify the
 drags it: Sharpe falls from 0.98 to 0.28. Consistent with crypto's structural long bias over this
 window; `python -m hlg.backtest --variant breakout_short breakout_both` reproduces it.
 
+**Shorts only in a downtrend — tested, not adopted** (2026-10-07, pre-registered in
+[docs/research/short-study.md](docs/research/short-study.md)). This test only shorts while BTC's
+daily close is below its 200-day EMA, the live market state's trend leg. That made shorts worse:
+PF 0.74 on 1d and 0.68 on 4h, below shorting at random times (25th and 3rd percentiles). Adding
+these shorts to the live book cut its Sharpe from 1.03 to 0.58. Breakdown shorts only paid in the
+2021–22 holdout (PF 1.51), and that was fading by the end of it. The long rule, though, kept
+working in the same downtrends: PF 2.82 on 1d and 1.59 on 4h, from fewer signals. Run it with
+`python -m hlg.backtest --short-study`.
+
 ### Timeframe
 
 `scanner.timeframes` is a list of bars the breakout rule runs on independently - each timeframe gets its own

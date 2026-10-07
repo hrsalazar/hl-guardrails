@@ -4,6 +4,13 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-07
 
+- **Short study** (`--short-study`, pre-registered in docs/research/short-study.md): do breakdown shorts pay while BTC is below its 200-day EMA? No, and not adopted.
+  - **Worse than unconditional:** PF 0.74 (1d) and 0.68 (4h) since 2023-06, at the 25th and 3rd percentiles of random short subsets.
+  - **Hurts the live book:** adding the shorts cut its Sharpe from 1.03 to 0.58.
+  - **Only paid in 2021–22:** PF 1.51 on the 1d holdout.
+  - **Longs held up:** the long rule in the same downtrends made PF 2.82 (1d) and 1.59 (4h).
+
+  New in the backtester: a `btc_down` filter and `short_filters` (filters that apply only to the short side).
 - **Plan vs reality card** (top of the Technical tab):
   - **The rule vs its backtest,** per timeframe (from the journal's new `by_tf` summary): win rate, reached +1R first, average R.
   - **You vs the rule** on the signals you took: your realised R (new in `hlg/execution.py`) against the rule's, i.e. the execution cost per trade, plus off-plan positions.
