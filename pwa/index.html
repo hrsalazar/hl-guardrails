@@ -276,6 +276,21 @@ button:active{transform:scale(.97)}
 .dots i{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--blue)}
 .dots i.no{background:transparent;box-shadow:inset 0 0 0 2px var(--red)}
 .dots i.l{background:var(--axis)}
+.why{margin:4px 0 0;font-size:14px;font-style:italic;color:var(--text-2)}
+.msnote{margin:10px 0 0;padding:8px 12px;border-radius:12px;font-size:13.5px;background:color-mix(in srgb,var(--teal) 12%,var(--surface-2));border:1px solid color-mix(in srgb,var(--teal) 35%,var(--line))}
+@media (prefers-reduced-motion: no-preference){.msnote{animation:msin .6s ease-out}}
+@keyframes msin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.planstrip{margin-top:12px}.pslab{font-size:13px;color:var(--text-2)}.pslab b{color:var(--text)}
+.pdots{display:grid;grid-template-columns:repeat(30,1fr);gap:3px;margin-top:6px;max-width:420px}
+.pdots i{aspect-ratio:1;border-radius:50%;background:var(--surface-3)}
+.pdots .pd-kept{background:var(--pos)}.pdots .pd-slip{background:transparent;box-shadow:inset 0 0 0 2px var(--amber)}
+.pdots .pd-today{background:transparent;box-shadow:inset 0 0 0 2px var(--pos)}.pdots .pd-none{opacity:.45}
+.ms{display:flex;flex-wrap:wrap;gap:6px 8px;margin-top:10px;align-items:center}.mschip{color:var(--teal)}
+.msnext{flex:1 1 180px;display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:12.5px;color:var(--text-2)}.msnext .meter{grid-column:1/-1}
+.lapse{border-left:3px solid var(--amber);padding-left:8px}
+.mine{margin-top:12px;display:grid;gap:8px}.mine h4{margin:0;font-size:12.5px;font-weight:650}
+.mine label{display:grid;gap:3px;font-size:12px;color:var(--text-2)}.mine input{font:inherit;font-size:14px;padding:6px 10px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface);color:var(--text)}
+.helpline{margin-top:12px;font-size:12px;color:var(--muted)}
 .intent{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13.5px;line-height:1.45}
 .intent b{color:var(--text-2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px}
 .now .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
@@ -727,7 +742,10 @@ function lineChart(el,pts,{h=150,fmtY=v=>fmt(v),fmtX=t=>new Date(t).toLocaleStri
 // own tiny store: this block runs at load, before the alert list's `store` const is initialised
 const kv=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
 let prevLook=null;
-function markLook(){prevLook=kv('hlgLastLook')||prevLook;kv('hlgLastLook',Date.now())}
+const localDay=(t=Date.now())=>{const x=new Date(t);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`};
+function markLook(){prevLook=kv('hlgLastLook')||prevLook;kv('hlgLastLook',Date.now());
+  const L=kv('hlgLooks')||{},k=localDay();L[k]=(L[k]||0)+1;
+  const keep=Object.keys(L).sort().slice(-60);kv('hlgLooks',Object.fromEntries(keep.map(x=>[x,L[x]])))}
 markLook();
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){markLook();if(D)renderNow(D)}});
 const urgeLog=()=>kv('hlgUrges')||[];
@@ -774,6 +792,75 @@ function mktTile(d){const X=mkt(d);if(!X)return '';
     +`<div class="gs">same odds as any state</div></div>`}
 function newsLine(d){const n=newsSoon(d);
   return n?`<div class="newsline"><b>${esc(n.title)} ${n.when}.</b> Stops on the exchange before it.</div>`:''}
+// Reinforcement for the process, never for trading (docs/research/behaviour-change.md). The FCA's
+// trading-app experiment found points, prizes and pushes raised trade counts 11-12%, so nothing here
+// rewards a trade, a win or the P&L. What counts: days the plan was kept, urges waited out, reviews
+// done. Counts are cumulative and forgiving -- a slip day never resets anything (Lally et al. 2010:
+// one missed day didn't hurt habit formation; all-or-nothing streaks invite the abstinence-violation
+// "what the hell" spiral). A slip is met with self-compassion (Breines & Chen 2012), not a red X.
+const WHY0='I trade for side income, not to be right.';
+const mine=()=>({why:WHY0,swap:'',win:null,...(kv('hlgMine')||{})});
+const waitedAll=()=>Math.max(kv('hlgWaitedN')||0,urgeLog().filter(x=>x.outcome==='waited').length);
+// the charting window: by default the 15 minutes after the daily close, in your local time
+function chartWin(now=Date.now()){
+  const w=mine().win, base=new Date(now);let h,m;
+  if(w&&/^\d\d:\d\d$/.test(w))[h,m]=w.split(':').map(Number);
+  else{const c=new Date(Math.ceil(now/864e5)*864e5);h=c.getHours();m=c.getMinutes()}
+  base.setHours(h,m,0,0);let a=base.getTime();
+  if(a+15*6e4<=now)a+=864e5;                          // today's has passed: tomorrow's
+  return {a,b:a+15*6e4,open:now>=a&&now<a+15*6e4}}
+function chartWinLine(){const W=chartWin(),t=x=>new Date(x).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  if(W.open)return `Your charting window is open until ${t(W.b)}. Chart freely, then close it.`;
+  const m=Math.round((W.a-Date.now())/6e4);
+  return `Your charting window is ${t(W.a)}–${t(W.b)}, in ${m>=60?`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`:`${m}m`}. Not never: later.`}
+// plan days: UTC days in the last 30 with no rule slip (an add to a loser, an off-plan position,
+// a signal taken with no stop), from your fills; today is in progress. Kept in a local ledger so
+// the all-time count outlives the 30-day window.
+function planDays(d){
+  const B=d.behavior,X=d.execution;if(!B&&!X)return null;
+  const today=Math.floor(Date.now()/864e5)*864e5;
+  const since=Math.max(today-29*864e5,X&&X.since?Math.floor(X.since/864e5)*864e5:0,B&&B.days?today-(B.days-1)*864e5:0);
+  const slip=new Set([...((B||{}).slip_days||[]),...((X||{}).slip_days||[])]);
+  const L=kv('hlgPlanLedger')||{},days=[];
+  for(let t=today-29*864e5;t<=today;t+=864e5){
+    const st=t<since?'none':t===today?(slip.has(t)?'slip':'today'):slip.has(t)?'slip':'kept';
+    if(t<today&&st!=='none')L[t]=st==='kept'?1:0;
+    days.push({t,st})}
+  const ks=Object.keys(L).sort().slice(-400);kv('hlgPlanLedger',Object.fromEntries(ks.map(k=>[k,L[k]])));
+  const done=days.filter(x=>x.st==='kept'||x.st==='slip'&&x.t<today);
+  const lastSlip=[...slip].filter(t=>t>=today-2*864e5).sort().pop();
+  return {days,kept:done.filter(x=>x.st==='kept').length,n:done.length,all:Object.values(L).filter(v=>v===1).length,lastSlip}}
+function planStrip(P){if(!P||!P.n&&!P.days.some(x=>x.st==='today'))return '';
+  const lab={kept:'plan kept',slip:'a slip',today:'today, in progress',none:'before tracking'};
+  return `<div class="planstrip" data-tip="Each dot is a UTC day. Filled: no rule slip (no add to a loser, no off-plan position, no signal without a stop). A slip day stays a ring; it never resets the count.">`
+    +`<div class="pslab">Plan kept <b>${P.kept} of ${P.n} day${P.n===1?'':'s'}</b><span class="mut"> · ${P.all} all-time</span></div>`
+    +`<div class="pdots">${P.days.map(x=>`<i class="pd-${x.st}" title="${new Date(x.t).toISOString().slice(0,10)}: ${lab[x.st]}"></i>`).join('')}</div></div>`}
+// milestones for the process; fixed and honest, one gentle note when one is reached
+const MILESTONES=[{k:'urges',lab:'urges waited out',at:[5,10,25,50,100,250,500]},
+  {k:'days',lab:'days on plan',at:[7,30,60,100,200,365]},{k:'reviews',lab:'weekly reviews done',at:[1,4,12,26,52]}];
+function milestones(P){
+  const v={urges:waitedAll(),days:P?P.all:0,reviews:reviewed().length},earned=[],next=[];
+  MILESTONES.forEach(M=>{const got=M.at.filter(a=>v[M.k]>=a),nx=M.at.find(a=>v[M.k]<a);
+    if(got.length)earned.push({key:`${M.k}:${got[got.length-1]}`,w:`${got[got.length-1]} ${M.lab}`,all:got.map(a=>`${M.k}:${a}`)});
+    if(nx)next.push({w:M.lab,v:v[M.k],at:nx})});
+  const seen=kv('hlgMilestones'),allKeys=earned.flatMap(e=>e.all);
+  const fresh=seen?allKeys.filter(k=>!seen.includes(k)):[];       // the first run seeds silently
+  kv('hlgMilestones',[...new Set([...(seen||[]),...allKeys])]);
+  return {earned,next,fresh:fresh.length?earned.find(e=>e.all.includes(fresh[fresh.length-1])):null}}
+function looksLine(){const L=kv('hlgLooks')||{},k=localDay(),past=Object.keys(L).filter(x=>x!==k).map(x=>L[x]).sort((a,b)=>a-b);
+  if(past.length<7)return '';
+  const med=past[past.length>>1],n=L[k]||0;
+  return `<div class="since">Looks today: <b>${n}</b> · your usual ${med} a day${n<med?' — calmer than usual.':n>med?'. More than usual: is something pulling you? "I feel like trading" is the button for that.':'.'}</div>`}
+function mineForm(){const M=mine(),W=chartWin(),hh=new Date(W.a);
+  const tv=M.win||`${String(hh.getHours()).padStart(2,'0')}:${String(hh.getMinutes()).padStart(2,'0')}`;
+  return `<div class="mine"><h4>Your why and your plans <span class="mut">— on this device</span></h4>`
+    +`<label>Why I trade<input id="mywhy" maxlength="140" value="${esc(M.why)}"></label>`
+    +`<label>When I want to open a chart, I will…<input id="myswap" maxlength="140" placeholder="e.g. take a 10-minute walk" value="${esc(M.swap)}"></label>`
+    +`<label>My charting window (15 min)<input id="mywin" type="time" value="${tv}"></label></div>`}
+function bindMine(d){['mywhy','myswap','mywin'].forEach(id=>{const el=$('#'+id);if(!el)return;
+  el.addEventListener('change',()=>{const M=kv('hlgMine')||{};M[{mywhy:'why',myswap:'swap',mywin:'win'}[id]]=el.value.trim();kv('hlgMine',M);renderNow(d)})})}
+const HELPLINE=`<div class="helpline">If trading feels out of control: <a href="https://www.gamblinghelponline.org.au/" target="_blank" rel="noopener">Gambling Help Online</a>, 1800 858 858 — free, confidential, 24/7, and it covers trading.</div>`;
+
 // The Now card answers one question at a glance -- what's going on, and what do I do? -- in four
 // layers: the state and one line; three tiles (next close, market, last signal); the two actions;
 // and a fold (closed by default, remembered) with the record, the series and the plan.
@@ -806,30 +893,38 @@ function renderNow(d){
   const I=dis.intentions||[];
   const intent=I.length?I[Math.floor(Date.now()/36e5)%I.length]:null;  // a different plan each hour
   const TL=todayLesson(d), open=kv('hlgNowMore')===true;
+  const P=planDays(d), MS=milestones(P), why=mine().why;
+  const lapse=P&&P.lastSlip!=null?`<div class="since lapse">A slip on ${new Date(P.lastSlip).toISOString().slice(5,10)}. One slip is information, not a verdict: it doesn't undo the days before it. What set it off? The next signal is a fresh trade.</div>`:'';
+  const msHtml=(MS.earned.length||MS.next.length)?`<div class="ms">${MS.earned.map(e=>`<span class="chip mschip">✦ ${e.w}</span>`).join('')}`
+    +MS.next.slice(0,2).map(n=>`<div class="msnext"><span>Next: ${n.at} ${n.w}</span><b class="num">${n.v}/${n.at}</b><div class="meter" style="height:5px"><span style="width:${Math.min(100,n.v/n.at*100)}%;background:var(--teal)"></span></div></div>`).join('')+`</div>`:'';
   $('#now').className=`card now ${M.k}`;
   $('#now').innerHTML=`<div class="nowtop"><div class="mode"><i aria-hidden="true">${M.ic}</i>${M.word}</div>${since?`<div class="since">${since}</div>`:''}`
     +(reviewDue()?`<button class="duebtn" id="reviewcue">Weekly review due</button>`:'')+`</div>`
     +`<h2>${M.h}</h2>`
+    +(why?`<p class="why">“${esc(why)}”</p>`:'')
+    +(MS.fresh?`<div class="msnote" role="status">✦ ${esc(MS.fresh.w)}. That's the habit forming, one quiet decision at a time.</div>`:'')
     +`<div class="glance"><div class="gt" id="decide"></div>${mktTile(d)}${sigTile}</div>`
-    +newsLine(d)
+    +newsLine(d)+planStrip(P)
     +`<div class="actions"><button id="urgebtn" class="${M.k==='wait'?'primary':''}">I feel like trading</button>`
     +`<button class="lessonbtn" id="lessonbtn"><b>Today's lesson${lessonRead(TL.id)?' · read ✓':' · 1 min'}</b>${esc(TL.t)}</button></div>`
     +`<details class="nowmore"${open?' open':''}><summary>Your record, the series and your plan</summary>`
     +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')+series
     +(X?`<div class="since"><b>Market (${X.word}):</b> ${esc(X.pull)} ${esc(X.fact)}</div>`:'')
-    +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')+`</details>`;
+    +lapse+msHtml+looksLine()
+    +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')+mineForm()+HELPLINE+`</details>`;
   $('#urgebtn').onclick=()=>urgeStart(d);
   $('#lessonbtn').onclick=()=>lessonShow(d,TL);
   if($('#reviewcue'))$('#reviewcue').onclick=()=>{kv('hlgReviewWeek','last');showTab('tech',true);renderReview(d);
     $('#reviewcard').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})};
   $('#now .nowmore').addEventListener('toggle',e=>kv('hlgNowMore',e.target.open));
+  bindMine(d);
   renderDecision(d);
 }
 
 // Urge check: name it -> pause (urge surfing) -> a checklist filled in from live data. Nothing is
 // blocked -- the pause only breaks the automatic "urge -> order" link, and waiting it out is counted.
 const REASONS=[['moving','Price is moving without me'],['bored','Bored — nothing is happening'],['winback','Win back a loss'],
-  ['add','Add to a position I hold'],['signal','A setup signalled']];
+  ['add','Add to a position I hold'],['signal','A setup signalled'],['chart','Look at charts, project the price']];
 let urgeTimer=null;
 function urgeStart(d){
   const dlg=$('#urge');
@@ -870,12 +965,14 @@ function urgeCheck(d,reason){
     item(!(reason==='add'&&losing.length),reason==='add'&&losing.length
       ?`You'd be adding to a losing position (${losing.map(esc).join(', ')}).${B.avgdown_n?` Your record: ${B.avgdown_n} averaged-down trades netted ${money(B.avgdown_net)}; ${B.never_n} you never added to netted ${money(B.never_net,true)}.`:''}`
       :'Not adding to a losing position.'),
+    ...(reason==='chart'?[`<li><span class="ic">i</span><span>${chartWinLine()}</span></li>`]:[]),
     item(reason!=='winback',reason==='winback'?'Winning back a loss isn\'t a setup. The last trade is over; this one has its own odds.':'Not trying to win back a loss.'),
     ...(mkt(d)?[`<li><span class="ic">i</span><span>Market: ${mkt(d).word}. ${esc(mkt(d).pull)} The strategy's odds are the same in every state.</span></li>`]:[]),
     `<li><span class="ic">?</span><span>Is the stop decided <b>before</b> entry, and can you lose 1R ($${fmt(risk)}) on it without adding? Accept that loss now, or don't take the trade.</span></li>`];
   const go=live.length&&!locked&&!(reason==='add'&&losing.length);
   $('#urgebody').innerHTML=`<div class="step">3 of 3 · check it against the plan</div><h3 id="urgetitle">Does this trade pass?</h3><ul>${items.join('')}</ul>`
     +`<div class="verdict">${go?'The plan allows this one — entry, stop and size as the alert says.':'The plan says wait. Closing the app is the trade today.'}</div>`
+    +(!go&&mine().swap?`<div class="intent"><b>Your swap</b>${esc(mine().swap)}</div>`:'')
     +(go?'':`<button class="linkish" data-act="why">Why wait? A 1-minute lesson →</button>`)
     +`<div class="row"><button data-act="${go?'proceed':'override'}">${go?'Proceed with the plan':'Trade anyway'}</button><button class="primary" data-act="waited">I'll wait</button></div>`;
   $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;
@@ -885,6 +982,7 @@ function urgeCheck(d,reason){
 function urgeEnd(outcome,reason){
   clearInterval(urgeTimer);
   if(outcome!=='closed'){const log=urgeLog();log.push({t:Date.now(),reason:reason||null,outcome});kv('hlgUrges',log.slice(-300))}
+  if(outcome==='waited')kv('hlgWaitedN',waitedAll()+1);
   const dlg=$('#urge');if(dlg.open)dlg.close();
   if(D)renderNow(D);
 }
@@ -1018,7 +1116,7 @@ const LESSON_MKT={
   breakeven:{risk_off:'Risk-off today: fast down days make losses bigger and the urge to win it back stronger.'},
   mood:{risk_on:'Greed today feels like confirmation. The backtest says it isn\'t.',risk_off:'Fear today feels like a warning. The backtest says it isn\'t.'},
 };
-const URGE_LESSON={moving:'fomo',bored:'checking',winback:'breakeven',add:'avgdown',signal:'series'};
+const URGE_LESSON={moving:'fomo',bored:'checking',winback:'breakeven',add:'avgdown',signal:'series',chart:'checking'};
 const lessonLog=()=>kv('hlgLessons')||[];
 // today's lesson: the most relevant to your data right now; recently read ones step back; stable
 // within a UTC day so it isn't a new "reward" on every look

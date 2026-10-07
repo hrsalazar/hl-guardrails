@@ -4,6 +4,16 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-07
 
+- **Reinforcing the process, not the trading** (Now card; the evidence is in docs/research/behaviour-change.md):
+  - **Your why:** your own line under the headline.
+  - **Plan kept:** a 30-day dot strip plus an all-time count. A slip day shows as a ring and never resets the count. The slip days come from new `behavior.slip_days` and `execution.slip_days`, which record dates only.
+  - **A slip note:** a recent slip gets a self-compassionate line.
+  - **Process milestones:** urges waited out, days on plan and weekly reviews, each with one quiet note when reached.
+  - **Looks today vs your usual.**
+  - **The charting urge:** "Look at charts, project the price" is a new urge reason, answered with your swap plan and a 15-minute charting window.
+  - **A helpline line** (Gambling Help Online).
+
+  Nothing rewards a trade, a win or the P&L.
 - **Short study** (`--short-study`, pre-registered in docs/research/short-study.md): do breakdown shorts pay while BTC is below its 200-day EMA? No, and not adopted.
   - **Worse than unconditional:** PF 0.74 (1d) and 0.68 (4h) since 2023-06, at the 25th and 3rd percentiles of random short subsets.
   - **Hurts the live book:** adding the shorts cut its Sharpe from 1.03 to 0.58.

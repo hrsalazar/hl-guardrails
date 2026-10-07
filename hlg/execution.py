@@ -102,6 +102,7 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
             p = pos[match]
             atr = e.get("atr") or 0
             row["slip_atr"] = round((p["px"] - e["entry"]) / atr, 2) if p["px"] and e.get("entry") and atr else None
+            row["t0"] = p["t0"]
             row["stop_min"] = first_stop(orders, p["coin"], p["side"], p["t0"], p["t_end"])
             plan_qty = risk_usd / e["risk"] if risk_usd and e.get("risk") else None
             row["size_x"] = round(p["qty"] / plan_qty, 2) if plan_qty and p["qty"] else None
@@ -109,6 +110,10 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
             row["your_r"] = round(p["net"] / risk_usd, 2) if risk_usd and p["t_end"] is not None else None
         rows.append(row)
     off = [p for i, p in enumerate(pos) if i not in used and p["t0"] >= since]
+    # UTC days with an execution slip (an off-plan position opened, a signal taken with no stop),
+    # for the plan-days record on the Now card; days only, never amounts
+    slips = {p["t0"] for p in off} | {r["t0"] for r in rows if r["taken"] and r.get("stop_min") is None}
+
     taken = [r for r in rows if r["taken"]]
     skipped = [r for r in rows if not r["taken"]]
     med = lambda xs: (sorted(xs)[len(xs) // 2] if xs else None)  # noqa: E731
@@ -138,7 +143,7 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
         "offplan_open": sum(p["t_end"] is None for p in off),
         # the same signals, both closed: what the rule made vs what you made (the execution cost in R)
         "same": {"n": len(both), "rule_r": round(sum(r["r"] for r in both), 2), "your_r": round(sum(r["your_r"] for r in both), 2)},
-        "rows": rows[-10:], "weeks": weeks,
+        "rows": rows[-10:], "weeks": weeks, "slip_days": sorted({t // D_MS * D_MS for t in slips}),
     }
 
 

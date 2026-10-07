@@ -211,6 +211,7 @@ def build_full(*, age_min=2, journal_closed=8):
         "execution": {"t": gen, "since": gen - 30 * D, "signals": 7, "taken": 3, "skipped": 4, "taken_r": 1.2, "skipped_r": 2.1,
                       "slip_atr_med": 0.15, "stop_before": 2, "stop_delay_med": 3.0, "no_stop": 1, "stop_unknown": 0,
                       "size_x_med": 0.9, "offplan": 5, "offplan_net": -1230.0, "offplan_open": 1, "rows": [],
+                      "slip_days": [(gen // D - 1) * D, (gen // D - 9) * D],
                       "same": {"n": 9, "rule_r": 2.1, "your_r": -1.5},
                       "weeks": {"this": {"start": 0, "signals": 2, "taken": 1, "skipped": 1, "no_stop": 0, "skipped_r": 0.0,
                                          "offplan": 1, "offplan_net": -120.0},

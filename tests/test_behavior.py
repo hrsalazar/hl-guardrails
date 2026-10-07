@@ -113,3 +113,11 @@ def test_short_mirror(tmp_path):
     stop = make_stop_order("ETH", "B", 2, 3100)
     problems, _ = run_with(tmp_path, pos, [stop, limit("ETH", "A", 3050, 1)], 3020)
     assert any("1 resting sell order(s), 1 ETH at 3050, would add to this losing position above its entry" in p for p in problems)
+
+
+def test_slip_days_are_the_utc_days_of_adds_to_a_loser():
+    fills = [fill("SOL", "B", 100, 1, 0, 1 * D), fill("SOL", "B", 90, 1, 1, 2 * D + 5),     # averaged down on day 2
+             fill("SOL", "A", 97, 2, 2, 3 * D), fill("BTC", "B", 50, 1, 0, 4 * D),
+             fill("BTC", "B", 55, 1, 1, 5 * D)]                                             # added while winning: fine
+    closed, open_ = behavior.round_trips(fills)
+    assert behavior.summarize(closed, open_, 6 * D)["slip_days"] == [2 * D]

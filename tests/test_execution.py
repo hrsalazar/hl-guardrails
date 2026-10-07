@@ -94,3 +94,13 @@ def test_your_r_on_taken_signals_against_the_rule_on_the_same_signals():
     x = ex.evaluate([e], fills, [], 10_000, 1.0, now_ms=close + 20 * H)
     assert x["rows"][0]["your_r"] == -1.12                    # -112.5 USD on a 100 USD 1R
     assert x["same"] == {"n": 1, "rule_r": -1.0, "your_r": -1.12}
+
+
+def test_slip_days_are_the_utc_days_of_off_plan_opens_and_stopless_entries():
+    close = T + 4 * H
+    fills = [fill(close + 60_000, "SOL", "B", 10, 100, 0), fill(close + 5 * H, "SOL", "A", 10, 95, 10, closed=-50),
+             fill(T + 2 * D + 3 * H, "DOGE", "B", 1000, 0.2, 0), fill(T + 2 * D + 9 * H, "DOGE", "A", 1000, 0.18, 1000)]
+    x = ex.evaluate([entry()], fills, [], 10_000, 1.0, now_ms=T + 3 * D)
+    assert x["slip_days"] == [T, T + 2 * D]                     # SOL taken with no stop; DOGE off plan
+    ok = [fill(close + 60_000, "SOL", "B", 10, 100, 0), fill(close + 5 * H, "SOL", "A", 10, 95, 10)]
+    assert ex.evaluate([entry()], ok, [stop_order(close)], 10_000, 1.0, now_ms=T + 3 * D)["slip_days"] == []

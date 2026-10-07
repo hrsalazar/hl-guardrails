@@ -1110,3 +1110,63 @@ def test_plan_vs_reality_compares_the_rule_with_its_backtest_and_you_with_the_ru
     page.goto(url(base_url, "empty"))
     expect(page.locator("#plancard .pv").first).to_have_text("not enough data · 0/30")
     expect(page.locator("#plancard .planyou")).to_contain_text("None of the signals you took has closed yet")
+
+
+# ---------------------------------------------------------------------- reinforcement for the process
+def test_now_card_carries_your_why_and_you_can_rewrite_it(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#now .why")).to_have_text("“I trade for side income, not to be right.”")
+    page.locator("#now .nowmore summary").click()
+    page.locator("#mywhy").fill("For the house deposit, one quiet trade at a time.")
+    page.locator("#mywhy").press("Enter")
+    page.locator("#mywhy").blur()
+    expect(page.locator("#now .why")).to_contain_text("For the house deposit")
+    page.reload()
+    expect(page.locator("#now .why")).to_contain_text("For the house deposit")
+    expect(page.locator("#now .helpline")).to_contain_text("1800 858 858")
+
+
+def test_plan_days_count_slips_as_rings_and_never_reset(page, base_url):
+    page.goto(url(base_url, "full"))
+    strip = page.locator("#now .planstrip")
+    expect(strip.locator(".pdots i")).to_have_count(30)
+    expect(strip.locator(".pd-slip")).to_have_count(2)               # yesterday and 9 days ago
+    expect(strip.locator(".pd-today")).to_have_count(1)
+    expect(strip).to_contain_text("Plan kept 27 of 29 days")
+    page.locator("#now .nowmore summary").click()
+    expect(page.locator("#now .lapse")).to_contain_text("One slip is information, not a verdict")
+
+
+def test_a_waited_urge_reaching_a_milestone_gets_one_quiet_note(page, base_url):
+    page.add_init_script("""if(!sessionStorage.getItem('seeded')){sessionStorage.setItem('seeded','1');
+      localStorage.setItem('hlgWaitedN','9');localStorage.setItem('hlgMilestones','["urges:5"]')}""")
+    page.goto(url(base_url, "empty"))
+    expect(page.locator("#now .msnote")).to_have_count(0)
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name="Look at charts, project the price").click()
+    expect(dlg).to_contain_text("Your charting window is", timeout=5000)
+    dlg.get_by_role("button", name="I'll wait").click()
+    expect(page.locator("#now .msnote")).to_contain_text("10 urges waited out")
+    page.reload()                                                     # said once, not on every look
+    expect(page.locator("#now .msnote")).to_have_count(0)
+    page.locator("#now .nowmore summary").click()
+    expect(page.locator("#now .ms")).to_contain_text("Next: 25 urges waited out")
+
+
+def test_your_swap_plan_answers_the_charting_urge(page, base_url):
+    page.add_init_script("""localStorage.setItem('hlgMine', JSON.stringify({swap:'take a 10-minute walk'}))""")
+    page.goto(url(base_url, "empty"))
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name="Look at charts, project the price").click()
+    expect(dlg.locator(".intent")).to_contain_text("take a 10-minute walk", timeout=5000)
+
+
+def test_looks_today_are_compared_with_your_usual_once_there_is_a_week(page, base_url):
+    page.add_init_script("""const L={};for(let i=1;i<=7;i++){const x=new Date(Date.now()-i*864e5);
+      L[`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`]=6}
+      if(!sessionStorage.getItem('seeded')){localStorage.setItem('hlgLooks',JSON.stringify(L));sessionStorage.setItem('seeded','1')}""")
+    page.goto(url(base_url, "full"))
+    page.locator("#now .nowmore summary").click()
+    expect(page.locator("#now .nowmore")).to_contain_text("your usual 6 a day — calmer than usual.")

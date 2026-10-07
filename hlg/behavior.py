@@ -65,7 +65,7 @@ def round_trips(fills):
         t = cur.get(coin)
         if t is None and abs(pos0) < 1e-12:
             t = cur[coin] = {"coin": coin, "open": f["time"], "side": sgn, "pnl": 0.0, "fees": 0.0,
-                             "avg": px, "qty": 0.0, "adds_under": 0, "last_add_under": None}
+                             "avg": px, "qty": 0.0, "adds_under": 0, "last_add_under": None, "add_times": []}
         if t is None:
             continue                                  # position predates the lookback: can't attribute
         t["pnl"] += float(f.get("closedPnl") or 0)
@@ -74,6 +74,7 @@ def round_trips(fills):
             if t["qty"] > 0 and ((px < t["avg"]) if t["side"] > 0 else (px > t["avg"])):
                 t["adds_under"] += 1
                 t["last_add_under"] = f["time"]
+                t["add_times"].append(f["time"])
             t["avg"] = (t["avg"] * t["qty"] + px * sz) / (t["qty"] + sz) if t["qty"] > 0 else px
             t["qty"] += sz
         if abs(pos1) < 1e-12:
@@ -108,6 +109,8 @@ def summarize(closed, open_, now_ms):
         "worst5_net": round(sum(worst5), 2),
         "last_add_under": last_add,
         "streak_days": round((now_ms - last_add) / D_MS, 1) if last_add else None,
+        # UTC days on which a fill added to a loser: the app's plan-days record counts the rest
+        "slip_days": sorted({ts // D_MS * D_MS for t in closed + open_ for ts in t.get("add_times", ())}),
         "recent": [{"coin": t["coin"], "t": t["close"], "net": round(t["net"], 2), "clean": clean(t),
                     "adds_under": t["adds_under"]} for t in sorted(closed, key=lambda t: t["close"])[-10:]],
     }
