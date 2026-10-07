@@ -67,6 +67,13 @@ VARIANTS = {
                              target=None, min_rr=0, max_days=10_000, trail_atr=None),
     "ma_pullback_short": dict(side="short", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5,
                               target=None, min_rr=0, max_days=10_000, trail_atr=None),
+    # the same, on the day's momentum movers only (ma_momentum_study)
+    "ma_mom": dict(side="both", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5, target=None, min_rr=0,
+                   max_days=10_000, trail_atr=None, long_filters=["mom_top", "vol_spike"], short_filters=["mom_bottom", "vol_spike"]),
+    "ma_mom_long": dict(side="long", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5, target=None, min_rr=0,
+                        max_days=10_000, trail_atr=None, long_filters=["mom_top", "vol_spike"]),
+    "ma_mom_short": dict(side="short", level="ma_pullback", entry="stop", ma_exit=True, stop_atr=0.5, target=None, min_rr=0,
+                         max_days=10_000, trail_atr=None, short_filters=["mom_bottom", "vol_spike"]),
     "ma_reclaim": dict(side="both", level="ma_reclaim", entry="open", ma_exit=True, stop_atr=0.5,
                        target=None, min_rr=0, max_days=10_000, trail_atr=None),
     # control: mirror of pullback_long on the short side (miner says this should be poor)
@@ -273,6 +280,10 @@ FILTERS = {
     "fng_not_extreme_fear": lambda k: _pass(getattr(k, "fng_extreme_fear", None), lambda v: not v),
     # scheduled event risk (hlg.events): don't open into an FOMC decision
     "no_fomc_entry": lambda k: _pass(getattr(k, "fomc_next24", None), lambda v: not v),
+    # momentum selection (ma_momentum_study): this coin among the day's eligible pool, and a volume spike
+    "mom_top": lambda k: _pass(getattr(k, "mom_rank", None), lambda v: v >= 0.8),
+    "mom_bottom": lambda k: _pass(getattr(k, "mom_rank", None), lambda v: v <= 0.2),
+    "vol_spike": lambda k: _pass(getattr(k, "vol_spike", None), bool),
     # BTC's daily trend as the live market state reads it (short_study, docs/research/short-study.md)
     "btc_down": lambda k: _pass(getattr(k, "btc_down", None), bool),
     # long-term lines from daily / weekly bars (ma_study, docs/research/ma-lines-study.md)
@@ -317,7 +328,9 @@ def _ma_signal(k, V):
 def signal(k, V):
     """k = completed daily bar. Returns (side, stop, target) or None."""
     if V.get("level") in ("ma_pullback", "ma_reclaim"):
-        return _ma_signal(k, V)
+        sig = _ma_signal(k, V)
+        side_f = V.get("long_filters" if sig and sig[0] == "L" else "short_filters", ())
+        return sig if sig and all(FILTERS[f](k) for f in side_f) else None
     if np.isnan(k.ema50) or np.isnan(k.atr) or np.isnan(k.lo20):
         return None
     for f in V.get("filters", ()):
@@ -1630,6 +1643,139 @@ def ma_pullback_study(P):
     return res, rules, adopted
 
 
+MOM_UNIVERSE = dict(top_n=50, min_vol_usd=10e6, min_age_days=60)
+MOM_STUDY = {"ma_mom": "ma_mom", "ma_top50": "ma_pullback", "ma_mom_long": "ma_mom_long",
+             "ma_mom_short": "ma_mom_short", "breakout_long (top50)": "breakout_long"}
+
+
+def momentum_context(data, mask):
+    """mom_rank: the bar's 20-bar return ranked among the coins eligible that UTC day (pct, 1 = best);
+    vol_spike: volume >= 1.5x its 20-bar average on any of the last 5 bars. Up to the bar only."""
+    ret = pd.DataFrame({c: d.ret20 for c, d in data.items()})
+    E = mask.reindex(columns=ret.columns).reindex(ret.index.floor("D")).set_axis(ret.index).fillna(False).astype(bool)
+    rank = ret.where(E).rank(axis=1, pct=True)
+    for c, d in data.items():
+        d["mom_rank"] = rank[c].reindex(d.index)
+        d["vol_spike"] = (d.vol_ratio.rolling(5).max() >= 1.5).astype("object")
+    return data
+
+
+def _pool(P, iv, pool):
+    cache = Path(P["cache_dir"])
+    data = {}
+    for c in pool:
+        try:
+            df = bars(c, cache, iv)
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s: bars failed (%s), skipped", c, e)
+            continue
+        if df is not None and len(df) >= 60:
+            data[c] = features(df, 1)
+    return data
+
+
+def ma_momentum_study(P):
+    """python -m hlg.backtest --ma-momentum-study
+
+    The MA pullback restricted to the day's momentum movers (top / bottom 20% by 20-bar return among
+    a point-in-time top-50 liquid pool, delisted coins included) with a recent volume spike -- the
+    crypto stand-in for "stocks gaining momentum with a catalyst". Pre-registered in
+    docs/research/ma-momentum-study.md; only ma_mom can be adopted."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    out.mkdir(exist_ok=True)
+    pool, delisted = candidate_pool()
+    log.info("candidate pool: %d perps (%d delisted)", len(pool), len(delisted), extra={"safe": True})
+    rep = [f"# The MA pullback on momentum movers only (top-{MOM_UNIVERSE['top_n']} pool, delisted included)\n"]
+    checks, res, pools = {}, {}, {}
+    for win, iv, start in (("A", "1d", P["start"]), ("A", "4h", P["start"]), ("B", "1d", HOLDOUT[0])):
+        if iv not in pools:
+            data = _pool(P, iv, pool)
+            mask, med = eligibility(data, MOM_UNIVERSE)
+            momentum_context(data, mask)
+            pools[iv] = (data, mask, med)
+        data, mask, med = pools[iv]
+        t0 = pd.Timestamp(start, tz="UTC")
+        m = mask.loc[mask.index >= t0 - pd.Timedelta(days=1)]
+        if win == "B":
+            m = m.loc[m.index < pd.Timestamp(HOLDOUT[1], tz="UTC")]
+        ever = sorted(set(m.columns[m.any()]))
+        sub = {c: data[c] for c in ever}
+        fund = {c: funding(c, int(t0.timestamp() * 1000), cache, iv) for c in ever}
+        Q = {**P, "start": start, "liq_med": med, "elig_by_day": by_day(m), "delisted": delisted}
+        rows, trades = {}, {}
+        for name, vk in MOM_STUDY.items():
+            T, C, dd = run(VARIANTS[vk], sub, fund, Q)
+            if win == "B" and len(T):
+                T = T[T.start < pd.Timestamp(HOLDOUT[1], tz="UTC")]
+            h1, h2 = _own_halves(T)
+            rows[name] = dict(trades=len(T), longs=int((T.side == "L").sum()) if len(T) else 0,
+                              coins=T.coin.nunique() if len(T) else 0,
+                              win_rate=(T.net > 0).mean() if len(T) else np.nan,
+                              pf=_pf_of(T.net.values) if len(T) else np.nan,
+                              avg_r=(T.net_pct / Q["risk_pct"]).mean() if len(T) else np.nan,
+                              net_pct_of_equity0=T.net.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              max_dd_pct=dd * 100, half1_pf=h1, half2_pf=h2,
+                              fees_pct_of_equity0=T.fees.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              delisted_exits=int((T.why == "delisted").sum()) if len(T) else 0)
+            trades[name] = T
+            T.to_csv(out / f"mom_{win}_{iv}_{name.split()[0]}.csv", index=False)
+            log.info("%s %s %s: %d trades", win, iv, name, len(T), extra={"safe": True})
+        c, base = rows["ma_mom"], trades["ma_top50"]
+        pct = bootstrap_pf(base.net.values, c["trades"], c["pf"]) if 0 < c["trades"] < len(base) else float("nan")
+        key = f"{win}-{iv}"
+        res[key] = rows
+        checks[key] = dict(n=c["trades"] >= (30 if win == "B" else 100), pf=bool(c["pf"] >= 1.3) if c["trades"] else False,
+                           halves=bool(c["half1_pf"] > 1.0 and c["half2_pf"] > 1.0), chance=bool(pct > 95))
+        per_day = m.sum(axis=1)
+        lab = "holdout 2021-04 -> 2023-05, no funding data" if win == "B" else f"{start} -> now"
+        rep.append(f"\n## {iv}, window {win} ({lab}; {len(ever)} coins ever eligible, median {per_day.median():.0f} a day)\n\n"
+                   + pd.DataFrame(rows).T.astype(float).round(2).to_markdown() + "\n")
+        if win == "A":
+            rep.append(f"ma_mom PF vs random same-size subsets of ma_top50: percentile {pct:.0f}\n")
+    # rule 5: the live book plus ma_mom streams on the top-50 pool
+    data0, fund0, extra, mid = _combined_book(P)
+    _, live = _combined_run(data0, fund0, {**P, "risk_pct": 1.0, **extra}, mid)
+    t0 = pd.Timestamp(P["start"], tz="UTC")
+    data, fund, coin_of, mark, V_of = dict(data0), dict(fund0), dict(extra["coin_of"]), dict(extra["mark"]), {}
+    m1 = pools["1d"][1]
+    m1 = m1.loc[m1.index >= t0 - pd.Timedelta(days=1)]
+    elig = {}
+    for iv in ("1d", "4h"):
+        d_iv = pools[iv][0]
+        for c in sorted(set(m1.columns[m1.any()]) & set(d_iv)):
+            k = f"{c}|{iv}|ma"
+            data[k], coin_of[k], V_of[k] = d_iv[c], c, VARIANTS["ma_mom"]
+            fund[k] = funding(c, int(t0.timestamp() * 1000), cache, iv)
+            if iv == "4h" and c not in mark:
+                mark[c] = d_iv[c].c
+    fixed_keys = list(data0)
+    for day, coins in by_day(m1).items():
+        elig[day] = fixed_keys + [f"{c}|{iv}|ma" for c in coins for iv in ("1d", "4h") if f"{c}|{iv}|ma" in data]
+    Tb, both = _combined_run(data, fund, {**P, "risk_pct": 1.0, "coin_of": coin_of, "mark": mark, "V_of": V_of,
+                                          "elig_by_day": elig, "delisted": delisted}, mid)
+    live["ma_trades"], both["ma_trades"] = 0, int(Tb.coin.str.endswith("|ma").sum()) if len(Tb) else 0
+    book_ok = bool(both["sharpe"] >= live["sharpe"] and both["max_dd_pct"] >= live["max_dd_pct"] - 2)
+    cols = ["trades", "ma_trades", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf", "worst_day_pct"]
+    B = pd.DataFrame({"live book (breakout longs)": live, "live book + ma_mom": both}).T
+    rep.append("\n## The live book with ma_mom added (1d + 4h, 1.0% risk, 3 shared slots, window A)\n\n"
+               + B[cols].astype(float).round(2).to_markdown() + "\n")
+    A1, A4, B1 = checks["A-1d"], checks["A-4h"], checks["B-1d"]
+    rules = {
+        "1. >= 100 trades in A-1d and A-4h, >= 30 in B-1d": A1["n"] and A4["n"] and B1["n"],
+        "2. PF >= 1.3 in A-1d, A-4h, B-1d": A1["pf"] and A4["pf"] and B1["pf"],
+        "3. PF > 1.0 in both halves of its own trades, A-1d and A-4h": A1["halves"] and A4["halves"],
+        "4. above the 95th pctile of random ma_top50 subsets, A-1d and A-4h": A1["chance"] and A4["chance"],
+        "5. live book + ma_mom: Sharpe >= live, DD within 2pp": book_ok,
+    }
+    adopted = all(rules.values())
+    rep.append("\n## Adoption bar (fixed before running)\n\n"
+               + "\n".join(f"- {k}: **{'pass' if v else 'FAIL'}**" for k, v in rules.items())
+               + f"\n\n**ma_mom: {'ADOPTED as an alert' if adopted else 'not adopted'}**\n")
+    (out / "ma_momentum_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return res, rules, adopted
+
+
 def main():
     setup_logging()
     ap = argparse.ArgumentParser()
@@ -1653,6 +1799,7 @@ def main():
     ap.add_argument("--ma-study", action="store_true", help="50-week / 200-day SMA/EMA (BTC and each coin) as breakout entry filters")
     ap.add_argument("--bmsb-study", action="store_true", help="bull market support band (20w SMA / 21w EMA) vs the 50-week SMA as entry filters")
     ap.add_argument("--ma-pullback-study", action="store_true", help="9 EMA / 20 SMA / 200 SMA trend pullback, long and short (pre-registered)")
+    ap.add_argument("--ma-momentum-study", action="store_true", help="the MA pullback on the day's momentum movers only (pre-registered)")
     ap.add_argument("--short-study", action="store_true", help="breakdown shorts only while BTC is below its 200-day EMA (pre-registered)")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
@@ -1694,6 +1841,8 @@ def main():
         return short_study(P)
     if a.ma_pullback_study:
         return ma_pullback_study(P)
+    if a.ma_momentum_study:
+        return ma_momentum_study(P)
     if a.ma_study:
         return ma_study(P)
     if a.bmsb_study:

@@ -4,6 +4,13 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-08
 
+- **MA momentum study** (`--ma-momentum-study`, pre-registered in docs/research/ma-momentum-study.md): the MA pullback on the day's movers only. That means a top-50 point-in-time pool (delisted coins included), top or bottom 20% by 20-bar return, and a recent volume spike. Not adopted.
+  - **The selection helped:** PF went from 0.85 to 1.16 on 1d and from 0.92 to 1.08 on 4h, at the 90th and 94th percentiles. That's not significant.
+  - **Still behind the breakout:** it trails the breakout rule on the same pool.
+  - **In the live book:** drawdown widened from −18.5% to −28%.
+  - **The 2021–22 holdout couldn't run:** HL's backfilled candles carry no volume.
+
+  New in the backtester: `momentum_context` and the `mom_top`, `mom_bottom` and `vol_spike` filters, plus side-specific filters for the MA rule.
 - **MA pullback study** (`--ma-pullback-study`, pre-registered in docs/research/ma-pullback-study.md): Emmanuel Malyarovich's 9 EMA / 20 SMA / 200 SMA trend pullback, long and short, made mechanical. Not adopted.
   - **By timeframe:** PF 1.56 on 1d, 0.94 on 4h, 1.16 on the 1d holdout and 0.93 on 1h.
   - **In the live book:** Sharpe fell from 1.03 to 0.76 and drawdown widened from −18.5% to −47%.

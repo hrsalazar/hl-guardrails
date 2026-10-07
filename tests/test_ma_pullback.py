@@ -64,3 +64,25 @@ def test_a_buy_stop_that_is_never_reached_lapses_after_one_bar():
     T = _run([dict(o=99, h=100, l=98.5, c=99.5, sma20=97), dict(o=99.5, h=99.8, l=99, c=99.4, sma20=97),
               dict(o=99.4, h=104, l=99.3, c=103, sma20=98)], sig_on=0)
     assert T.empty
+
+
+def test_momentum_selection_gates_each_side_on_its_own_filters():
+    M = backtest.VARIANTS["ma_mom"]
+    assert backtest.signal(_k(mom_rank=0.9, vol_spike=True), M)[0] == "L"
+    assert backtest.signal(_k(mom_rank=0.5, vol_spike=True), M) is None          # not a mover
+    assert backtest.signal(_k(mom_rank=0.9, vol_spike=False), M) is None         # nothing happened
+    short = dict(o=99.0, h=100.5, l=98.0, c=99.0, ema9=100.0, sma20=101.0, ma_slope=-0.2, ext20=-1.0,
+                 ext_min10=-2.0, ext_max10=0.0, vol_spike=True)
+    assert backtest.signal(_k(**short, mom_rank=0.1), M)[0] == "S"
+    assert backtest.signal(_k(**short, mom_rank=0.9), M) is None                 # a leader is no short
+
+
+def test_momentum_rank_is_among_the_coins_eligible_that_day_only():
+    idx = pd.date_range("2025-01-01", periods=6, freq="D", tz="UTC")
+    data = {c: pd.DataFrame({"ret20": [r] * 6, "vol_ratio": v}, index=idx)
+            for c, r, v in (("A", 0.1, [1, 1, 1, 1, 1, 2]), ("B", 0.5, [1] * 6), ("C", 0.9, [1] * 6))}
+    mask = pd.DataFrame({"A": [True] * 6, "B": [True] * 6, "C": [False] + [True] * 5}, index=idx)
+    backtest.momentum_context(data, mask)
+    assert data["B"].mom_rank.iloc[0] == 1.0                                     # C not eligible yet: B leads
+    assert data["B"].mom_rank.iloc[1] == 2 / 3 and pd.isna(data["C"].mom_rank.iloc[0])
+    assert list(data["A"].vol_spike)[-2:] == [False, True]                    # a 5-bar look-back

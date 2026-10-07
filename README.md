@@ -583,6 +583,16 @@ and the 200 SMA as a target or as resistance.
 
 Run it with `python -m hlg.backtest --ma-pullback-study`.
 
+**The same, on momentum movers only** (pre-registered in
+[docs/research/ma-momentum-study.md](docs/research/ma-momentum-study.md)): the top-50 liquid pool,
+delisted coins included, long only the top 20% by 20-bar return and short only the bottom 20%, with
+a recent volume spike.
+- **The selection helped:** PF went from 0.85 to 1.16 on 1d and from 0.92 to 1.08 on 4h, at the 90th
+  and 94th percentiles of random subsets. That's short of significant.
+- **Still below the breakout rule** on the same pool, and adding it to the live book widened the
+  drawdown from −18.5% to −28%.
+- **Not adopted.** Run it with `python -m hlg.backtest --ma-momentum-study`.
+
 ### Timeframe
 
 `scanner.timeframes` is a list of bars the breakout rule runs on independently - each timeframe gets its own
