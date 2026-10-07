@@ -11,7 +11,6 @@ Dates are UTC. For the details and reasoning, see the commit messages.
   - **Process milestones:** urges waited out, days on plan and weekly reviews, each with one quiet note when reached.
   - **Looks today vs your usual.**
   - **The charting urge:** "Look at charts, project the price" is a new urge reason, answered with your swap plan and a 15-minute charting window.
-  - **A helpline line** (Gambling Help Online).
 
   Nothing rewards a trade, a win or the P&L.
 - **Short study** (`--short-study`, pre-registered in docs/research/short-study.md): do breakdown shorts pay while BTC is below its 200-day EMA? No, and not adopted.

@@ -290,7 +290,6 @@ button:active{transform:scale(.97)}
 .lapse{border-left:3px solid var(--amber);padding-left:8px}
 .mine{margin-top:12px;display:grid;gap:8px}.mine h4{margin:0;font-size:12.5px;font-weight:650}
 .mine label{display:grid;gap:3px;font-size:12px;color:var(--text-2)}.mine input{font:inherit;font-size:14px;padding:6px 10px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface);color:var(--text)}
-.helpline{margin-top:12px;font-size:12px;color:var(--muted)}
 .intent{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13.5px;line-height:1.45}
 .intent b{color:var(--text-2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px}
 .now .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
@@ -859,7 +858,6 @@ function mineForm(){const M=mine(),W=chartWin(),hh=new Date(W.a);
     +`<label>My charting window (15 min)<input id="mywin" type="time" value="${tv}"></label></div>`}
 function bindMine(d){['mywhy','myswap','mywin'].forEach(id=>{const el=$('#'+id);if(!el)return;
   el.addEventListener('change',()=>{const M=kv('hlgMine')||{};M[{mywhy:'why',myswap:'swap',mywin:'win'}[id]]=el.value.trim();kv('hlgMine',M);renderNow(d)})})}
-const HELPLINE=`<div class="helpline">If trading feels out of control: <a href="https://www.gamblinghelponline.org.au/" target="_blank" rel="noopener">Gambling Help Online</a>, 1800 858 858 — free, confidential, 24/7, and it covers trading.</div>`;
 
 // The Now card answers one question at a glance -- what's going on, and what do I do? -- in four
 // layers: the state and one line; three tiles (next close, market, last signal); the two actions;
@@ -911,7 +909,7 @@ function renderNow(d){
     +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')+series
     +(X?`<div class="since"><b>Market (${X.word}):</b> ${esc(X.pull)} ${esc(X.fact)}</div>`:'')
     +lapse+msHtml+looksLine()
-    +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')+mineForm()+HELPLINE+`</details>`;
+    +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')+mineForm()+`</details>`;
   $('#urgebtn').onclick=()=>urgeStart(d);
   $('#lessonbtn').onclick=()=>lessonShow(d,TL);
   if($('#reviewcue'))$('#reviewcue').onclick=()=>{kv('hlgReviewWeek','last');showTab('tech',true);renderReview(d);

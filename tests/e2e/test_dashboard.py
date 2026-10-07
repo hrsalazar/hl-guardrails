@@ -1123,7 +1123,6 @@ def test_now_card_carries_your_why_and_you_can_rewrite_it(page, base_url):
     expect(page.locator("#now .why")).to_contain_text("For the house deposit")
     page.reload()
     expect(page.locator("#now .why")).to_contain_text("For the house deposit")
-    expect(page.locator("#now .helpline")).to_contain_text("1800 858 858")
 
 
 def test_plan_days_count_slips_as_rings_and_never_reset(page, base_url):

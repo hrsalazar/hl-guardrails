@@ -113,7 +113,6 @@ window after the daily close loses nothing.
 | **New urge reason**, "Look at charts, project the price" | §1, §6 | the check shows your charting window and your swap plan; its lesson is the slot-machine one |
 | **Charting window**, 15 minutes, by default at the daily close in your time | §8 | editable |
 | **Looks today vs your usual**, after a week of data | §1, §7 | "calmer than usual", or a pointer to the urge button; never shaming |
-| **A helpline line** in the fold | Where this stops | Gambling Help Online, 1800 858 858, covers trading |
 
 ## Deliberately not built
 
@@ -139,7 +138,8 @@ Those call for a professional. CBT is the best-evidenced treatment for gambling 
 Australia, Gambling Help Online is free, confidential and open 24/7 (1800 858 858,
 gamblinghelponline.org.au), and it covers trading.
 
-**If this grows into a tool for others,** the same rules hold, plus two:
+**If this grows into a tool for others,** it should carry a helpline line in the app (left out of the personal
+version for now), and the same rules hold, plus two:
 - the data stays on the person's device or encrypted, as here;
 - the app never earns from trading volume. An app that profits when its users trade more is the
   FCA study's design, not this one.
