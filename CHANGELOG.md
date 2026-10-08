@@ -4,6 +4,7 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-08
 
+- **Fix: the service worker was empty.** Commit 9148150 emptied `pwa/sw.js`, which receives and displays push notifications and keeps the offline shell, so background notifications stopped working once phones picked it up. It is restored from the previous version, with a cache bump (hlg-v35) so devices update.
 - **MA momentum study** (`--ma-momentum-study`, pre-registered in docs/research/ma-momentum-study.md): the MA pullback on the day's movers only. That means a top-50 point-in-time pool (delisted coins included), top or bottom 20% by 20-bar return, and a recent volume spike. Not adopted.
   - **The selection helped:** PF went from 0.85 to 1.16 on 1d and from 0.92 to 1.08 on 4h, at the 90th and 94th percentiles. That's not significant.
   - **Still behind the breakout:** it trails the breakout rule on the same pool.
@@ -18,7 +19,17 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
   New in the backtester: `_ma_signal`, a one-bar stop-entry mode, an exit on a close back through the 20 SMA (`ma_exit`), and per-stream rules in `run()` (`P["V_of"]`) so a combined book can mix strategies.
 
-## 2026-10-07
+## 2026-10-08
+
+- **Wallet check** (`pwa/report.html`), a public page: paste a Hyperliquid address and see how the last 90 days of losses happened. It shows:
+  - the worst 5% of positions' share of losses;
+  - losses from averaged-down and unstopped positions;
+  - liquidations;
+  - the biggest losers, each tagged with what happened;
+
+  all next to the wallet study's 145 traders.
+  - **Private by design:** it runs entirely in the browser against Hyperliquid's public API. No server, nothing stored, and the address goes nowhere else (a test checks every request).
+  - **Same analysis as the study:** a port of the study's position rebuild, and a test checks that the JavaScript and the Python agree.
 
 - **Reinforcing the process, not the trading** (Now card; the evidence is in docs/research/behaviour-change.md):
   - **Your why:** your own line under the headline.

@@ -63,6 +63,7 @@ read back at the start of the next run.
 | `scripts/weekly_universe_study.py` | reruns `hlg.backtest --universe-study` weekly (`.github/workflows/universe-study.yml`) and appends the result to `docs/research/`; never edits `config.yaml` | HL |
 | `hlg/signal_grade.py` | research, run locally: grades breakout signals Low / Neutral / High from 11 setup features, walk-forward (docs/research/signal-grade-study.md: not adopted; the alerts carry the base rates instead) | HL (cached candles), FRED, alternative.me |
 | `scripts/wallet_behavior_study.py` | research, run locally: samples 200 leaderboard wallets, rebuilds their positions from public fills and measures averaging down, stops and liquidations against losses (docs/research/wallet-behavior-study.md). Raw data stays in gitignored `miner_cache/wallet_study/`; only aggregates are committed | HL (`userFillsByTime`, `historicalOrders`, public leaderboard) |
+| `pwa/report.html`, `pwa/wallet-report.js` | the public wallet check: a trader's 90-day loss pattern vs the wallet study, computed in the browser from HL's public API; no server, nothing stored | HL (from the visitor's browser) |
 | `pwa/` | static dashboard: `index.html` (UI, decryption, tabs), `sw.js` (offline shell, push display), manifest, icons | Pages, OKX (fallback) |
 
 `guardrails` and `scanner` also run as long-lived local processes (`python -m hlg.guardrails`,
@@ -180,13 +181,13 @@ The reasoning behind the non-obvious choices, kept here so they aren't undone by
 
 ## Tests and CI
 
-`pytest -q` runs 304 tests in about 2 seconds. An autouse fixture blocks all network access, so
+`pytest -q` runs 318 tests in about 3 seconds. An autouse fixture blocks all network access, so
 every test uses fakes (`tests/conftest.py::FakeInfo`). Coverage includes every guardrail rule,
 the account model (unified and classic), scanner setups, market transforms, the vault (tamper,
 wrong key, cross-file substitution, fresh IV), fail-closed publishing, log redaction and config
 encodings. `.github/workflows/test.yml` runs the suite on every push and PR.
 
-Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (93 tests, ~65s):
+Separately, `tests/e2e` drives `pwa/index.html` in real Chromium via Playwright (101 tests, ~70s):
 decryption against a real `hlg.vault`-sealed envelope, the alert list's interactions and
 persistence, every SVG chart, three viewport widths, both colour schemes, and a check that nothing
 throws in the console across a full session. Excluded from the default `pytest -q` (see

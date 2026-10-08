@@ -411,6 +411,12 @@ rebuilt 20,138 closed positions from 145 of them, over 90 days.
 So the evidence backs the guardrails as protection against the account-ending position, not as an
 edge. That's how they are framed here.
 
+**Any trader can run the same analysis on their own wallet:** the public **wallet check**,
+`report.html` on the Pages site. Paste an address and it reads the last 90 days from Hyperliquid's
+public API, rebuilds every position with the study's own method (`pwa/wallet-report.js`, tested
+against the Python), and compares the result with the 145 wallets. It runs entirely in the browser:
+no server, no keys, nothing stored.
+
 That is the pattern behavioural finance predicts. Losses weigh about 2.25× as much as equal gains
 ([Tversky & Kahneman 1992](https://cemi.ehess.fr/docannexe/file/2780/tversjy_kahneman_advances.pdf)),
 so closing a loser feels worse than adding to it, and investors sell winners roughly 60% more readily
@@ -1245,7 +1251,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-93 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+101 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wallet Check · HL Guardrails</title>
+<meta name="description" content="How do your Hyperliquid losses happen? A 90-day check of your own trades: averaging down, stops, liquidations, and the few positions that do the damage. Runs in your browser; nothing is stored.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0a0c11" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+<style>
+/* Same tokens as the dashboard: dark by default, light with the OS. */
+:root{color-scheme:dark;--bg:#0a0c11;--surface:#12151c;--surface-2:#181c25;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
+  --text:#eef1f6;--text-2:#b8c0cf;--muted:#7d8699;--blue:#3987e5;--blue-wash:rgba(57,135,229,.13);--red:#e66767;--axis:#434a5a;
+  --pos:#2fbf5b;--neg:#ff7a7a;--warn:#fab219;--r:16px}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f3f4f7;--surface:#fff;--surface-2:#f6f7f9;--line:rgba(11,11,11,.08);--line-2:rgba(11,11,11,.14);
+  --text:#0b0b0b;--text-2:#46454a;--muted:#6f6d68;--blue:#2a78d6;--blue-wash:rgba(42,120,214,.10);--red:#e34948;--axis:#c3c2b7;--pos:#006300;--neg:#c42f2f;--warn:#b0741a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+header img{border-radius:9px}
+header b{font-size:15px}
+h1{font-size:clamp(26px,6vw,36px);line-height:1.15;letter-spacing:-.02em;margin:0 0 10px}
+.lead{color:var(--text-2);font-size:16px;max-width:640px;margin:0 0 18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin:14px 0}
+.card h2{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--text-2);margin:0 0 12px}
+form{display:flex;gap:8px;flex-wrap:wrap}
+input{flex:1;min-width:240px;font:inherit;font-family:ui-monospace,Consolas,monospace;font-size:14px;padding:12px 14px;border-radius:12px;
+  border:1px solid var(--line-2);background:var(--surface-2);color:var(--text)}
+button{font:inherit;font-weight:600;padding:12px 18px;border-radius:12px;border:1px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait}
+.privacy{font-size:12.5px;color:var(--muted);margin-top:10px}
+#status{margin-top:12px;font-size:14px;color:var(--text-2);min-height:1.5em}
+#status.err{color:var(--neg)}
+.big{font-size:clamp(20px,4.5vw,26px);font-weight:650;line-height:1.3;margin:0 0 6px}
+.facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.fact{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px}
+.num{font-variant-numeric:tabular-nums}.pos{color:var(--pos)}.neg{color:var(--neg)}.mut{color:var(--muted)}
+.row{display:grid;grid-template-columns:1fr minmax(140px,240px);gap:6px 16px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row .q{font-size:14.5px}.row .q small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.bars{display:grid;gap:5px}
+.bar{display:grid;grid-template-columns:44px 1fr 42px;gap:8px;align-items:center;font-size:12px;color:var(--text-2)}
+.track{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.fill{height:100%;border-radius:4px}
+.you .fill{background:var(--blue)}.them .fill{background:var(--axis)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 8px;border-top:1px solid var(--line)}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;border-top:0}
+td.r,th.r{text-align:right}
+.tag{display:inline-block;font-size:11px;font-weight:650;padding:1px 7px;border-radius:999px;margin:1px 3px 1px 0;
+  background:color-mix(in srgb,var(--neg) 14%,transparent);color:var(--text-2)}
+ol.rules{margin:4px 0 0;padding-left:20px}ol.rules li{margin:8px 0}
+.note{font-size:13px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:12px}
+footer{font-size:12.5px;color:var(--muted);margin-top:28px;line-height:1.6}
+footer a{color:var(--blue)}
+@media (max-width:600px){.row{grid-template-columns:1fr}table .hide{display:none}}
+@media (prefers-reduced-motion: no-preference){#results .card{animation:fi .3s ease both}@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="icon.svg" width="30" height="30" alt=""><b>HL Guardrails · Wallet check</b></header>
+  <h1>How do your losses happen?</h1>
+  <p class="lead">Most traders' losses don't come from trading often. They come from a few positions that were
+    averaged down, held without a stop, or liquidated. See what your last 90 days on Hyperliquid look like,
+    next to 145 other active traders.</p>
+  <section class="card">
+    <form id="f">
+      <input id="addr" placeholder="0x… your Hyperliquid address" autocomplete="off" spellcheck="false" aria-label="Hyperliquid address">
+      <button id="go" type="submit">Check my last 90 days</button>
+    </form>
+    <div class="privacy">Runs entirely in this browser. Your trades are read from Hyperliquid's public API (anyone can
+      read them; no keys, no wallet connection) and nothing is stored or sent anywhere else.</div>
+    <div id="status" role="status" aria-live="polite"></div>
+  </section>
+  <div id="results"></div>
+  <footer>
+    Method: every closed perp position of the last 90 days, rebuilt from your fills (at most the latest 10,000) and
+    order history (the latest 2,000 orders). <b>Averaged down</b> = added at a price at least 0.5% worse than your
+    average entry. <b>Stop</b> = a reduce-only stop order placed between opening and closing (judged only where the
+    order history reaches back that far). The comparison is an exploratory study of 145 random active wallets,
+    20,138 positions (<a href="https://github.com/hrsalazar/hl-guardrails/blob/main/docs/research/wallet-behavior-study.md" target="_blank" rel="noopener">study and caveats</a>).
+    <br>Information about your own past trades, not financial advice. It describes what happened; it doesn't predict
+    what will.
+  </footer>
+</main>
+<script src="wallet-report.js"></script>
+<script>
+"use strict";
+const API = "https://api.hyperliquid.xyz/info";
+const WR = window.WalletReport, B = WR.BENCH;
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const usd = v => (v < 0 ? "−" : v > 0 ? "+" : "") + "$" + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+const pct = v => v == null ? "—" : Math.round(v * 100) + "%";
+
+async function info(body) {
+  const r = await fetch(API, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error(`Hyperliquid answered HTTP ${r.status}. Try again in a minute.`);
+  return r.json();
+}
+async function fetchFills(addr, start) {
+  let out = [], t = start;
+  for (;;) {
+    const page = await info({type: "userFillsByTime", user: addr, startTime: t, aggregateByTime: true});
+    out = out.concat(page || []);
+    if (!page || page.length < 2000 || out.length >= 10000) return out;   // HL serves the latest 10k at most
+    t = page[page.length - 1].time + 1;
+  }
+}
+
+function compare(label, sub, you, them, betterLow = true) {
+  const w = v => Math.max(2, Math.min(100, (v || 0) * 100));
+  const youCls = you == null ? "mut" : (betterLow ? you > them : you < them) ? "neg" : "";
+  return `<div class="row"><div class="q">${label}<small>${sub}</small></div><div class="bars">`
+    + `<div class="bar you"><span>You</span><div class="track"><div class="fill" style="width:${you == null ? 0 : w(you)}%"></div></div><b class="num ${youCls}">${pct(you)}</b></div>`
+    + `<div class="bar them"><span>Others</span><div class="track"><div class="fill" style="width:${w(them)}%"></div></div><span class="num">${pct(them)}</span></div>`
+    + `</div></div>`;
+}
+
+function render(S) {
+  if (!S.n) {
+    return `<section class="card"><p class="big">No closed perp positions in the last 90 days.</p>`
+      + `<p class="mut">Only positions both opened and closed within the window are counted. Open positions, and ones opened earlier, don't appear.</p></section>`;
+  }
+  const worstFlags = S.worst.map(p => [p.ad, p.stop === false, p.liq]);
+  const flagged = worstFlags.filter(f => f.some(Boolean)).length;
+  const lines = [];
+  if (S.losses > 0 && S.worst5_loss_share != null)
+    lines.push(`${S.worst5_n === 1 ? "Your single worst position" : `Your worst ${S.worst5_n} positions`} (the worst 5%) caused <b>${pct(S.worst5_loss_share)}</b> of your losses.`);
+  if (S.worst.length) lines.push(`Of your ${S.worst.length} biggest losers, <b>${flagged}</b> ${flagged === 1 ? "was" : "were"} averaged down, held without a stop, or liquidated.`);
+  if (S.liq_n) lines.push(`You were liquidated <b>${S.liq_n}</b> time${S.liq_n > 1 ? "s" : ""}, costing ${pct(S.liq_loss_share)} of your losses.`);
+  let h = `<section class="card"><h2>Your last 90 days</h2><p class="big">${lines[0] || "Here's how your trading breaks down."}</p>`
+    + (lines.slice(1).map(l => `<p>${l}</p>`).join(""))
+    + `<div class="facts"><span class="fact">${S.n} closed positions</span><span class="fact">net <b class="num ${S.pnl < 0 ? "neg" : "pos"}">${usd(S.pnl)}</b> after fees</span>`
+    + `<span class="fact">${pct(S.win_rate)} won</span>${S.n < 5 ? `<span class="fact mut">few positions: read with care</span>` : ""}</div></section>`;
+  h += `<section class="card"><h2>You vs ${B.wallets} other Hyperliquid traders</h2>`
+    + compare("Losses from positions you averaged down", `They were ${pct(S.ad_rate)} of your positions (others: ${pct(B.ad_rate)} of positions, ${pct(B.ad_loss_share)} of losses)`, S.ad_n ? S.ad_loss_share : 0, B.ad_loss_share)
+    + compare("Losses from positions without a stop", S.known_n ? `Where your order history shows whether one was placed (${S.known_n} positions)` : "Your order history doesn't reach back far enough to tell", S.nostop_loss_share, B.nostop_loss_share)
+    + compare("Positions with a stop placed", "Higher is better", S.stop_rate, B.stop_rate, false)
+    + compare("Losses from your worst 5% of positions", "How concentrated the damage is", S.worst5_loss_share, B.worst5_loss_share)
+    + `<div class="note">Among the ${B.wallets} wallets, <b>${pct(B.liquidated_wallets)}</b> were liquidated at least once in 90 days, and `
+    + `<b>${pct(B.liq_nostop)}</b> of those liquidations had no stop. ${S.liq_n ? `You: ${S.liq_n} liquidation${S.liq_n > 1 ? "s" : ""}` + (S.liq_nostop != null ? `, ${pct(S.liq_nostop)} without a stop.` : ".") : "You: none in this window."}</div></section>`;
+  if (S.worst.length) {
+    h += `<section class="card"><h2>Your biggest losers</h2><table><tr><th>Position</th><th class="hide">Closed</th><th class="r">P&amp;L</th><th class="hide r">Held</th><th>What happened</th></tr>`
+      + S.worst.map(p => {
+        const tags = [p.ad ? "averaged down" : "", p.stop === false ? "no stop" : "", p.liq ? "liquidated" : ""].filter(Boolean);
+        const held = p.hold_h < 48 ? `${Math.round(p.hold_h)}h` : `${Math.round(p.hold_h / 24)}d`;
+        return `<tr><td><b>${esc(p.coin)}</b> ${p.side > 0 ? "long" : "short"}</td><td class="hide">${new Date(p.end).toLocaleDateString()}</td>`
+          + `<td class="r num neg">${usd(p.pnl)}</td><td class="hide r">${held}</td><td>${tags.map(t => `<span class="tag">${t}</span>`).join("") || '<span class="mut">a planned loss</span>'}</td></tr>`;
+      }).join("") + `</table></section>`;
+  }
+  h += `<section class="card"><h2>What the pattern points to</h2>`
+    + `<ol class="rules"><li><b>Place the stop before you enter</b>, on the exchange, not in your head. In the study, 96% of liquidations had none.</li>`
+    + `<li><b>Never add to a losing position.</b> Adding lowers your average price, but not the odds that the trade works.</li>`
+    + `<li><b>Risk a fixed amount per trade</b> (1% of the account is common), so no single position can do most of the damage.</li></ol>`
+    + `<div class="note">Honest caveat: in the study these habits concentrated losses, but they didn't predict which traders ended up profitable. `
+    + `Rules protect you from the account-ending trade; they don't create an edge.</div></section>`;
+  return h;
+}
+
+$("#f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const addr = $("#addr").value.trim();
+  const st = $("#status");
+  st.className = "";
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) { st.className = "err"; st.textContent = "That isn't a Hyperliquid address (0x followed by 40 hex characters)."; return; }
+  $("#go").disabled = true; $("#results").innerHTML = "";
+  try {
+    st.textContent = "Reading your last 90 days of fills from Hyperliquid…";
+    const start = Date.now() - WR.DAYS * 864e5;
+    const fills = await fetchFills(addr, start);
+    st.textContent = `Read ${fills.length.toLocaleString()} fills. Reading your order history…`;
+    const orders = await info({type: "historicalOrders", user: addr});
+    const S = WR.summarize(WR.positions(addr, fills, orders || []));
+    st.textContent = fills.length >= 10000 ? "Done. You trade a lot: Hyperliquid serves only your latest 10,000 fills, so the window may be shorter than 90 days." : "Done.";
+    $("#results").innerHTML = render(S);
+  } catch (err) {
+    st.className = "err";
+    st.textContent = err.message && err.message.startsWith("Hyperliquid") ? err.message : "Couldn't reach Hyperliquid. Check your connection and try again.";
+  } finally {
+    $("#go").disabled = false;
+  }
+});
+</script>
+</body>
+</html>
