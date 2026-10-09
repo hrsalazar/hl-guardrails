@@ -411,16 +411,18 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
   .hbtns{gap:4px}
   .hbtns button{width:38px;height:38px;padding:0;justify-content:center}
   .hbtns .bl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  main{padding:10px 12px calc(92px + env(safe-area-inset-bottom))}
+  main{padding:10px 12px calc(24px + env(safe-area-inset-bottom))}
   .card{padding:14px;margin:10px 0}
   .glance{grid-template-columns:1fr 1fr}.glance #decide{grid-column:1/-1}
   .now .actions .lessonbtn{min-width:0}
   .hero .big{font-size:36px}
-  /* tabs become a thumb-reach bottom bar */
-  /* WebKit (iOS) mis-places a fixed element during momentum scroll and toolbar resizes when it is also
-     a scroll container, is centred with a transform, or sits on an offset that moves with the safe
-     area -- so none of those: no overflow, centred with auto margins, a bottom that doesn't shift */
-  .tabs{position:fixed;z-index:40;left:0;right:0;margin:0 auto;transform:none;overflow:visible;
+  /* tabs become a thumb-reach bottom bar. Sticky, not fixed: iOS Safari (iPhone, home-screen app
+     included) left a position:fixed bar stranded mid-screen after scrolling down and back up, even
+     with every known trigger removed (scroll container, transform, safe-area offset). A sticky bar
+     lives in the page flow, so the toolbar and viewport resizes that confuse fixed positioning
+     don't apply. placeTabs() moves it to the end of #app on phones so its sticky bottom holds the
+     whole way down. */
+  .tabs{position:sticky;z-index:40;margin:16px auto 0;transform:none;overflow:visible;
     bottom:max(12px,env(safe-area-inset-bottom));
     width:min(92vw,380px);max-width:none;justify-content:space-between;padding:5px;
     background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:saturate(1.4) blur(16px);-webkit-backdrop-filter:saturate(1.4) blur(16px);
@@ -1908,6 +1910,14 @@ function showTab(k,fromUser){
     if(Math.abs(scrollY-top)>40)scrollTo({top,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})}
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab,true));
+// On phones the tab bar is a sticky bottom bar (see the CSS), which needs it at the END of #app to
+// stay pinned while the page scrolls; on wider screens it goes back above the panes.
+const tabsEl=$('.tabs'),tabsHome=$('#pane-tech');
+function placeTabs(){
+  if(matchMedia('(max-width:640px)').matches){if(tabsEl.parentElement!==$('#app')||tabsEl.nextElementSibling)$('#app').appendChild(tabsEl)}
+  else if(tabsEl.nextElementSibling!==tabsHome)tabsHome.before(tabsEl);
+}
+matchMedia('(max-width:640px)').addEventListener('change',placeTabs);placeTabs();
 
 // Wide tables read as labelled cards on a phone: each cell carries its column name (CSS shows it
 // above the value under 640px). Runs on every re-render, so no render function needs to know.

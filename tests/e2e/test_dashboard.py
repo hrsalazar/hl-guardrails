@@ -650,9 +650,18 @@ def test_phone_tabs_are_a_bottom_bar_and_a_tap_brings_the_pane_into_view(page, b
     page.set_viewport_size(PHONE)
     page.goto(url(base_url, "full"))
     tabs = page.locator(".tabs")
-    assert tabs.evaluate("e=>getComputedStyle(e).position") == "fixed"
-    box = tabs.bounding_box()
-    assert box["y"] + box["height"] <= PHONE["height"] and box["y"] > PHONE["height"] / 2
+    # sticky, not fixed: iOS stranded the fixed bar mid-screen after scrolling down and back up
+    assert tabs.evaluate("e=>getComputedStyle(e).position") == "sticky"
+    assert tabs.evaluate("e=>e.parentElement.id==='app'&&!e.nextElementSibling")     # last in #app, so it stays pinned
+
+    def pinned():
+        b = tabs.bounding_box()
+        assert PHONE["height"] - 60 <= b["y"] + b["height"] <= PHONE["height"], b   # at the bottom of the screen
+    pinned()
+    for y in (900, 2500, 600, 0):                                 # down, further down, back up, top
+        page.evaluate(f"scrollTo(0,{y})")
+        page.wait_for_timeout(80)
+        pinned()
     page.locator('.tab[data-tab="macro"]').click()
     page.wait_for_timeout(700)                                   # smooth scroll
     top = page.locator("#pane-macro").bounding_box()["y"]
@@ -1178,3 +1187,12 @@ def test_the_brief_badge_says_its_age_and_when_the_next_one_comes(page, base_url
     expect(badge).to_contain_text(" · next ")
     text = badge.inner_text()
     assert text.startswith(("today, ", "yesterday, ")), text
+
+
+def test_the_tab_bar_returns_above_the_panes_on_a_wide_screen(page, base_url):
+    page.set_viewport_size(PHONE)
+    page.goto(url(base_url, "full"))
+    assert page.evaluate("document.querySelector('.tabs').nextElementSibling===null")
+    page.set_viewport_size({"width": 1100, "height": 900})
+    page.wait_for_function("document.querySelector('.tabs').nextElementSibling===document.querySelector('#pane-tech')")
+    assert page.evaluate("getComputedStyle(document.querySelector('.tabs')).position") == "static"
