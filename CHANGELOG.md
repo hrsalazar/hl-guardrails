@@ -2,6 +2,10 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-09
+
+- **Daily brief at 20:00 UTC** instead of 06:00. It now lands just after the US cash close and before Asia opens, which is 07:00 for the owner in Sydney (it was 17:00, so it read as a day old every morning). The brief's badge shows its age and when the next one comes, in local time.
+
 ## 2026-10-08
 
 - **Fix: the service worker was empty.** Commit 9148150 emptied `pwa/sw.js`, which receives and displays push notifications and keeps the offline shell, so background notifications stopped working once phones picked it up. It is restored from the previous version, with a cache bump (hlg-v35) so devices update.

@@ -83,7 +83,7 @@ For each phone or computer:
 - **Notifications** fire only for alerts that weren't in the previous run, and only for guardrail
   breaches, breakout entries, momentum and **high-impact releases (FOMC, CPI, jobs…) 24h ahead**,
   once per release. Funding notes and breakouts on coins you already hold stay on the dashboard.
-- **The daily brief** (Macro tab) appears on the first run after 06:00 UTC. It's reading material:
+- **The daily brief** (Macro tab) appears on the first run after 20:00 UTC (`digest.hour_utc`). It's reading material:
   never pushed, not backtested. Its source links let you check any point before relying on it.
   To regenerate it now (one paid call): *Actions → monitor → Run workflow*, tick **"Regenerate the
   daily brief now"**.
@@ -106,7 +106,7 @@ For each phone or computer:
 | data is encrypted | open `https://<you>.github.io/hl-guardrails/alerts.json` | `"alg": "AES-256-GCM"`, no readable numbers |
 | logs are quiet | open any run's *Run guardrails + scanner* step | ~3 lines: market, liquidations, `run ok: published encrypted` |
 | push works | manual run with the test box ticked | notification received; `push: N/N` |
-| daily brief works | the first run after 06:00 UTC | a `digest: N headlines from M/11 feeds via openrouter (model), … tokens` line; the Macro tab says "today" |
+| daily brief works | the first run after 20:00 UTC | a `digest: N headlines from M/11 feeds via openrouter (model), … tokens` line; the Macro tab says "today" |
 
 ## Troubleshooting
 
@@ -127,7 +127,7 @@ For each phone or computer:
 | Day/week PnL restarted | the passphrase changed, so previous state was unreadable | expected once; it recovers the next day or week |
 | `gh` "not recognised as a cmdlet" | PATH not refreshed in that terminal | open a new terminal, or use the full path |
 | Stale UI after an update | service-worker cache | reload once; `sw.js` bumps its cache version on UI changes |
-| Macro tab: "No brief yet" | no `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`, or before 06:00 UTC | set a secret; the next run after 06:00 UTC writes one |
+| Macro tab: "No brief yet" | no `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`, or before 20:00 UTC | set a secret; the next run after 20:00 UTC writes one |
 | Log: `digest failed: OpenRouter HTTP 402` | out of OpenRouter credit | top up at openrouter.ai; it retries two hours later |
 | Log: `digest failed: OpenRouter HTTP 401` / `Claude API HTTP 401` | the key is wrong or revoked | re-set the secret |
 | Log: `digest failed: … HTTP 400` / `404` | a model id in `digest.openrouter_models` (or `digest.model`) doesn't exist | check the id on openrouter.ai/models; it retries two hours later, not every run |

@@ -1718,10 +1718,14 @@ function briefStatus(st){
 }
 function renderBrief(b,st){
   if(!b){$('#briefage').textContent='';
-    $('#brief').innerHTML=`<div class="empty">No brief yet. One is written each day after 06:00 UTC from ~70 public macro and crypto headlines.<br>${
+    $('#brief').innerHTML=`<div class="empty">No brief yet. One is written each day after the US close (20:00 UTC) from ~70 public macro and crypto headlines.<br>${
       st?briefStatus(st):'It needs an <b>OPENROUTER_API_KEY</b> or <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).'}</div>`;return}
   const [c,ic,word]=TILT[b.tilt]||TILT.neutral, age=(Date.now()-b.t)/3600000;
-  $('#briefage').textContent=age<24?'today, '+new Date(b.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):`${Math.floor(age/24)}d old`;
+  // its age, and when the next one comes (your local time), so a brief read late in its day reads as
+  // expected rather than stale
+  const hm=t=>new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const nxt=st&&st.next>Date.now()?` · next ${new Date(st.next).toDateString()===new Date().toDateString()?'':'tomorrow '}${hm(st.next)}`:'';
+  $('#briefage').textContent=(age<24?(new Date(b.t).toDateString()===new Date().toDateString()?'today, ':'yesterday, ')+hm(b.t):`${Math.floor(age/24)}d old`)+nxt;
   const link=l=>{const u=safeUrl(l.url),t=`${esc(l.src)}: ${esc(l.title)}`;return u?`<a href="${attr(u)}" target="_blank" rel="noopener noreferrer">${t}</a>`:t};
   $('#brief').innerHTML=`<div class="brief fade-in"><span class="tilt ${c}" data-tip="The model's read of the balance of the news for crypto over the next few days. Not a signal and not backtested.">${ic} ${word}</span> <span class="badge">${esc(b.confidence)} confidence</span>`
     +`<div class="brief-h">${esc(b.headline)}</div><p class="brief-why">${esc(b.why)}</p>`

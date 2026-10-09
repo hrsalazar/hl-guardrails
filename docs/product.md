@@ -37,7 +37,7 @@ never trades and never needs keys, which is the core trust argument.
 **Public today:** the **wallet check** (`report.html`): a free, self-serve 90-day loss-pattern report for any Hyperliquid address. It runs in the browser and holds no one's data. This is the entry point for promoting the product: publish the study's aggregate findings and link the check, rather than contacting wallets.
 
 **Works today, for one person:** guardrails, scanner (1d/4h), momentum alerts, tabbed dashboard
-(Technical / Macro / Flow), encryption, push, 318 unit and 101 browser tests, and CI.
+(Technical / Macro / Flow), encryption, push, 318 unit and 102 browser tests, and CI.
 
 **It is single-tenant.** One repository watches one account for one owner. Configuration is a
 YAML file and secrets are set by hand. Setup takes about 20 minutes and requires a GitHub

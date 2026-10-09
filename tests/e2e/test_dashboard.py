@@ -1169,3 +1169,12 @@ def test_looks_today_are_compared_with_your_usual_once_there_is_a_week(page, bas
     page.goto(url(base_url, "full"))
     page.locator("#now .nowmore summary").click()
     expect(page.locator("#now .nowmore")).to_contain_text("your usual 6 a day — calmer than usual.")
+
+
+def test_the_brief_badge_says_its_age_and_when_the_next_one_comes(page, base_url):
+    _at(page, "2026-09-25T15:00:00+00:00")
+    page.goto(url(base_url, "full"))                                   # brief written 3h before the data; next in 2h
+    badge = page.locator("#briefage")
+    expect(badge).to_contain_text(" · next ")
+    text = badge.inner_text()
+    assert text.startswith(("today, ", "yesterday, ")), text

@@ -112,7 +112,8 @@ events:
 # pushed, gates nothing. Feeds: see hlg/digest.py FEEDS.
 digest:
   enabled: true
-  hour_utc: 6            # first run after this hour; 06:00 UTC = after Asia, before Europe and US data
+  hour_utc: 20           # first run after this hour; 20:00 UTC = just after the US cash close, before Asia
+                         # opens -- 07:00 for the owner in Sydney (UTC+11), so the brief is fresh in the morning
   provider: auto         # auto (OpenRouter if its key is set, else Anthropic) | openrouter | anthropic
   # OpenRouter: tried in order, falling back when a model's providers are down. Opus 5.5 is the
   # strongest at faithful, calibrated summarising; ~$0.05/day (measured: 8.6k in / 0.8k out). Any id from

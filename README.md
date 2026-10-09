@@ -198,7 +198,7 @@ aggregates are kept; the account list is held in the encrypted state and no addr
 with its positions.
 
 **The daily brief (Macro tab)** is the one piece here that can't be backtested, so it is labelled
-as reading material, never pushed, and part of no rule. Once a UTC day (first run after 06:00),
+as reading material, never pushed, and part of no rule. Once a UTC day (first run after `digest.hour_utc`, 20:00: just after the US close, before Asia),
 after alerts go out, `hlg/digest.py` pulls the last ~30h of headlines from 11 free RSS feeds —
 Federal Reserve, ECB, Bloomberg Markets and Economics, FT Markets, CNBC, MarketWatch, CoinDesk, The
 Block, Cointelegraph, Decrypt — takes up to 8 per source (so a prolific crypto outlet can't drown
@@ -1251,7 +1251,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-101 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+102 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against
