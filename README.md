@@ -574,6 +574,18 @@ these shorts to the live book cut its Sharpe from 1.03 to 0.58. Breakdown shorts
 working in the same downtrends: PF 2.82 on 1d and 1.59 on 4h, from fewer signals. Run it with
 `python -m hlg.backtest --short-study`.
 
+**Rally shorts in a downtrend, tested, not adopted** (2026-10-12, pre-registered in
+[docs/research/rally-short-study.md](docs/research/rally-short-study.md)). The opposite entry: short
+the bounce that fails, where the high touches EMA20 and the bar closes back below it in its lower
+half, with the stop just above the high.
+- **With BTC below its 200-day EMA:** PF 1.07 on 1d and 0.66 on 4h. It sat at the 19th and 0th
+  percentiles of random rally shorts. Added to the live book, it cut Sharpe from 1.08 to 0.32 and
+  widened the drawdown from −18.5% to −40.9%.
+- **The crowded-funding variant can't be judged:** funding reached 20% APR in a BTC downtrend only
+  twice in three years.
+
+Two short entries have now lost where the long rule kept working. `python -m hlg.backtest --rally-short-study`.
+
 **The 9 EMA / 20 SMA / 200 SMA pullback (Malyarovich), tested, not adopted** (2026-10-08,
 pre-registered in [docs/research/ma-pullback-study.md](docs/research/ma-pullback-study.md)). The
 YouTube strategy, made mechanical, long and short: buy a dip into the 9 EMA–20 SMA zone in a rising

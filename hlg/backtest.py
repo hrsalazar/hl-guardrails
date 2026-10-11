@@ -286,6 +286,9 @@ FILTERS = {
     "vol_spike": lambda k: _pass(getattr(k, "vol_spike", None), bool),
     # BTC's daily trend as the live market state reads it (short_study, docs/research/short-study.md)
     "btc_down": lambda k: _pass(getattr(k, "btc_down", None), bool),
+    # longs crowded: funding >= 20% APR (HL's neutral rate is ~11%); rally-short-study candidate 2.
+    # context() stores missing funding as 0%, which is never crowded
+    "funding_crowded": lambda k: _pass(getattr(k, "funding_apr", None), lambda v: v >= 20),
     # long-term lines from daily / weekly bars (ma_study, docs/research/ma-lines-study.md)
     **{f"{who}_above_{ln}": (lambda col: lambda k: _pass(getattr(k, col, None), bool))(f"{who}_above_{ln}")
        for who in ("btc", "coin") for ln in MA_LINES},
@@ -352,7 +355,13 @@ def signal(k, V):
             out.append(("L", stop, tgt))
     if V["side"] in ("short", "both"):
         ok_trend = {"with": not up, "against": up, "any": True}[V["trend"]]
-        if V["level"] == "pullback":
+        lvl = V.get("short_level", V["level"])
+        if lvl == "rally":
+            # rally short (docs/research/rally-short-study.md): the bounce touched EMA20 and was
+            # rejected -- closed back below it, in the lower half of the bar
+            cl = getattr(k, "close_loc", np.nan)
+            ok = ok_trend and k.h >= k.ema20 and px < k.ema20 and not np.isnan(cl) and cl <= 0.5
+        elif lvl == "pullback":
             at = px >= k.hi20 * 0.97 or (px >= k.ema20 and px <= k.ema20 * 1.05)
             ok = ok_trend and k.rsi >= V["rsi_min"] and at
         else:
@@ -361,7 +370,8 @@ def signal(k, V):
         if ok and not all(FILTERS[f](k) for f in V.get("short_filters", ())):
             ok = False
         if ok:
-            stop = px + V["stop_atr"] * k.atr
+            # a rally short's stop sits just above the rejected bounce, not stop_atr above the close
+            stop = k.h + V["rally_stop_atr"] * k.atr if lvl == "rally" else px + V["stop_atr"] * k.atr
             tgt = k.lo20 if V["target"] == "range" else None
             out.append(("S", stop, tgt))
     for side, stop, tgt in out:
@@ -1549,6 +1559,111 @@ def short_study(P):
     return res, rules, adopted
 
 
+RALLY = dict(side="short", trend="with", rsi_min=0, level="breakout", short_level="rally", stop_atr=2.0,
+             rally_stop_atr=0.5, target=None, min_rr=0, max_days=21, trail_atr=3.0)
+RALLY_STUDY = {
+    # fixed before running (docs/research/rally-short-study.md): two candidates, a baseline, a reference
+    "rally_bear": {**RALLY, "filters": ["btc_down"]},
+    "rally_crowded": {**RALLY, "filters": ["btc_down", "funding_crowded"]},
+    "rally_any": RALLY,
+    "long_bear": {**VARIANTS["breakout_long"], "filters": ["btc_down"]},
+}
+RALLY_CANDIDATES = ("rally_bear", "rally_crowded")
+
+
+def rally_short_study(P):
+    """python -m hlg.backtest --rally-short-study
+
+    Short the failed bounce, not the breakdown: in a downtrend, a bar whose high touches EMA20 and
+    which closes back below it in the lower half of its range. Pre-registered in
+    docs/research/rally-short-study.md (rule, variants, windows and the five-part bar, with the
+    random-subset test at the 97.5th percentile for two candidates)."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    rep = [f"# Rally shorts in a BTC downtrend ({', '.join(DEF['coins'])})\n"]
+    checks = {c: {} for c in RALLY_CANDIDATES}
+    for win, iv, start in (("A", "1d", P["start"]), ("A", "4h", P["start"]), ("B", "1d", HOLDOUT[0])):
+        Q = {**P, "start": start}
+        t0 = pd.Timestamp(start, tz="UTC")
+        data, fund = {}, {}
+        for c in DEF["coins"]:
+            df = bars(c, cache, iv)
+            if df is None or len(df) < 80:
+                continue
+            data[c] = features(df, 1)
+            fund[c] = funding(c, int(t0.timestamp() * 1000), cache, iv)
+        context(data, fund)
+        bear_context(data, cache)
+        rows, trades = {}, {}
+        for name, V in RALLY_STUDY.items():
+            T, C, dd = run(V, data, fund, Q)
+            if win == "B" and len(T):
+                T = T[T.start < pd.Timestamp(HOLDOUT[1], tz="UTC")]
+            h1, h2 = _own_halves(T)
+            rows[name] = dict(trades=len(T), win_rate=(T.net > 0).mean() if len(T) else np.nan,
+                              pf=_pf_of(T.net.values) if len(T) else np.nan,
+                              avg_r=(T.net_pct / Q["risk_pct"]).mean() if len(T) else np.nan,
+                              net_pct_of_equity0=T.net.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              max_dd_pct=dd * 100, half1_pf=h1, half2_pf=h2,
+                              funding_pct_of_equity0=T.fund.sum() / Q["equity0"] * 100 if len(T) else 0.0,
+                              avg_days=T.days.mean() if len(T) else np.nan)
+            trades[name] = T
+            T.to_csv(out / f"rally_{win}_{iv}_{name}.csv", index=False)
+            log.info("%s %s %s: trades %d", win, iv, name, len(T), extra={"safe": True})
+        base = trades["rally_any"]
+        for cand in RALLY_CANDIDATES:
+            c = rows[cand]
+            pct = (bootstrap_pf(base.net.values, c["trades"], c["pf"])
+                   if 0 < c["trades"] < len(base) else float("nan"))
+            checks[cand][f"{win}-{iv}"] = dict(
+                n=c["trades"] >= 30, pf=bool(c["pf"] >= 1.3) if c["trades"] else False,
+                halves=(c["half1_pf"] > 1.0 and c["half2_pf"] > 1.0) if win == "A" else None,
+                chance=bool(pct > 97.5) if win == "A" else None, pctile=pct)
+        lab = "holdout 2021-04 -> 2023-05, no funding data" if win == "B" else f"{start} -> now"
+        rep.append(f"\n## Window {win}, {iv} ({lab})\n\n" + pd.DataFrame(rows).T.astype(float).round(2).to_markdown() + "\n")
+        if win == "A":
+            rep.append("PF vs random same-size subsets of rally_any: "
+                       + ", ".join(f"{c} percentile {checks[c][f'{win}-{iv}']['pctile']:.0f}" for c in RALLY_CANDIDATES) + "\n")
+    # rule 5: the live book (1d + 4h longs, 3 shared slots, 1.0% risk) with each candidate's shorts added
+    data, fund, extra, mid = _combined_book(P)
+    context(data, fund)
+    bear_context(data, cache)
+    Qc = {**P, "risk_pct": 1.0, **extra}
+    _, live = _combined_run(data, fund, Qc, mid)
+    live["shorts"] = 0
+    book = {"live book (longs)": live}
+    book_ok = {}
+    for cand in RALLY_CANDIDATES:
+        Vb = {**VARIANTS["breakout_both"], "short_level": "rally", "rally_stop_atr": 0.5,
+              "short_filters": RALLY_STUDY[cand]["filters"]}
+        Tb, both = _combined_run(data, fund, Qc, mid, V=Vb)
+        both["shorts"] = int((Tb.side == "S").sum()) if len(Tb) else 0
+        book[f"live book + {cand}"] = both
+        book_ok[cand] = bool(both["sharpe"] >= live["sharpe"] and both["max_dd_pct"] >= live["max_dd_pct"] - 2
+                             and both["pf"] >= live["pf"] - 0.05)
+    cols = ["trades", "shorts", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf", "worst_day_pct"]
+    rep.append("\n## The live book with shorts added (1d + 4h, 1.0% risk, 3 shared slots, window A)\n\n"
+               + pd.DataFrame(book).T[cols].astype(float).round(2).to_markdown() + "\n")
+    verdict = {}
+    for cand in RALLY_CANDIDATES:
+        k = checks[cand]
+        wins_n = ["A-1d", "A-4h"] + (["B-1d"] if cand == "rally_bear" else [])
+        rules = {
+            f"1. >= 30 trades in {', '.join(wins_n)}": all(k[w]["n"] for w in wins_n),
+            f"2. PF >= 1.3 in {', '.join(wins_n)}": all(k[w]["pf"] for w in wins_n),
+            "3. PF > 1.0 in both halves of its own trades, A-1d and A-4h": k["A-1d"]["halves"] and k["A-4h"]["halves"],
+            "4. above the 97.5th pctile of random rally_any subsets, A-1d and A-4h": k["A-1d"]["chance"] and k["A-4h"]["chance"],
+            "5. live book + shorts: Sharpe >= live, DD within 2pp, PF within 0.05": book_ok[cand],
+        }
+        verdict[cand] = all(rules.values())
+        rep.append(f"\n## {cand}: adoption bar (fixed before running)\n\n"
+                   + "\n".join(f"- {r}: **{'pass' if v else 'FAIL'}**" for r, v in rules.items())
+                   + f"\n\n**{cand}: {'ADOPTED as an alert' if verdict[cand] else 'not adopted'}**\n")
+    (out / "rally_short_study.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return checks, verdict
+
+
 MA_STUDY = ("ma_pullback", "ma_pullback_long", "ma_pullback_short", "ma_reclaim", "breakout_long")
 
 
@@ -1800,6 +1915,7 @@ def main():
     ap.add_argument("--bmsb-study", action="store_true", help="bull market support band (20w SMA / 21w EMA) vs the 50-week SMA as entry filters")
     ap.add_argument("--ma-pullback-study", action="store_true", help="9 EMA / 20 SMA / 200 SMA trend pullback, long and short (pre-registered)")
     ap.add_argument("--ma-momentum-study", action="store_true", help="the MA pullback on the day's momentum movers only (pre-registered)")
+    ap.add_argument("--rally-short-study", action="store_true", help="short the failed bounce in a BTC downtrend (pre-registered)")
     ap.add_argument("--short-study", action="store_true", help="breakdown shorts only while BTC is below its 200-day EMA (pre-registered)")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
     ap.add_argument("--candidate-study", nargs="+", metavar="COIN",
@@ -1839,6 +1955,8 @@ def main():
         return regime_study(P)
     if a.short_study:
         return short_study(P)
+    if a.rally_short_study:
+        return rally_short_study(P)
     if a.ma_pullback_study:
         return ma_pullback_study(P)
     if a.ma_momentum_study:

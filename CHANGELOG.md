@@ -2,6 +2,10 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-12
+
+- **Rally-short study** (`--rally-short-study`, pre-registered in docs/research/rally-short-study.md): short the failed bounce in a downtrend (the high touches EMA20 and the bar closes back below it, in its lower half). Not adopted: with BTC below its 200-day EMA, PF 1.07 on 1d and 0.66 on 4h, below random rally shorts. Added to the live book, it cut Sharpe from 1.08 to 0.32 and the drawdown widened to −40.9%. The crowded-funding variant fired twice in three years. The scanner stays long-only. Longs in the same downtrends made PF 2.82 (1d) and 1.59 (4h).
+
 ## 2026-10-09
 
 - **Phone tab bar: sticky instead of fixed.** On iPhone, the Technical / Macro / Flow bar was left mid-screen after scrolling down and back up, even after the earlier WebKit fixes. The bar is now `position: sticky` at the end of the page content on phones, which iOS keeps pinned to the bottom. On wider screens it moves back above the panes.
