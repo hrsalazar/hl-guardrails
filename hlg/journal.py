@@ -32,7 +32,9 @@ def add(journal, row, key, now_ms, S):
     """Start following a new signal. `row` is a scanner row that carries signal_close."""
     if any(e["key"] == key for e in journal):
         return
-    risk = S["stop_atr"] * row["atr"]
+    side = row.get("side", "L")
+    # a rally short carries its own stop (the rejected high + 0.5 ATR); a long breakout's is 2 ATR below
+    risk = (row["stop"] - row["signal_close"]) if side == "S" else S["stop_atr"] * row["atr"]
     journal.append({
         "key": key, "coin": row["coin"], "tf": row["tf"], "signal_day": row["signal_day"],
         "sig_t": row.get("sig_t"), "added": now_ms, "close": row["signal_close"], "level": row["level"],
@@ -41,22 +43,26 @@ def add(journal, row, key, now_ms, S):
         # the coin's own close vs its 50-week / 200-day SMA at the signal (hlg.lines): the live test of
         # the ma-lines study's one lead, "above its 50-week SMA breaks out better on 4h"
         "lines": row.get("lines"),
-        "entry": None, "stop": row["signal_close"] - risk, "best": None, "bars": 0,
+        "side": side,
+        "entry": None, "stop": row["signal_close"] + risk if side == "S" else row["signal_close"] - risk, "best": None, "bars": 0,
         "status": "pending", "r": None, "max_r": 0.0, "failed_early": False, "last_t": row.get("sig_t"),
     })
 
 
 def _r(e, px):
-    return (px - e["entry"]) / e["risk"] if e["risk"] else 0.0
+    sgn = -1 if e.get("side") == "S" else 1
+    return sgn * (px - e["entry"]) / e["risk"] if e["risk"] else 0.0
 
 
 def arm_add(journal, row):
     """A fresh breakout signal (`row`) on a coin/timeframe whose entry is open arms a hypothetical
     add for the next bar's open. One add per entry (the tested `pyramid1`); a skipped add can be
     re-armed by a later, different signal. Idempotent for the same signal across runs."""
+    if row.get("side", "L") != "L":
+        return                                       # adds were tested for long breakouts only
     for e in journal:
         a = e.get("add")
-        if (e["coin"] == row["coin"] and e["tf"] == row["tf"] and e["status"] == "open"
+        if (e.get("side", "L") == "L" and e["coin"] == row["coin"] and e["tf"] == row["tf"] and e["status"] == "open"
                 and e["signal_day"] != row["signal_day"]
                 and (a is None or (a["status"] == "skipped" and a.get("signal_day") != row["signal_day"]))):
             e["add"] = {"sig_t": row.get("sig_t"), "signal_day": row["signal_day"], "status": "armed"}
@@ -96,20 +102,26 @@ def update(e, bars, S, max_days):
                 a.update(status="skipped", why="stop still below the first entry" if e["stop"] < e["entry"]
                          else "opened at or below the stop")
         e["bars"] += 1
-        if b["l"] <= e["stop"]:
-            px = min(b["o"], e["stop"])
+        short = e.get("side") == "S"
+        if (b["h"] >= e["stop"]) if short else (b["l"] <= e["stop"]):
+            px = max(b["o"], e["stop"]) if short else min(b["o"], e["stop"])
             e.update(status="stopped", exit=px, r=_r(e, px), exit_t=b["t"])
             _end_add(e, px)
             break
-        if e["bars"] <= EARLY_BARS and b["c"] < e["level"]:
+        # failed early: a long closed back below the breakout level; a short back above the rejected high
+        if e["bars"] <= EARLY_BARS and ((b["c"] > e["level"]) if short else (b["c"] < e["level"])):
             e["failed_early"] = True
-        e["max_r"] = max(e["max_r"], _r(e, b["h"]))
+        e["max_r"] = max(e["max_r"], _r(e, b["l"] if short else b["h"]))
         if b["t"] - e["start_t"] >= max_days * 86_400_000:
             e.update(status="time", exit=b["c"], r=_r(e, b["c"]), exit_t=b["t"])
             _end_add(e, b["c"])
             break
-        e["best"] = max(e["best"], b["h"])
-        e["stop"] = max(e["stop"], e["best"] - S["trail_atr"] * b["atr"])
+        if short:
+            e["best"] = min(e["best"], b["l"])
+            e["stop"] = min(e["stop"], e["best"] + S["trail_atr"] * b["atr"])
+        else:
+            e["best"] = max(e["best"], b["h"])
+            e["stop"] = max(e["stop"], e["best"] - S["trail_atr"] * b["atr"])
         e["r"] = _r(e, b["c"])  # open trade: marked at the close
         if a and a["status"] == "open":
             a["r"] = _add_r(a, b["c"])
@@ -121,17 +133,33 @@ def prune(journal, now_ms):
     return keep[-MAX_ENTRIES:]
 
 
+SHORT_KILL_N = 30   # docs/research/rally-any-confirmation.md: retired once 30 have closed with PF < 1.0
+
+
+def side_summary(journal, side):
+    """One side's live record (the rally shorts' kill rule reads this): closed, PF, win rate, avg R."""
+    done = [e for e in journal if e.get("side", "L") == side and e["status"] in ("stopped", "time") and e.get("r") is not None]
+    rs = [e["r"] for e in done]
+    w, l = sum(r for r in rs if r > 0), -sum(r for r in rs if r < 0)
+    pf = w / l if l else (None if not rs else 99.0)
+    return {"closed": len(done), "open": sum(e.get("side", "L") == side and e["status"] == "open" for e in journal),
+            "pf": pf, "win_rate": sum(r > 0 for r in rs) / len(rs) if rs else None,
+            "avg_r": sum(rs) / len(rs) if rs else None, "kill_n": SHORT_KILL_N,
+            "retired": len(done) >= SHORT_KILL_N and pf is not None and pf < 1.0}
+
+
 def summary(journal):
     """Closed trades only: n, win rate, average R, profit factor in R, and the early-failure split."""
     done = [e for e in journal if e["status"] in ("stopped", "time") and e.get("r") is not None]
     if not done:
-        return {"closed": 0, "open": sum(e["status"] == "open" for e in journal), "adds": add_summary(journal)}
+        return {"closed": 0, "open": sum(e["status"] == "open" for e in journal), "adds": add_summary(journal),
+                "shorts": side_summary(journal, "S")}
     rs = [e["r"] for e in done]
     wins, losses = sum(r for r in rs if r > 0), -sum(r for r in rs if r < 0)
     fe = [e for e in done if e["failed_early"]]
     return {
         # closed results in exit order, for the dashboard's cumulative-R chart
-        "curve": [{"t": e.get("exit_t"), "r": e["r"], "coin": e["coin"], "tf": e["tf"]}
+        "curve": [{"t": e.get("exit_t"), "r": e["r"], "coin": e["coin"], "tf": e["tf"], "side": e.get("side", "L")}
                   for e in sorted(done, key=lambda e: e.get("exit_t") or 0)],
         "closed": len(done), "open": sum(e["status"] == "open" for e in journal),
         "win_rate": sum(r > 0 for r in rs) / len(rs), "avg_r": sum(rs) / len(rs),
@@ -140,6 +168,7 @@ def summary(journal):
         "adds": add_summary(journal),
         "lines": lines_summary(done),
         "by_tf": tf_summary(done),
+        "shorts": side_summary(journal, "S"),
     }
 
 

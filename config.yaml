@@ -12,7 +12,9 @@ rules:
                                  # 1.0 (was 1.5, 2026-09-24): 3 positions stopped together = 3% = the
                                  # daily limit, not 4.5% past it. Risk % doesn't change the edge (PF is
                                  # flat 0.75-2%), only the drawdown - README "Position sizing".
-  max_positions: 3               # 3-4 is the plateau on both timeframes; 2 and 5-6 tested worse
+  max_positions: 3               # LONG positions: 3-4 is the plateau on both timeframes; 2 and 5-6 tested worse
+  max_shorts: 1                  # rally shorts get their own single slot, separate from the 3 long ones
+                                 # (docs/research/rally-any-confirmation.md: 3 long + 1 short, PF 1.45, Sharpe 1.33)
   max_same_direction: 3          # was 2: the strategy is long-only with 3 slots, so following it
                                  # exactly tripped this rule. 3 = all slots may be long.
   max_gross_exposure_x: 3.0      # perp notional / equity base. On a unified account the base is USDC
@@ -73,6 +75,11 @@ scanner:
   # auto = on wherever FRED answers: locally, and in CI when the FRED_API_KEY secret is set (the
   # official API answers from Actions; the keyless CSV download times out there). Refreshed every 6h.
   macro_context: auto
+  # 1d rally shorts (docs/research/rally-any-confirmation.md): a downtrend coin's daily bar touches EMA20 and
+  # closes back below it, in the lower half; stop = that high + 0.5 ATR. Alerts only; kill rule: retired
+  # automatically once 30 have closed in the journal with PF < 1.0.
+  rally_shorts: true
+  rally_stop_atr: 0.5
 
 # Flow section: recent liquidations from OKX (Hyperliquid publishes none - no endpoint exists).
 # These are RECENT events, not 24h totals, and they are OKX's book rather than HL's. One request

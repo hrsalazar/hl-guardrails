@@ -1564,7 +1564,7 @@ function renderScan(d){
   const tfGroups=new Map(),watch=[];
   for(const r of d.scan){if(r.watch){watch.push(r);continue}const tf=r.tf||'1d';if(!tfGroups.has(tf))tfGroups.set(tf,[]);tfGroups.get(tf).push(r)}
   const tfKeys=[...tfGroups.keys()].sort((a,b)=>(TF_ORDER[a]??99)-(TF_ORDER[b]??99)||a.localeCompare(b));
-  const setupCell=r=>r.setup?`<span class="pill long">${r.setup}</span> stop ${fmt(r.stop,sig(r.stop))}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:''}`
+  const setupCell=r=>r.setup?`<span class="pill ${r.setup==='SHORT'?'short':'long'}">${r.setup}</span> stop ${fmt(r.stop,sig(r.stop))}${r.rr!=null?` tgt ${fmt(r.target,4)} RR ${fmt(r.rr,1)}`:''}`
     :scanStatus(r)==='breaking'?`<span>needs a ${r.tf||'1d'} close above ${fmt(r.hi20,sig(r.hi20))} · <b class="num">${barLeft(r.tf)}</b> left</span>`
     :`<span class="mut">${esc(r.rejected||(r.hi20?`below 20-bar high ${fmt(r.hi20,sig(r.hi20))}`:'—'))}</span>`;
   const trend=t=>t==='UP'?'<span class="pos">▲ up</span>':'<span class="neg">▼ down</span>';
@@ -1631,7 +1631,7 @@ function renderJournal(j){
   const Rbar=r=>r==null?'—':`<span class="rbar">${R(r)}<span class="rb" aria-hidden="true"><span style="${r>=0?'left':'right'}:50%;`
     +`width:${Math.max(2,Math.min(50,Math.abs(r)/3*50))}%;background:var(${r>=0?'--blue':'--red'})"></span></span></span>`;
   html+=rec.length?`<div class="tw"><table><tr><th>Signal</th><th>Status</th><th>R</th><th>Best</th><th>Early fail</th><th>Close loc</th></tr>`+
-    rec.map(e=>`<tr><td><b>${e.coin}</b> ${e.tf} <small class="mut">${e.signal_day}</small></td><td>${e.status}</td><td>${Rbar(e.r)}</td>`
+    rec.map(e=>`<tr><td><b>${e.coin}</b> ${e.tf}${e.side==='S'?' <span class="pill short">short</span>':''} <small class="mut">${e.signal_day}</small></td><td>${e.status}</td><td>${Rbar(e.r)}</td>`
       +`<td>${e.max_r?R(e.max_r):'—'}</td><td>${e.failed_early?'<span class="neg">yes</span>':'<span class="mut">no</span>'}</td>`
       +`<td>${e.close_loc==null?'—':fmt(e.close_loc,2)}</td></tr>`).join('')+'</table></div>'
     :'<div class="empty">No breakout signals recorded yet. Each new one is followed from here on.</div>';
@@ -1671,6 +1671,15 @@ function renderJournal(j){
   // own 50-week SMA did better (PF 1.67 vs 1.14) but it wasn't adopted. Live split, judged at 25 a side.
   const LN=((s.lines||{})['4h']||{}).sma50w||{},la=LN.above,lb=LN.below,lmin=Math.min(la?la.n:0,lb?lb.n:0);
   const side=(x,w)=>x?`<b>${w}</b> ${x.n} · avg ${R(x.avg_r)}${x.pf!=null?` · PF ${fmt(x.pf,2)}`:''}`:`<b>${w}</b> <span class="mut">none yet</span>`;
+  // 1d rally shorts, adopted 2026-10-12 with a kill rule fixed in advance (docs/research/rally-any-confirmation.md):
+  // after 30 closed live shorts, retired automatically if their PF is below 1.0
+  const SH=s.shorts||{closed:0,open:0,kill_n:30},shn=SH.kill_n||30;
+  html+=`<div class="track" id="jshorts"><h4>Rally shorts, live <span class="mut" style="font-weight:400">— 1d, one short slot, on probation.</span></h4>`
+    +(SH.retired?`<b class="neg">Retired by the kill rule</b>: ${SH.closed} closed, PF ${fmt(SH.pf,2)} (below 1.0). No more short alerts.`
+      :`${SH.closed} closed${SH.open?` · ${SH.open} open`:''}${SH.closed?` · PF ${SH.pf==null?'—':fmt(SH.pf,2)} · ${fmt(100*SH.win_rate)}% won · avg ${R(SH.avg_r)}`:''}`
+       +` <span class="mut">(kill rule at ${shn}: retired if PF &lt; 1.0; tested PF 1.67 on unseen coins)</span>`)
+    +`<div class="meter" style="height:6px;margin-top:8px" data-tip="${SH.closed} of ${shn} closed live shorts before the kill rule is judged">`
+    +`<span style="width:${Math.min(100,SH.closed/shn*100)}%;background:var(--red)"></span></div></div>`;
   html+=`<div class="track" id="jlines"><h4>Coin vs its 50-week average <span class="mut" style="font-weight:400">— tracking only, not advice.</span></h4>`
     +`4h signals closed with the coin above or below its own 50-week SMA at the signal. Backtest: PF 1.67 above vs 1.14 below, not adopted (README "Long-term lines"). `
     +`${side(la,'above')} &nbsp;·&nbsp; ${side(lb,'below')}${lmin<25?' <span class="mut">(judge at 25 on each side)</span>':''}`

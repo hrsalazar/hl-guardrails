@@ -98,6 +98,8 @@ def build_full(*, age_min=2, journal_closed=8):
          "rejected": "forming: above 20-bar high 182, needs 1d close", "hi20": 182.0, "atr": 6.0, "urank": 3, "vlm24h": 9.0e8},
         {"coin": "HYPE", "tf": "4h", "px": 48.9, "rsi4h": 71, "trend": "UP", "funding_apr": 21.0, "setup": None,
          "rejected": "ran 4.1% since signal close, wait for next setup", "hi20": 46.2, "atr": 0.9, "urank": 4, "vlm24h": 6.0e8},
+        {"coin": "ARB", "tf": "1d", "px": 0.41, "rsi4h": 38, "trend": "DOWN", "funding_apr": 12.0, "setup": "SHORT", "side": "S",
+         "stop": 0.452, "hi20": 0.55, "atr": 0.02, "level": 0.442, "signal_close": 0.412, "urank": 9, "vlm24h": 6.0e7},
         {"coin": "ZEC", "tf": "1d", "px": 51.0, "rsi4h": 55, "trend": "UP", "funding_apr": 5.0, "setup": None,
          "hi20": 56.0, "atr": 2.0, "urank": 20, "vlm24h": 2.0e7},
         {"coin": "xyz:CL", "tf": "1d", "px": 71.2, "rsi4h": 50, "trend": "UP", "funding_apr": 0,
@@ -244,6 +246,7 @@ def build_full(*, age_min=2, journal_closed=8):
                           "4h": {"n": 40, "win": 0.30, "hit1": 0.45, "avg_r": -0.35, "sd_r": 1.2}},
                 "adds": {"4h": {"closed": 3, "open": 1, "skipped": 2, "r_sum": 1.4, "pf": 2.1,
                                 "base_r_sum": 2.0, "with_add_r_sum": 3.4}},
+                "shorts": {"closed": 4, "open": 1, "pf": 1.4, "win_rate": 0.5, "avg_r": 0.21, "kill_n": 30, "retired": False},
                 "lines": {"4h": {"sma50w": {"above": {"n": 6, "win_rate": 0.5, "avg_r": 0.42, "pf": 1.9},
                                             "below": {"n": 3, "win_rate": 0.0, "avg_r": -1.0, "pf": 0.0}}}},
                 "curve": [{"t": gen - (journal_closed - i) * 3 * D, "r": r, "coin": "SOL", "tf": "1d"}

@@ -112,7 +112,7 @@ def bar_stats(d, tf):
     live (incomplete) candle as its last row. Plain floats, so it can be cached in the JSON state."""
     live, done = d.iloc[-1], d.iloc[:-1]
     k = done.iloc[-1]
-    return {"tf": tf, "bar_t": int(k.t.timestamp() * 1000), "k_c": float(k.c),
+    return {"tf": tf, "bar_t": int(k.t.timestamp() * 1000), "k_c": float(k.c), "k_h": float(k.h),
             "e20": float(ema(done.c, 20).iloc[-1]), "e50": float(ema(done.c, 50).iloc[-1]),
             "atr": float(atr(done).iloc[-1]),
             "hi20": float(done.h.iloc[-21:-1].max()),       # 20-bar high BEFORE the last completed candle
@@ -145,6 +145,7 @@ def classify(st, px, S, coin, funding_apr):
            "funding_apr": funding_apr, "setup": None, "hi20": st["hi20_live"], "atr": a, "tf": tf}
     if st["e20"] <= st["e50"]:
         out["rejected"] = "trend down"
+        rally_short(st, px, S, out)
         return out
     if k_c > st["hi20"]:
         stop = k_c - S["stop_atr"] * a
@@ -164,6 +165,35 @@ def classify(st, px, S, coin, funding_apr):
         # context for the dashboard's "near breakout" list; not a signal and never alerted
         out["near_atr"] = (st["hi20_live"] - px) / a
     return out
+
+
+# docs/research/rally-any-confirmation.md: on 104 trades on coins it was never tested on, PF 1.67, 50% won
+RALLY_BASE = {"n": 104, "win": 50, "pf": 1.67, "pf_seen": 1.30}
+
+
+def rally_short(st, px, S, out):
+    """The 1d rally short on a downtrend coin's closed bar: its high touched EMA20 and it closed back
+    below it, in the lower half of its range. Entry at the next open; stop = that high + 0.5 ATR."""
+    if st["tf"] != "1d" or not S.get("rally_shorts") or "k_h" not in st:
+        return
+    a, k_c, k_h, e20 = st["atr"], st["k_c"], st["k_h"], st["e20"]
+    if not (k_h >= e20 and k_c < e20 and st.get("close_loc", 1.0) <= 0.5 and a > 0):
+        return
+    k_t = pd.Timestamp(st["bar_t"], unit="ms", tz="UTC")
+    out.update(setup="SHORT", side="S", stop=k_h + S.get("rally_stop_atr", 0.5) * a, target=None, rr=None,
+               signal_close=k_c, signal_day=str(k_t.date()), level=k_h, ema20=e20,
+               valid_until=st["bar_t"] + 2 * BAR_MS["1d"], sig_t=st["bar_t"], close_loc=st.get("close_loc"),
+               bars=st.get("spark"), rejected=None)
+    if px < k_c - a:                       # already fell > 1 ATR past the signal close: don't chase
+        out["rejected"] = f"fell {(1 - px / k_c) * 100:.1f}% since signal close, wait for the next setup"
+        out["setup"] = None
+
+
+def shorts_retired(state):
+    """The kill rule fixed before adoption: after 30 closed live rally shorts, retired if their PF < 1."""
+    from . import journal
+
+    return journal.side_summary((state.get("journal") if state is not None else None) or [], "S")["retired"]
 
 
 def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=None, bars_out=None):
@@ -432,7 +462,43 @@ def run_once(cfg, inf, notif, state):
             if coin in urank:
                 a["urank"] = urank[coin]
             rows.append(a)
-            if a["setup"] and a.get("rr") is None:  # breakout strategy
+            if a["setup"] == "SHORT":
+                if shorts_retired(state):
+                    a["rejected"], a["setup"] = "rally shorts retired by the kill rule (30 live, PF < 1)", None
+                    continue
+                dist = a["stop"] - a["px"]
+                if dist <= 0:
+                    continue
+                size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
+                n_short = sum(1 for p in st["assetPositions"] if fnum(p["position"]["szi"]) < 0)
+                held = coin in open_coins
+                note = f" (+{a['funding_apr']:.0f}% APR funding paid to shorts)" if a["funding_apr"] > 15 else ""
+                if held:
+                    note += " [you already have a position in this coin - not an entry]"
+                elif n_short >= R.get("max_shorts", 1):
+                    note += f" [{n_short} of {R.get('max_shorts', 1)} short slot used: skip]"
+                b = RALLY_BASE
+                msg = (
+                    f"RALLY SHORT {coin} @ {a['px']:.5g}{note}\n"
+                    f"  1d high {a['level']:.5g} touched EMA20 {a['ema20']:.5g}, closed {a['signal_close']:.5g} back below it "
+                    f"(lower half of the bar) on {a['signal_day']} | trend DOWN\n"
+                    f"  stop {a['stop']:.5g} (signal high + {S.get('rally_stop_atr', 0.5)}x ATR) | trail {S['trail_atr']}x ATR "
+                    f"above the lowest low | time stop day {R['max_hold_days']}\n"
+                    f"  size {size:.4g} {coin} (~{size * a['px']:,.0f} USD) keeps loss at {risk_usd:.0f} USD = "
+                    f"{R['risk_per_trade_pct']}% of {equity:,.0f} {model['base_label']}\n"
+                    f"  rules: limit entry near open, stop placed BEFORE entry, no adds, at most {R.get('max_shorts', 1)} short at a time\n"
+                    f"  odds: on {b['n']} trades on coins never used to design it, {b['win']}% won, PF {b['pf']}; PF {b['pf_seen']} "
+                    f"on the backtest coins. Kill rule: retired if the first 30 live shorts make PF < 1.0"
+                )
+                if mac:
+                    msg += f"\n  macro: {mac['label']} - context only, not part of the rule"
+                notif.send(msg, key=f"setup_{coin}_SHORT_{a['signal_day']}", cooldown_s=24 * 3600,
+                           push=not held, cat="info" if held else "entry",
+                           summary=(f"{coin} 1d rally short - you already hold it" if held else
+                                    f"RALLY SHORT {coin} 1d · size {size:.4g} (~{size * a['px']:,.0f} USD) · stop {a['stop']:.5g}"),
+                           valid_until=a["valid_until"], coin=coin, tf="1d", level=a["level"], side="S",
+                           signal_close=a["signal_close"], atr=a["atr"])
+            elif a["setup"] and a.get("rr") is None:  # breakout strategy
                 dist = abs(a["px"] - a["stop"])
                 size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
                 note = f" (paying {a['funding_apr']:.0f}% APR funding)" if a["funding_apr"] > 15 else ""
@@ -529,7 +595,7 @@ def run_once(cfg, inf, notif, state):
         for r in rows:
             if r.get("signal_close") is not None and not r.get("watch"):
                 journal.arm_add(jr, r)  # a fresh breakout on an open entry: hypothetical add (README "Pyramiding")
-                key = f"setup_{r['coin']}_LONG_{r['signal_day']}|{r['tf']}"
+                key = f"setup_{r['coin']}_{'SHORT' if r.get('side') == 'S' else 'LONG'}_{r['signal_day']}|{r['tf']}"
                 if not any(e["key"] == key for e in jr):
                     r["lines"] = signal_lines(inf, r)
                 journal.add(jr, r, key, now_ms, S)

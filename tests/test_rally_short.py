@@ -38,3 +38,9 @@ def test_the_combined_book_keeps_breakout_longs_and_adds_rally_shorts():
     assert bt.signal(bar(), Vb)[0] == "S"
     up = bar(ema20=100.0, ema50=90.0, c=125.0, h=126.0, l=118.0, close_loc=0.9)   # uptrend, close above the 20-bar high
     assert bt.signal(up, Vb)[0] == "L"
+
+
+def test_the_confirmation_adds_shorts_on_1d_streams_only():
+    Vb = {**bt.VARIANTS["breakout_both"], "short_level": "rally", "rally_stop_atr": 0.5, "short_filters": ["stream_1d"]}
+    assert bt.signal(bar(is_1d=True), Vb)[0] == "S"
+    assert bt.signal(bar(is_1d=False), Vb) is None

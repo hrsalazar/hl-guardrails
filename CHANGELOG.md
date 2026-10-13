@@ -2,7 +2,14 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
-## 2026-10-12
+## 2026-10-13
+
+- **1d rally shorts, live as alerts, with their own slot.** The rally-any confirmation (pre-registered, docs/research/rally-any-confirmation.md) passed on 104 trades on coins never used: PF 1.67.
+  - **The rule:** a downtrend coin's daily bar touches EMA20 and closes back below it, in its lower half. The scanner then sends a `RALLY SHORT` alert with the stop above that high + 0.5 ATR and size at 1R.
+  - **The slot:** shorts have their own single slot (`rules.max_shorts: 1`); longs keep their 3. Re-run that way, the book's Sharpe goes from 1.07 to 1.33 without a deeper drawdown.
+  - **Live tracking:** the journal follows shorts (trail above the lowest low, R from the short side).
+  - **Kill rule, fixed in advance:** after 30 closed live shorts with PF < 1.0, short alerts stop automatically.
+  - **Dashboard:** a SHORT pill in the scanner, shorts in Watch closely, and a "Rally shorts, live" tracker.
 
 - **Rally-short study** (`--rally-short-study`, pre-registered in docs/research/rally-short-study.md): short the failed bounce in a downtrend (the high touches EMA20 and the bar closes back below it, in its lower half). Not adopted: with BTC below its 200-day EMA, PF 1.07 on 1d and 0.66 on 4h, below random rally shorts. Added to the live book, it cut Sharpe from 1.08 to 0.32 and the drawdown widened to −40.9%. The crowded-funding variant fired twice in three years. The scanner stays long-only. Longs in the same downtrends made PF 2.82 (1d) and 1.59 (4h).
 

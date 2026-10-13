@@ -26,6 +26,12 @@ def ended_status(a, px):
     m = a.get("meta") or {}
     if a.get("cat") != "entry" or px is None:
         return "expired", None
+    if m.get("side") == "S":               # rally short: missed if it fell away, failed if it broke the high
+        if m.get("signal_close") is not None and m.get("atr") and px < m["signal_close"] - m["atr"]:
+            return "missed", f"fell {(1 - px / m['signal_close']) * 100:.1f}% past the signal close"
+        if m.get("level") is not None and px > m["level"]:
+            return "failed", f"back above the rejected high {m['level']:.5g}"
+        return "expired", "entry window passed"
     if m.get("signal_close") is not None and m.get("atr") and px > m["signal_close"] + m["atr"]:
         return "missed", f"ran {(px / m['signal_close'] - 1) * 100:.1f}% past the signal close"
     if m.get("level") is not None and px < m["level"]:

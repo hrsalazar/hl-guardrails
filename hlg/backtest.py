@@ -289,6 +289,8 @@ FILTERS = {
     # longs crowded: funding >= 20% APR (HL's neutral rate is ~11%); rally-short-study candidate 2.
     # context() stores missing funding as 0%, which is never crowded
     "funding_crowded": lambda k: _pass(getattr(k, "funding_apr", None), lambda v: v >= 20),
+    # a combined-book stream that is a 1d one (rally-any confirmation: shorts on the 1d streams only)
+    "stream_1d": lambda k: _pass(getattr(k, "is_1d", None), bool),
     # long-term lines from daily / weekly bars (ma_study, docs/research/ma-lines-study.md)
     **{f"{who}_above_{ln}": (lambda col: lambda k: _pass(getattr(k, col, None), bool))(f"{who}_above_{ln}")
        for who in ("btc", "coin") for ln in MA_LINES},
@@ -493,7 +495,11 @@ def run(V, data, fund, P):
             tf = tf_of(coin)
             if tf in tf_max and sum(tf_of(k) == tf for k in open_pos) >= tf_max[tf]:
                 continue
-            if len(open_pos) >= P["max_positions"]:
+            # separate per-side limits (live config: 3 long slots, 1 short slot) replace the shared one
+            side_max = P.get("side_max")
+            if side_max and sum(p["side"] == q["side"] for p in open_pos.values()) >= side_max.get(q["side"], P["max_positions"]):
+                continue
+            if not side_max and len(open_pos) >= P["max_positions"]:
                 victims = [k for k in open_pos if preempt and tf == "1d" and tf_of(k) == "4h" and d in data[k].index]
                 if not victims:
                     continue
@@ -1664,6 +1670,116 @@ def rally_short_study(P):
     return checks, verdict
 
 
+def rally_book_separate(P):
+    """python -m hlg.backtest --rally-book
+
+    Descriptive, not a gate: the live book (15 coins, 1d + 4h longs, 1.0% risk) with 1d rally shorts
+    under the LIVE limits -- 3 long slots plus 1 separate short slot -- next to the shared-slot run the
+    confirmation judged (docs/research/rally-any-confirmation.md)."""
+    out = Path(P["out_dir"])
+    cdata, cfund, extra, mid = _combined_book(P)
+    for k_, d in cdata.items():
+        d["is_1d"] = k_.endswith("|1d")
+    Qc = {**P, "risk_pct": 1.0, **extra}
+    Vb = {**VARIANTS["breakout_both"], "short_level": "rally", "rally_stop_atr": 0.5, "short_filters": ["stream_1d"]}
+    rows = {}
+    _, rows["live book (longs, 3 slots)"] = _combined_run(cdata, cfund, Qc, mid)
+    for name, Q in (("+ shorts, 3 shared slots", Qc), ("+ shorts, 3 long + 1 short slot", {**Qc, "side_max": {"L": 3, "S": 1}})):
+        T, r = _combined_run(cdata, cfund, Q, mid, V=Vb)
+        r["shorts"] = int((T.side == "S").sum()) if len(T) else 0
+        r["short_pf"] = _pf_of(T.net[T.side == "S"].values) if r["shorts"] else float("nan")
+        r["long_pf"] = _pf_of(T.net[T.side == "L"].values) if len(T) else float("nan")
+        rows[name] = r
+    cols = ["trades", "shorts", "pf", "long_pf", "short_pf", "total_return_pct", "max_dd_pct", "sharpe", "worst_day_pct"]
+    D = pd.DataFrame(rows).T.reindex(columns=cols)
+    rep = [f"# Live book with 1d rally shorts: shared vs separate slots ({P['start']} -> now, 1.0% risk)" + chr(10),
+           D.astype(float).round(2).to_markdown() + chr(10)]
+    (out / "rally_book.md").write_text(chr(10).join(rep), encoding="utf-8")
+    print(chr(10).join(rep))
+    return D
+
+
+def rally_confirm(P):
+    """python -m hlg.backtest --rally-confirm
+
+    rally_any (the rally-short study's ungated baseline), 1d, on the coins it was never tested on:
+    every main-dex perp except the 15 backtest coins, delisted included, each traded only while it
+    was in the point-in-time liquid universe. Pre-registered in docs/research/rally-any-confirmation.md."""
+    cache, out = Path(P["cache_dir"]), Path(P["out_dir"])
+    cache.mkdir(exist_ok=True), out.mkdir(exist_ok=True)
+    pool, delisted = candidate_pool()
+    data = {}
+    for c in pool:
+        if c in DEF["coins"]:
+            continue
+        try:
+            df = bars(c, cache, "1d")
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s: bars failed (%s), skipped", c, e)
+            continue
+        if df is not None and len(df) >= 60:
+            data[c] = features(df, 1)
+    start = pd.Timestamp(P["start"], tz="UTC")
+    mask, med = eligibility(data, dict(top_n=30, min_vol_usd=10e6, min_age_days=60))
+    ever = sorted(mask.columns[mask[mask.index >= start].any()])
+    start_ms = int(start.timestamp() * 1000)
+    fund = {}
+    for i, c in enumerate(ever):
+        fund[c] = funding(c, start_ms, cache, "1d")
+        if i % 10 == 0:
+            log.info("funding %d/%d", i + 1, len(ever), extra={"safe": True})
+    sub = {c: data[c] for c in ever}
+    Q = {**P, "liq_med": med, "delisted": delisted,
+         "elig_by_day": by_day(mask.loc[mask.index >= start - pd.Timedelta(days=1)])}
+    T, C, dd = run(RALLY_STUDY["rally_any"], sub, fund, Q)
+    T.to_csv(out / "rally_confirm_trades.csv", index=False)
+    h1, h2 = _own_halves(T)
+    pf = _pf_of(T.net.values) if len(T) else float("nan")
+    rng = np.random.default_rng(0)
+    boot = np.array([_pf_of(rng.choice(T.net.values, size=len(T), replace=True)) for _ in range(10_000)]) if len(T) else np.array([np.nan])
+    p5, p50, p95 = np.percentile(boot, [5, 50, 95])
+    row = dict(coins_ever_eligible=len(ever), delisted_among_them=len(set(ever) & delisted), trades=len(T),
+               coins_traded=T.coin.nunique() if len(T) else 0, win_rate=(T.net > 0).mean() if len(T) else np.nan,
+               pf=pf, avg_r=(T.net_pct / Q["risk_pct"]).mean() if len(T) else np.nan,
+               net_pct_of_equity0=T.net.sum() / Q["equity0"] * 100 if len(T) else 0.0, max_dd_pct=dd * 100,
+               half1_pf=h1, half2_pf=h2, boot_pf_p5=p5, boot_pf_p50=p50, boot_pf_p95=p95,
+               funding_pct_of_equity0=T.fund.sum() / Q["equity0"] * 100 if len(T) else 0.0)
+    # rule 5: the live book (15 coins, 1d + 4h longs, 3 shared slots, 1.0% risk) + rally_any shorts on 1d streams
+    cdata, cfund, extra, mid = _combined_book(P)
+    for k_, d in cdata.items():
+        d["is_1d"] = k_.endswith("|1d")
+    Qc = {**P, "risk_pct": 1.0, **extra}
+    _, live = _combined_run(cdata, cfund, Qc, mid)
+    Vb = {**VARIANTS["breakout_both"], "short_level": "rally", "rally_stop_atr": 0.5, "short_filters": ["stream_1d"]}
+    Tb, both = _combined_run(cdata, cfund, Qc, mid, V=Vb)
+    live["shorts"], both["shorts"] = 0, int((Tb.side == "S").sum()) if len(Tb) else 0
+    book_ok = bool(both["sharpe"] >= live["sharpe"] and both["max_dd_pct"] >= live["max_dd_pct"] - 2
+                   and both["pf"] >= live["pf"] - 0.05)
+    rules = {
+        "1. >= 50 trades in C": len(T) >= 50,
+        "2. PF >= 1.3 in C": bool(pf >= 1.3),
+        "3. PF > 1.0 in both halves of its own trades": bool(h1 > 1.0 and h2 > 1.0),
+        "4. bootstrap 5th percentile of PF > 1.0": bool(p5 > 1.0),
+        "5. live book + 1d rally shorts: Sharpe >= live, DD within 2pp, PF within 0.05": book_ok,
+    }
+    adopted = all(rules.values())
+    cols = ["trades", "shorts", "pf", "total_return_pct", "max_dd_pct", "sharpe", "IS_pf", "OOS_pf", "worst_day_pct"]
+    rep = ["# rally_any, 1d, on unseen coins (pre-registered: docs/research/rally-any-confirmation.md)\n",
+           f"Test set C: main-dex perps outside the 15 backtest coins, point-in-time top 30 by 30d median notional "
+           f"(>= $10M, >= 60 days listed), {P['start']} -> now.\n",
+           pd.DataFrame({"rally_any 1d, set C": row}).T.astype(float).round(2).to_markdown() + "\n",
+           "Per coin (trades, PF):\n",
+           (T.groupby("coin").net.agg(trades="size", pf=lambda x: _pf_of(x.values)).round(2)
+            .sort_values("trades", ascending=False).to_markdown() if len(T) else "no trades") + "\n",
+           "\n## The live book with 1d rally shorts added (15 coins, 1.0% risk, 3 shared slots)\n\n"
+           + pd.DataFrame({"live book (longs)": live, "live book + rally_any 1d": both}).T[cols].astype(float).round(2).to_markdown() + "\n",
+           "\n## Adoption bar (fixed before running)\n\n" + "\n".join(f"- {k}: **{'pass' if v else 'FAIL'}**" for k, v in rules.items())
+           + f"\n\n**rally_any 1d: {'ADOPTED as an alert' if adopted else 'not adopted'}**\n"]
+    (out / "rally_confirm.md").write_text("\n".join(rep), encoding="utf-8")
+    print("\n".join(rep))
+    return row, rules, adopted
+
+
 MA_STUDY = ("ma_pullback", "ma_pullback_long", "ma_pullback_short", "ma_reclaim", "breakout_long")
 
 
@@ -1915,6 +2031,8 @@ def main():
     ap.add_argument("--bmsb-study", action="store_true", help="bull market support band (20w SMA / 21w EMA) vs the 50-week SMA as entry filters")
     ap.add_argument("--ma-pullback-study", action="store_true", help="9 EMA / 20 SMA / 200 SMA trend pullback, long and short (pre-registered)")
     ap.add_argument("--ma-momentum-study", action="store_true", help="the MA pullback on the day's momentum movers only (pre-registered)")
+    ap.add_argument("--rally-book", action="store_true", help="live book + 1d rally shorts: shared slots vs 3 long + 1 short slot (descriptive)")
+    ap.add_argument("--rally-confirm", action="store_true", help="rally_any 1d on the coins it was never tested on (pre-registered)")
     ap.add_argument("--rally-short-study", action="store_true", help="short the failed bounce in a BTC downtrend (pre-registered)")
     ap.add_argument("--short-study", action="store_true", help="breakdown shorts only while BTC is below its 200-day EMA (pre-registered)")
     ap.add_argument("--regime-study", action="store_true", help="does the live book behave differently by market state (risk-on/off)? messaging only")
@@ -1957,6 +2075,10 @@ def main():
         return short_study(P)
     if a.rally_short_study:
         return rally_short_study(P)
+    if a.rally_confirm:
+        return rally_confirm(P)
+    if a.rally_book:
+        return rally_book_separate(P)
     if a.ma_pullback_study:
         return ma_pullback_study(P)
     if a.ma_momentum_study:

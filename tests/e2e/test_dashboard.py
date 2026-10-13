@@ -302,10 +302,10 @@ def test_watch_closely_lists_signals_then_breakouts_then_near_ones(page, base_ur
     card = page.locator("#nearcard")
     expect(card).to_be_visible()
     expect(card.locator("h3")).to_contain_text("Watch closely")
-    assert card.locator(".hot .hc b").all_text_contents() == ["ENA", "UNI", "SOL", "TAO"]   # signals (above trigger first), breaking, near
+    assert card.locator(".hot .hc b").all_text_contents() == ["ENA", "UNI", "ARB", "SOL", "TAO"]   # signals (above trigger first), breaking, near
     expect(card.locator(".hot.s-breaking")).to_contain_text("needs the close in")
     expect(card.locator(".hot.s-near")).to_contain_text("% to 428")
-    expect(page.locator("#nearcount")).to_have_text("4")                # ran-past, uptrend, downtrend: not here
+    expect(page.locator("#nearcount")).to_have_text("5")                # ran-past, uptrend, downtrend: not here
 
 
 def test_scanner_rows_carry_a_status_and_sort_by_it(page, base_url):
@@ -313,7 +313,7 @@ def test_scanner_rows_carry_a_status_and_sort_by_it(page, base_url):
     expect(page.locator(".tfhead")).to_have_count(3)                     # 1d, 4h, TradFi
     daily = page.locator("#scan table").first
     order = [c for c in daily.locator("tr td:first-child b").all_text_contents()]
-    assert order == ["UNI", "SOL", "TAO", "ZEC", "BTC"], order          # signal, breaking, near, uptrend, down
+    assert order == ["UNI", "ARB", "SOL", "TAO", "ZEC", "BTC"], order          # signal, breaking, near, uptrend, down
     expect(daily.locator("tr", has_text="UNI").locator(".sbadge")).to_have_text("Signal")
     expect(daily.locator("tr", has_text="SOL").locator(".sbadge")).to_have_text("Breaking out")
     expect(daily.locator("tr", has_text="SOL")).to_contain_text("needs a 1d close above 182")
@@ -321,7 +321,7 @@ def test_scanner_rows_carry_a_status_and_sort_by_it(page, base_url):
     expect(daily.locator("tr", has_text="ZEC").locator(".sbadge")).to_have_count(0)  # just on the list: no badge
     expect(daily.locator("tr", has_text="BTC")).to_have_class("st-down")
     expect(page.locator("#scan tr", has_text="HYPE").locator(".sbadge")).to_have_text("Ran past")
-    expect(page.locator(".tfhead").first).to_contain_text("1 signal")
+    expect(page.locator(".tfhead").first).to_contain_text("2 signal")
     expect(page.locator(".tfhead").first).to_contain_text("1 breaking out")
     ena_row = page.locator("#scan tr", has_text="ENA")
     expect(ena_row.locator(".pill.long")).to_have_text("LONG")
@@ -1038,7 +1038,7 @@ def test_scanner_groups_fold_from_their_heading_and_remember_it(page, base_url):
     expect(page.locator(".tfgroup[data-k='watch'] table")).to_be_hidden()   # TradFi starts folded
     daily.locator(".tfhead").click()
     expect(daily.locator("table")).to_be_hidden()
-    expect(daily.locator(".tfhead")).to_contain_text("1 signal")          # counts stay in the heading
+    expect(daily.locator(".tfhead")).to_contain_text("2 signal")          # counts stay in the heading
     expect(daily.locator(".tfhead")).to_have_attribute("aria-expanded", "false")
     page.reload()
     expect(page.locator(".tfgroup[data-k='1d'] table")).to_be_hidden()
@@ -1196,3 +1196,14 @@ def test_the_tab_bar_returns_above_the_panes_on_a_wide_screen(page, base_url):
     page.set_viewport_size({"width": 1100, "height": 900})
     page.wait_for_function("document.querySelector('.tabs').nextElementSibling===document.querySelector('#pane-tech')")
     assert page.evaluate("getComputedStyle(document.querySelector('.tabs')).position") == "static"
+
+
+def test_a_rally_short_shows_as_a_short_signal_and_the_journal_tracks_its_kill_rule(page, base_url):
+    page.goto(url(base_url, "full"))
+    row = page.locator("#scan tr", has_text="ARB")
+    expect(row.locator(".pill.short")).to_have_text("SHORT")
+    expect(row.locator(".sbadge")).to_have_text("Signal")
+    expect(page.locator("#nearcard")).to_contain_text("ARB")
+    sh = page.locator("#jshorts")
+    expect(sh).to_contain_text("4 closed · 1 open · PF 1.40")
+    expect(sh).to_contain_text("kill rule at 30")

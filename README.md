@@ -586,6 +586,18 @@ half, with the stop just above the high.
 
 Two short entries have now lost where the long rule kept working. `python -m hlg.backtest --rally-short-study`.
 
+**1d rally shorts without the BTC gate: confirmed on unseen coins, adopted as alerts** (2026-10-12,
+pre-registered in [docs/research/rally-any-confirmation.md](docs/research/rally-any-confirmation.md)).
+The rally-short study's ungated baseline did well on 1d, so it got its own test on the coins never
+used: every other liquid Hyperliquid perp, delisted coins included.
+- **On the unseen coins:** PF 1.67 on 104 trades across 35 coins, both halves above 1.5, bootstrap
+  5th percentile 1.14.
+- **In the live book:** with its **own single short slot** (3 long + 1 short), PF 1.41 → 1.45, Sharpe
+  1.07 → 1.33, drawdown no deeper.
+- **Live as a `RALLY SHORT` alert on the 1d close**, with a kill rule fixed in advance: retired
+  automatically if the first 30 live shorts make PF < 1.0.
+- **Caveats:** no slippage modelled, and results vary widely by coin.
+
 **The 9 EMA / 20 SMA / 200 SMA pullback (Malyarovich), tested, not adopted** (2026-10-08,
 pre-registered in [docs/research/ma-pullback-study.md](docs/research/ma-pullback-study.md)). The
 YouTube strategy, made mechanical, long and short: buy a dip into the 9 EMA–20 SMA zone in a rising
@@ -1263,7 +1275,7 @@ playwright install chromium
 pytest tests/e2e -q
 ```
 
-103 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
+104 tests against five synthetic data scenarios (`tests/e2e/fixtures.py`) served from a local static
 server (`tests/e2e/conftest.py`) — a full account with one gauge deliberately landing in each of its
 good/warn/crit states, a flat classic-account, the unconfigured-passphrase stub, and a **real
 AES-256-GCM envelope** sealed with `hlg.vault` (so the browser's WebCrypto path is exercised against

@@ -302,7 +302,15 @@ def run_once(cfg, inf, notif, state):
 
     # ---- portfolio-level caps ----
     gross = sum(fnum(p["positionValue"]) for p in positions)
-    if len(positions) > R["max_positions"]:
+    # longs and shorts have separate limits when max_shorts is set (3 long slots + 1 rally-short slot)
+    n_long = sum(1 for p in positions if fnum(p["szi"]) > 0)
+    n_short = len(positions) - n_long
+    if "max_shorts" in R:
+        if n_long > R["max_positions"]:
+            breach(f"{n_long} long positions open > max {R['max_positions']}", "max_pos")
+        if n_short > R["max_shorts"]:
+            breach(f"{n_short} short positions open > max {R['max_shorts']}", "max_shorts")
+    elif len(positions) > R["max_positions"]:
         breach(f"{len(positions)} positions open > max {R['max_positions']}", "max_pos")
     longs = sum(1 for p in positions if fnum(p["szi"]) > 0)
     shorts = len(positions) - longs
