@@ -747,6 +747,15 @@ def test_daily_brief_shows_tilt_points_and_source_links(page, base_url):
     expect(brief).to_contain_text("Written by anthropic/claude-opus-5.5 via OpenRouter")
 
 
+def test_the_brief_shows_its_settled_record_and_that_the_verdict_is_pending(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator('.tab[data-tab="macro"]').click()
+    rec = page.locator("#briefrec")
+    expect(rec).to_contain_text("right 58% of 12 risk-on/off calls over 5 days")
+    expect(rec).to_contain_text("chance 50%")
+    expect(rec).to_contain_text("12 of 60 calls needed before it's judged")
+
+
 def test_hostile_text_in_the_brief_is_inert(page, base_url):
     """The brief is model output built from third-party headlines: markup must render as text, and
     a javascript: or quote-injected link must never become a live link."""
@@ -1089,6 +1098,26 @@ def test_weekly_review_grades_the_process_and_toggles_weeks(page, base_url):
     expect(rv.locator("#reviewdone")).to_have_text("Reviewed ✓")
     page.reload()
     expect(page.locator("#reviewcard #reviewdone")).to_have_text("Reviewed ✓")            # remembered (last week still selected)
+
+
+def test_post_mortems_mark_each_closed_trade_and_give_one_lesson(page, base_url):
+    page.goto(url(base_url, "full"))
+    pm = page.locator("#reviewcard #pmlist li")
+    expect(pm).to_have_count(2)
+    expect(pm.nth(0)).to_contain_text("SOL long · 3d · +1.40R · 1d 2026-09-20 signal — plan followed")
+    expect(pm.nth(1)).to_contain_text("off-plan, no stop, averaged down, held a loser")
+    expect(pm.nth(1)).to_contain_text("if the scanner has nothing, the plan is to wait")   # the first miss's lesson only
+    expect(page.locator("#reviewcard")).to_contain_text("Plan followed")
+
+
+def test_the_bear_check_is_tracked_in_the_journal_and_its_text_is_inert(page, base_url):
+    page.goto(url(base_url, "full"))
+    jb = page.locator("#jbear")
+    expect(jb).to_contain_text("High 2 · PF 0.50 · failed early 50%")
+    expect(jb).to_contain_text("judge at 40 closed: 6 so far, 2 open")
+    cell = page.locator('span[data-tip^="Unlock next week"]')
+    expect(cell).to_have_text("high")
+    assert page.locator("#journal img").count() == 0 and page.evaluate("window.__pwned") is None
 
 
 def test_a_review_due_cue_appears_on_monday_until_last_week_is_reviewed(page, base_url):

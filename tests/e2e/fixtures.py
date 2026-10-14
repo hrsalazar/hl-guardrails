@@ -215,8 +215,14 @@ def build_full(*, age_min=2, journal_closed=8):
                       "size_x_med": 0.9, "offplan": 5, "offplan_net": -1230.0, "offplan_open": 1, "rows": [],
                       "slip_days": [(gen // D - 1) * D, (gen // D - 9) * D],
                       "same": {"n": 9, "rule_r": 2.1, "your_r": -1.5},
+                      # made-up post-mortems, both closed a minute before the data (this week)
+                      "reviews": [{"coin": "SOL", "side": "L", "t0": gen - 3 * D, "t_end": gen - 60_000, "signal": "1d 2026-09-20",
+                                   "stop_min": 2.0, "size_x": 1.0, "adds_under": 0, "days": 3.0, "r": 1.4, "misses": []},
+                                  {"coin": "DOGE", "side": "L", "t0": gen - 9 * D, "t_end": gen - 60_000, "signal": None,
+                                   "stop_min": None, "size_x": None, "adds_under": 2, "days": 9.0, "r": -2.1,
+                                   "misses": ["off_plan", "no_stop", "added_under", "held_loser"]}],
                       "weeks": {"this": {"start": 0, "signals": 2, "taken": 1, "skipped": 1, "no_stop": 0, "skipped_r": 0.0,
-                                         "offplan": 1, "offplan_net": -120.0},
+                                         "offplan": 1, "offplan_net": -120.0, "reviewed": 2, "followed": 1},
                                 "last": {"start": 0, "signals": 3, "taken": 3, "skipped": 0, "no_stop": 0, "skipped_r": 0.0,
                                          "offplan": 0, "offplan_net": 0.0}}},
         # made-up split; each sums to its total (-330 / -430)
@@ -252,9 +258,15 @@ def build_full(*, age_min=2, journal_closed=8):
                 "curve": [{"t": gen - (journal_closed - i) * 3 * D, "r": r, "coin": "SOL", "tf": "1d"}
                           for i, r in enumerate([-1, -1, 2.4, -0.6, -1, 4.1, -1, 0.8][:journal_closed])],
             },
+            # made-up bear-check record, still short of the 40 needed
+            "bear": {"n": 6, "min_n": 40, "pending": 2, "flags": {"low": 3, "medium": 1, "high": 2},
+                     "high": {"n": 2, "pf": 0.5, "failed_early": 0.5}, "rest": {"n": 4, "pf": 1.6, "failed_early": 0.25},
+                     "verdict": "pending"},
             "recent": [
                 {"coin": "ENA", "tf": "4h", "signal_day": "2026-09-19 16:00", "status": "open", "r": 0.8,
-                 "max_r": 1.4, "failed_early": False, "close_loc": 0.86},
+                 "max_r": 1.4, "failed_early": False, "close_loc": 0.86,
+                 # hostile model output: must stay text inside the tooltip
+                 "bear": {"flag": "high", "case": "Unlock next week <img src=x onerror=\"window.__pwned=1\">", "t": gen, "model": "m", "n_news": 2}},
                 {"coin": "SOL", "tf": "1d", "signal_day": "2026-09-12", "status": "stopped", "r": -1.0,
                  "max_r": 0.3, "failed_early": True, "close_loc": 0.41},
                 {"coin": "ZEC", "tf": "1d", "signal_day": "2026-09-02", "status": "time", "r": 3.9,
@@ -291,6 +303,9 @@ def build_full(*, age_min=2, journal_closed=8):
             ],
             "watch": ["CPI Wednesday 12:30 UTC", "ETF flows"],
         },
+        # made-up record: 12 directional calls settled, still short of the 60 needed for a verdict
+        "digest_record": {"logged": 20, "settled": 15, "n": 12, "min_n": 60, "window_days": 5, "pending": 5,
+                          "hit_rate": 7 / 12, "naive": 0.58, "chance_median": 0.5, "pctile": 71.0, "verdict": "pending"},
         "behavior": {"t": gen, "days": 180, "trades": 108, "net": -10435.0, "avgdown_n": 61, "avgdown_net": -12340.0,  # made up
                      "never_n": 47, "never_net": 1905.0, "win_rate": 0.5, "avg_win": 240.0, "avg_loss": -480.0,
                      "worst5_net": -13100.0, "last_add_under": gen - int(3.2 * D), "streak_days": 3.2,

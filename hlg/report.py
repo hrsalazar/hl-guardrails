@@ -25,8 +25,8 @@ from pathlib import Path
 import requests
 from cryptography.exceptions import InvalidTag
 
-from . import (account, behavior, cascade_watch, digest, events, execution, guardrails, journal, liqmap,
-               liquidations, market, market_state, scanner, sentiment, universe, vault)
+from . import (account, bearcheck, behavior, cascade_watch, digest, events, execution, guardrails, journal,
+               liqmap, liquidations, market, market_state, scanner, sentiment, universe, vault)
 
 # README "Discipline aids": if-then plans (implementation intentions) shown in the Now card and the
 # urge check. Overridable in config.yaml -> discipline; written as the trader's own rules.
@@ -53,6 +53,7 @@ from .common import (
 
 OUT = Path("site")
 FILES = ("state.json", "alerts.json", "history.json")
+NEWS = "news.json"   # the brief's headline archive (hlg.digest): research only, the page never reads it
 LOCKED_STUB = {"locked": "encryption not configured: set the DASHBOARD_PASSPHRASE secret"}
 
 
@@ -93,6 +94,17 @@ def publish(name, obj, vlt, in_ci):
     else:
         body = obj
     (OUT / name).write_text(json.dumps(body, indent=None if vlt else 1))
+
+
+def carry_news(raw, vlt, in_ci, today_items=None, day=None):
+    """The headline archive goes out with every deploy (Pages replaces the whole site), but it only
+    changes on a brief day: otherwise the previous envelope is written back as it came, without
+    decrypting it. With nothing to carry and nothing new, no file."""
+    if today_items:
+        arch = digest.unpack(load_prev(raw, NEWS, vlt)) if raw is not None else None
+        publish(NEWS, digest.pack(digest.archive_add(arch, day, today_items)), vlt, in_ci)
+    elif vault.is_envelope(raw) or (not in_ci and isinstance(raw, dict) and "gz" in raw):
+        (OUT / NEWS).write_text(json.dumps(raw))
 
 
 def add_stops(positions, inf, cfg, acct):
@@ -193,6 +205,7 @@ def main():
     OUT.mkdir(exist_ok=True)
 
     raw = {n: fetch_prev(site_url, n) for n in FILES}
+    news_raw = fetch_prev(site_url, NEWS)
     pw = os.environ.get("DASHBOARD_PASSPHRASE")
     # reuse the published salt so the key is stable across runs (a device that unlocked stays so)
     salt = next((vault.salt_of(r) for r in raw.values() if vault.is_envelope(r)), None)
@@ -275,6 +288,9 @@ def main():
     macro_ctx = scanner.macro_cached(cfg["scanner"], state, now_ms)  # FRED, refreshed every 6h (hlg.scanner)
     # today's risk-on / mixed / risk-off, for the lessons -- context for you, never a signal (hlg.market_state)
     mstate = market_state.build(market_state.btc_trend(inf, state, now_ms), macro_ctx, state.get("fng"))
+    # the daily brief's tilt, settled 5 days on against BTC (hlg.digest): its live record
+    btc_px = next((r["px"] for r in market_rows if r["coin"] == "BTC" and r.get("px")), None)
+    digest.settle(state, now_ms, btc_px)
     out = {
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "account": cfg["account"],
@@ -301,13 +317,15 @@ def main():
         "rules": cfg["rules"],
         # live record of every breakout signal under the strategy's rules (hlg.journal)
         "journal": {"summary": journal.summary(state.get("journal") or []),
-                    "recent": list(reversed((state.get("journal") or [])[-30:]))},
+                    "recent": list(reversed((state.get("journal") or [])[-30:])),
+                    "bear": bearcheck.summary(state.get("journal") or [])},
         "universe": {"mode": universe.settings(S)["mode"], "coins": len(scanned),
                      "day": (state.get("universe") or {}).get("day")},
         "liqmap": liqmap_payload(state.get("liqmap"), {r["coin"]: r["px"] for r in market_rows if r.get("px")}),
         "events": events.payload(state.get("events"), now_ms) if E["enabled"] else None,
         "fng": state.get("fng"),
         "digest": state.get("digest"),
+        "digest_record": digest.record(state.get("brief_log")),
         "cascades": cascade_watch.summary(state),  # early-warning tracking, as of the previous run
         # your own record from fills (hlg.behavior) and your if-then plans: the Now card and urge check
         "behavior": state.get("behavior"),
@@ -380,15 +398,17 @@ def main():
     D = digest.settings(cfg)
     keys = {"openrouter": os.environ.get("OPENROUTER_API_KEY"), "anthropic": os.environ.get("ANTHROPIC_API_KEY")}
     force = os.environ.get("HLG_FORCE_DIGEST") == "true"
+    picked = []
     if D["enabled"] and digest.pick(D, keys) and digest.due(state, now_ms, D, force=force):
         try:
             tape = ([{"name": r["coin"], "chg24h_pct": r.get("chg24h_pct")} for r in market_rows if r["coin"] in ("BTC", "ETH", "SOL")]
                     + [{"name": r["coin"].replace("xyz:", ""), "chg24h_pct": r.get("chg24h_pct")} for r in tradfi_rows])
-            brief = digest.run(state, now_ms, D, {"fng": state.get("fng"), "tape": tape,
+            brief = digest.run(state, now_ms, D, {"fng": state.get("fng"), "tape": tape, "btc_px": btc_px,
                                                   "events": events.groups(state.get("events"), now_ms, now_ms + 7 * 86_400_000)},
-                               keys)
+                               keys, keep=picked)
             if brief:
                 out["digest"] = brief
+                out["digest_record"] = digest.record(state.get("brief_log"))
         except Exception as e:  # noqa: BLE001 - reading material; never fails the run
             log.error("digest failed: %s", e)
             # the message carries status and error code only (hlg.digest._fail), never the key
@@ -397,6 +417,26 @@ def main():
             out["digest_status"] = digest.status(state, now_ms, D, keys)
             publish("alerts.json", out, vlt, in_ci)
             publish("state.json", state.d, vlt, in_ci)
+    # Bear-case check (hlg.bearcheck): one model call per fresh long signal, after the push and the
+    # brief; stored on the journal row only -- never pushed, never gating. Public data only.
+    if D["enabled"] and digest.pick(D, keys) and bearcheck.due(state.get("journal") or [], now_ms):
+        try:
+            arch = digest.unpack(load_prev(news_raw, NEWS, vlt)) if news_raw is not None else None
+            br = state.get("digest") or {}
+            backdrop = [f"market state {mstate['state'].replace('_', '-')} (BTC trend {mstate.get('trend')}, macro {mstate.get('macro')})" if mstate else "",
+                        f"Fear & Greed {mstate['fng']}" if mstate and mstate.get("fng") is not None else "",
+                        f"today's news brief ({br['day']}): {br['tilt']}, {br['headline']}" if br.get("headline") else ""]
+            if bearcheck.run(state, now_ms, D, keys, market_rows, backdrop, arch, picked):
+                jr = state.get("journal") or []
+                out["journal"] = {"summary": journal.summary(jr), "recent": list(reversed(jr[-30:])), "bear": bearcheck.summary(jr)}
+                publish("alerts.json", out, vlt, in_ci)
+                publish("state.json", state.d, vlt, in_ci)
+        except Exception as e:  # noqa: BLE001 - tracking only; never fails the run
+            log.error("bear check failed: %s", type(e).__name__)
+    try:  # after the brief, so a new day's headlines are in it
+        carry_news(news_raw, vlt, in_ci, picked, (state.get("digest") or {}).get("day"))
+    except Exception as e:  # noqa: BLE001 - research archive; never fails the run
+        log.error("news archive failed: %s", type(e).__name__)
     log.info("run ok: published %s in %.1fs", "encrypted" if vlt else ("locked stub" if in_ci else "plaintext (local)"),
              time.monotonic() - started, extra={"safe": True})
     return 0

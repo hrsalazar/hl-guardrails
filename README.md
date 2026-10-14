@@ -198,7 +198,8 @@ aggregates are kept; the account list is held in the encrypted state and no addr
 with its positions.
 
 **The daily brief (Macro tab)** is the one piece here that can't be backtested, so it is labelled
-as reading material, never pushed, and part of no rule. Once a UTC day (first run after `digest.hour_utc`, 20:00: just after the US close, before Asia),
+as reading material, never pushed, and part of no rule. It is **scored live** instead: each day's tilt
+is settled against BTC five days later, and the record is shown under the brief (rules below). Once a UTC day (first run after `digest.hour_utc`, 20:00: just after the US close, before Asia),
 after alerts go out, `hlg/digest.py` pulls the last ~30h of headlines from 11 free RSS feeds —
 Federal Reserve, ECB, Bloomberg Markets and Economics, FT Markets, CNBC, MarketWatch, CoinDesk, The
 Block, Cointelegraph, Decrypt — takes up to 8 per source (so a prolific crypto outlet can't drown
@@ -213,7 +214,21 @@ edge. Safeguards, because headlines are untrusted text going into a model:
 - source links come from the feeds, never from the model's text, and only `http(s)` links render —
   the browser test suite feeds it `<img onerror>` and `javascript:` links to prove they stay inert;
 - **only public data goes in the prompt** (headlines, the index, the 24h tape, the calendar): never
-  the address, a position, a balance or PnL.
+  the address, a position, a balance or PnL;
+- **numbers are checked:** a point quoting a percentage that is neither in the tape it was given nor
+  in any headline is dropped (within 0.3 points). The model may repeat figures, not make them up.
+  TradingAgents added the same kind of guard after its agents invented price levels.
+
+**Its record, rules fixed 2026-10-14** ([docs/research/brief-scorecard.md](docs/research/brief-scorecard.md)):
+- **Settling:** risk-on is right if BTC is higher 5 days later, risk-off if it is lower. Neutral
+  claims no direction and isn't scored.
+- **Comparison:** the hit rate is shown next to chance (the same tilts shuffled across the same
+  windows) and next to always calling BTC's more frequent direction.
+- **When it's judged:** not before 60 directional calls. It is then called better than chance only
+  above the shuffle's 95th percentile. Until then it stays reading material.
+- **Archive:** each day's headlines are kept for 400 days, titles only, in an encrypted gzipped
+  `news.json` that the page never reads. A later study of the news can then be point-in-time, which
+  free feeds alone can't give.
 
 It needs one repository secret (docs/operations.md): **`OPENROUTER_API_KEY`** (preferred when both
 are set) or `ANTHROPIC_API_KEY` for Anthropic's API directly. Through OpenRouter it asks for
@@ -474,8 +489,9 @@ decrypted data, so no figure of yours goes to a model or leaves the device. Whic
 stays in browser storage, like the urge log.
 | **Your execution** (Signal journal) | your real fills matched to the journal's signals, hourly (`hlg/execution.py`):<br>• signals taken vs skipped, and what the skipped ones made;<br>• entry vs plan in ATR;<br>• when the stop went in: before the entry, minutes after, or never;<br>• size vs the rule's;<br>• off-plan positions that matched no signal, with their net | the backtest assumes perfect execution; this measures the gap, which is where this account's losses came from |
 | **Your read vs the rule** (prediction log) | on each live entry alert, one tap before it resolves: does it reach +1R before the stop? (yes/no, lean/sure). It's scored automatically from the journal against the rule's own rate (~50% on 4h, 56% on 1d), with a Brier score. Judged at 50; stored on this device | about half of entries reach +1R and no setup feature predicted which (signal-grade study). This tests whether your read of the chart adds anything, with your own numbers |
+| **Bear-case check** (Signal journal) | after each new long signal is pushed, one model call (`hlg/bearcheck.py`, the brief's key) writes the strongest case against it from the coin's archived headlines, funding, OI and the backdrop, and rates it low / medium / high. The rating is a column in the journal and the case is its tooltip. It is **never pushed and gates nothing**. Judged at 40 closed ([docs/research/bear-check.md](docs/research/bear-check.md)): it becomes one alert line only if *high* trades make PF < 1 and less than the rest in both halves | TradingAgents' bull/bear debate in its cheapest testable form. Price features couldn't grade signals (signal-grade study), and the headlines are what that study didn't see |
 | **Plan vs reality** (top of the Technical tab) | **The rule live vs its backtest,** per timeframe: closed trades, win rate, reached +1R first, average R. The journal uses the same mechanics as the signal-grade backtest, so they compare like for like.<br>**You vs the rule on the same signals:** your realised R against the rule's (the execution cost per trade), plus off-plan positions.<br>**Verdict, fixed in advance:** none before 30 closed; then *on track* if the live average R is within 2 standard errors of the backtest, *below* / *above* outside it | a backtest is a hypothesis; this tests it out of sample. Separating "the rule" from "you" shows which one to fix |
-| **Weekly review** (top of the Technical tab) | this week or last, from Monday 00:00 UTC:<br>• a process grade, A (every rule kept) / B (one slip) / C, listing the slips: trades that broke a rule, off-plan positions, signals taken without a stop;<br>• clean trades, signals taken / skipped, strategy trades closed in R, urges waited out, predictions scored.<br>On Sundays and Mondays a *Weekly review due* cue sits on the Now card until last week is marked reviewed | a short, regular review graded on the process keeps the attention on what you control; one week's R is noise (the backtested book averages ~+0.5R a week) |
+| **Weekly review** (top of the Technical tab) | this week or last, from Monday 00:00 UTC:<br>• a process grade, A (every rule kept) / B (one slip) / C, listing the slips: trades that broke a rule, off-plan positions, signals taken without a stop;<br>• clean trades, signals taken / skipped, strategy trades closed in R, urges waited out, predictions scored;<br>• **post-mortems:** each position closed that week, checked against the plan (on a signal, stop within the hour, size 0.5–1.5× the rule's, no add while underwater, no loser held past 7 days), with *plan followed* or the misses and one lesson for the first miss. Computed from fills and the order history, no model.<br>On Sundays and Mondays a *Weekly review due* cue sits on the Now card until last week is marked reviewed | a short, regular review graded on the process keeps the attention on what you control; one week's R is noise (the backtested book averages ~+0.5R a week) |
 | **Your why, plan days and milestones** (Now card) | your reason for trading, in your words, under the headline (default *"I trade for side income, not to be right."*); **plan kept**: a 30-dot strip of UTC days, filled when there was no rule slip (no add to a loser, no off-plan position, no signal taken without a stop, from your fills), a ring when there was, plus an all-time count that never resets; a calm note after a recent slip; **process milestones** (urges waited out, days on plan, weekly reviews) with one quiet note when one is reached; looks today vs your usual; your swap plan and a 15-minute **charting window** (default: the daily close, your time), both shown when the urge is "Look at charts" | reinforce keeping the plan, never trading: points and pushes raised trade counts 11–12% in the FCA's trading-app experiment. Cumulative, forgiving counts because one missed day doesn't undo a habit and reset-to-zero streaks invite the "what the hell" spiral; self-compassion after a slip; if-then plans in your own words. Sources in [docs/research/behaviour-change.md](docs/research/behaviour-change.md) |
 
 Nothing here blocks a trade — the tool can't, and shouldn't pretend to. Every aid is either a warning
@@ -1259,6 +1275,43 @@ the same in every state, and no state message may claim otherwise. What held eve
 - losing runs of 7–18 trades occurred.
 
 The market changes the pressure on you, not the strategy's odds.
+
+### TradingAgents (TauricResearch): what we took and why
+
+[TradingAgents](https://github.com/TauricResearch/TradingAgents) (Apache-2.0, v0.6.0) is a LangGraph
+pipeline of LLM agents run once per ticker per date:
+- analysts: fundamentals, sentiment, news, technical;
+- a bull/bear debate;
+- a trader;
+- a three-posture risk debate;
+- a portfolio manager who approves or rejects.
+
+After each decision's window it settles the call against a benchmark and writes a short reflection.
+
+**Its evidence doesn't clear the bars used here.**
+- The paper's backtest is 3 months (Jan–Mar 2024) on 3 stocks, with Sharpe 5.6–8.2.
+- Trade counts and costs aren't reported.
+- The repo calls itself a research scaffold whose results are non-deterministic and, because its
+  text feeds aren't archived, "indicative rather than repeatable".
+- Its grid backtest has no random baseline.
+
+So no agent decides or sizes anything here. Four of its ideas were taken, each in a form that can be
+measured:
+
+| Idea | Here | Status |
+|---|---|---|
+| Settle every call against what happened | the daily brief's tilt, scored against BTC 5 days on | live record, judged at 60 calls |
+| Point-in-time inputs | the brief's headlines archived daily (`news.json`, encrypted) | collecting |
+| Verified data snapshot | brief points with figures not in the prompt are dropped | live |
+| Reflection after each decision | post-mortems of each closed trade in the weekly review, deterministic, no model | live |
+| Bull/bear debate | one bear-case call per new long, tracked against the result | collecting, judged at 40 closed |
+
+**Not taken:**
+- the LLM risk debate: risk here is rule-based (`hlg/guardrails.py`), and that's the point;
+- fundamentals / SEC data: irrelevant to perps;
+- checkpoint resume: the studies here run in minutes.
+
+Polymarket odds, which it reads, are a candidate future study once the headline archive exists.
 
 ### Regime analysis (`python -m hlg.regime`)
 

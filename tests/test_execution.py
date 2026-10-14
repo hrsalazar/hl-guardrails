@@ -104,3 +104,24 @@ def test_slip_days_are_the_utc_days_of_off_plan_opens_and_stopless_entries():
     assert x["slip_days"] == [T, T + 2 * D]                     # SOL taken with no stop; DOGE off plan
     ok = [fill(close + 60_000, "SOL", "B", 10, 100, 0), fill(close + 5 * H, "SOL", "A", 10, 95, 10)]
     assert ex.evaluate([entry()], ok, [stop_order(close)], 10_000, 1.0, now_ms=T + 3 * D)["slip_days"] == []
+
+
+def test_a_clean_trade_reviews_as_plan_followed():
+    close = T + 4 * H
+    fills = [fill(close + 10 * 60_000, "SOL", "B", 25, 100, 0), fill(close + 30 * H, "SOL", "A", 25, 104, 25, closed=100)]
+    x = ex.evaluate([entry()], fills, [stop_order(close + 12 * 60_000)], 10_000, 1.0, now_ms=close + 40 * H)
+    v = x["reviews"][0]
+    assert v["misses"] == [] and v["signal"] == "4h x" and v["r"] == round((100 - 0.2) / 100, 2)
+    assert x["weeks"]["this"]["reviewed"] + x["weeks"]["last"]["reviewed"] == 1
+
+
+def test_a_review_names_every_plan_check_a_trade_missed():
+    close = T + 4 * H
+    fills = [fill(close + 60_000, "SOL", "B", 100, 100, 0),                        # 4x the rule's size, no stop
+             fill(close + 2 * H, "SOL", "B", 100, 95, 100),                         # added below the average
+             fill(close + 9 * D, "SOL", "A", 200, 90, 200, closed=-1500),           # a loser held 9 days
+             fill(close + 10 * D, "DOGE", "B", 1000, 0.2, 0), fill(close + 10 * D + 3 * H, "DOGE", "A", 1000, 0.21, 1000, closed=10)]
+    x = ex.evaluate([entry()], fills, [stop_order(close + 10 * D + 2 * H, "DOGE")], 10_000, 1.0, now_ms=close + 11 * D)
+    sol, doge = x["reviews"]
+    assert sol["misses"] == ["no_stop", "size", "added_under", "held_loser"] and sol["adds_under"] == 1
+    assert doge["misses"] == ["off_plan", "late_stop"]                              # stop 2h after the entry

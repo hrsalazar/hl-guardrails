@@ -1330,6 +1330,24 @@ function predBox(a){
 const weekStart=(now=Date.now())=>{const d0=Math.floor(now/864e5)*864e5;return d0-((new Date(d0).getUTCDay()+6)%7)*864e5};
 const reviewed=()=>kv('hlgReviewed')||[];
 function reviewDue(){const day=new Date().getDay();return (day===0||day===1)&&!reviewed().includes(weekStart()-7*864e5)}
+// Post-mortems (hlg.execution.review): each closed position checked against the plan, oldest first.
+// The lesson is for the first check missed -- one thing to fix, not a list to feel bad about.
+const MISS={
+  off_plan:['off-plan','No signal behind it. Next time, if the scanner has nothing, the plan is to wait.'],
+  no_stop:['no stop','No stop went in. Place the stop with the entry, before anything else.'],
+  late_stop:['stop late','The stop went in more than an hour after the entry. Enter and stop as one action.'],
+  size:['off size','Size was outside 0.5–1.5× the rule. Size from the stop distance, not from conviction.'],
+  added_under:['averaged down','Added while underwater. In your record these trades carried the losses: never add to a loser.'],
+  held_loser:['held a loser','A loser was held past 7 days. The stop decides the exit, not hope.']};
+function postMortems(list){
+  if(!list.length)return '';
+  return `<h4 style="margin:12px 0 6px">Post-mortems</h4><ul class="pm" id="pmlist">`+list.map(v=>{
+    const R=v.r==null?'':` · <span class="${cls(v.r)}">${sgn(v.r)}${fmt(Math.abs(v.r),2)}R</span>`;
+    const head=`${esc(v.coin)} ${v.side==='S'?'short':'long'} · ${v.days}d${R} · ${v.signal?esc(v.signal)+' signal':'no signal'}`;
+    return v.misses.length
+      ?`<li><b class="neg">✗</b> ${head} — ${v.misses.map(m=>esc((MISS[m]||[m])[0])).join(', ')}<small class="mut" style="display:block">${esc((MISS[v.misses[0]]||['',''])[1])}</small></li>`
+      :`<li><b class="pos">✓</b> ${head} — plan followed</li>`}).join('')+`</ul>`;
+}
 function renderReview(d){
   const el=$('#review');if(!el)return;
   const which=kv('hlgReviewWeek')==='last'?'last':'this', w0=weekStart(), a=which==='this'?w0:w0-7*864e5, b=which==='this'?Infinity:w0;
@@ -1352,12 +1370,14 @@ function renderReview(d){
     +(slips.length?`<ul class="slips">${slips.map(x=>`<li>${x}</li>`).join('')}</ul>`:'')
     +`<div class="rvgrid">`
     +item('Clean trades',trades.length?`${trades.length-dirty.length}/${trades.length}`:'none closed')
+    +(X&&X.reviewed!=null?item('Plan followed',X.reviewed?`${X.followed}/${X.reviewed}`:'none closed'):'')
     +item('Signals',X?`${X.taken} taken · ${X.skipped} skipped`:'—')
     +item('Strategy trades closed',closed.length?`${closed.length} · ${R(sumR)}`:'none')
     +item('Urges waited out',U.length?`${Uw}/${U.length}`:'none logged')
     +item('Your read',Pn.length?`${Phit}/${Pn.length} right`:P.length?`${P.length} waiting`:'no predictions')
     +(which==='this'&&d.week_pnl!=null?item('This week P&L',`<span class="${cls(d.week_pnl)}">${money(d.week_pnl,true)}</span>`):'')
     +`</div>`
+    +postMortems(((d.execution||{}).reviews||[]).filter(v=>inW(v.t_end)))
     +`<p class="desc" style="margin:8px 0 0">For scale: the backtested book averages 2–3 closed trades and about +0.5R a week, and single weeks swing far either side. Judge the grade, not the week's R.</p>`
     +`<div class="actions" style="margin-top:10px"><button id="reviewdone" ${done?'disabled':''}>${done?'Reviewed ✓':'Mark '+(which==='this'?'this':'last')+' week reviewed'}</button></div>`;
   $('#reviewbadge').textContent=reviewDue()?'review due':done?'reviewed':'';
@@ -1615,6 +1635,13 @@ function renderScan(d){
 }
 
 // ---- journal: cumulative R --------------------------------------------------------------------
+// Model output, built from third-party headlines: the case is escaped text in a tooltip, never markup.
+function bearCell(b){
+  if(!b)return '<span class="mut">—</span>';
+  if(!b.flag)return '<span class="mut" data-tip="The check failed; it is not retried">n/a</span>';
+  const c=b.flag==='high'?'neg':b.flag==='low'?'mut':'';
+  return `<span class="${c}" data-tip="${attr(b.case)}" tabindex="0">${esc(b.flag)}</span>`;
+}
 function renderJournal(j){
   const s=j&&j.summary||{}, rec=j&&j.recent||[];
   const R=r=>r==null?'—':`<span class="${cls(r)}">${sgn(r)}${fmt(Math.abs(r),2)}R</span>`;
@@ -1630,11 +1657,22 @@ function renderJournal(j){
   // R as a diverging bar around zero (±3R full scale), next to the number
   const Rbar=r=>r==null?'—':`<span class="rbar">${R(r)}<span class="rb" aria-hidden="true"><span style="${r>=0?'left':'right'}:50%;`
     +`width:${Math.max(2,Math.min(50,Math.abs(r)/3*50))}%;background:var(${r>=0?'--blue':'--red'})"></span></span></span>`;
-  html+=rec.length?`<div class="tw"><table><tr><th>Signal</th><th>Status</th><th>R</th><th>Best</th><th>Early fail</th><th>Close loc</th></tr>`+
+  html+=rec.length?`<div class="tw"><table><tr><th>Signal</th><th>Status</th><th>R</th><th>Best</th><th>Early fail</th><th>Close loc</th><th>Bear case</th></tr>`+
     rec.map(e=>`<tr><td><b>${e.coin}</b> ${e.tf}${e.side==='S'?' <span class="pill short">short</span>':''} <small class="mut">${e.signal_day}</small></td><td>${e.status}</td><td>${Rbar(e.r)}</td>`
       +`<td>${e.max_r?R(e.max_r):'—'}</td><td>${e.failed_early?'<span class="neg">yes</span>':'<span class="mut">no</span>'}</td>`
-      +`<td>${e.close_loc==null?'—':fmt(e.close_loc,2)}</td></tr>`).join('')+'</table></div>'
+      +`<td>${e.close_loc==null?'—':fmt(e.close_loc,2)}</td><td>${bearCell(e.bear)}</td></tr>`).join('')+'</table></div>'
     :'<div class="empty">No breakout signals recorded yet. Each new one is followed from here on.</div>';
+  // Bear-case check (hlg.bearcheck): the model's best case against each long, tracked against the
+  // result. Rules fixed in docs/research/bear-check.md: judged at 40 closed.
+  const BC=j&&j.bear;
+  if(BC){const g=x=>x&&x.n?`${x.n} · PF ${x.pf==null?'—':fmt(x.pf,2)} · failed early ${Math.round(100*x.failed_early)}%`:'none yet';
+    html+=`<div class="track" id="jbear"><h4>Bear-case check <span class="mut" style="font-weight:400">— tracking only, never pushed.</span></h4>`
+      +`A model writes the strongest case against each new long from its headlines, funding and the backdrop, and rates it low / medium / high. `
+      +`<b>High</b> ${g(BC.high)} &nbsp;·&nbsp; <b>the rest</b> ${g(BC.rest)}`
+      +(BC.verdict==='pending'?` <span class="mut">(judge at ${BC.min_n} closed: ${BC.n} so far${BC.pending?`, ${BC.pending} open`:''})</span>`
+        :` · <b class="${BC.verdict==='adopt as an alert line'?'pos':'mut'}">${esc(BC.verdict)}</b>`)
+      +`<div class="meter" style="height:6px;margin-top:8px" data-tip="${BC.n} of ${BC.min_n} closed checked longs">`
+      +`<span style="width:${Math.min(100,BC.n/BC.min_n*100)}%;background:var(--blue)"></span></div></div>`}
   // Hypothetical pyramid adds: evidence for README "Pyramiding", deliberately not advice.
   const ad=s.adds||{}, adClosed=Object.values(ad).reduce((n,a)=>n+a.closed,0);
   const adLine=tf=>{const a=ad[tf];if(!a)return `<b>${tf}</b> <span class="mut">none yet</span>`;
@@ -1727,7 +1765,20 @@ function briefStatus(st){
   return `Key found (${esc(st.provider==='openrouter'?'OpenRouter':'Anthropic')}). Next brief ${when}.`
     +(st.error?` <span class="neg">Last attempt failed ${ago(st.error.t)}: ${esc(st.error.msg)}</span>`:'');
 }
-function renderBrief(b,st){
+// The brief's live record (hlg.digest.record): each tilt settled against BTC 5 days on. Neutral
+// claims no direction and isn't counted; the verdict waits for 60 directional calls (rules fixed in
+// docs/research/brief-scorecard.md).
+function briefRecord(r){
+  if(!r||!r.logged)return '';
+  const pc=x=>Math.round(x*100)+'%';
+  if(!r.n)return `<div class="foot2" id="briefrec"><span style="font-weight:600">Record:</span> ${r.logged} brief${r.logged>1?'s':''} logged, the first settles ${r.window_days} days after it was written. Risk-on counts as right if BTC is higher then, risk-off if lower.</div>`;
+  const v=r.verdict==='pending'?`${r.n} of ${r.min_n} calls needed before it's judged`
+    :r.verdict==='better than chance'?`<span class="pos">better than chance</span> (${Math.round(r.pctile)}th percentile)`
+    :`<span class="neg">no better than chance</span> (${Math.round(r.pctile)}th percentile)`;
+  return `<div class="foot2" id="briefrec"><span style="font-weight:600">Record:</span> right ${pc(r.hit_rate)} of ${r.n} risk-on/off calls over ${r.window_days} days`
+    +` · chance ${pc(r.chance_median)}, always picking BTC's more frequent direction ${pc(r.naive)} · ${v}.</div>`;
+}
+function renderBrief(b,st,rec){
   if(!b){$('#briefage').textContent='';
     $('#brief').innerHTML=`<div class="empty">No brief yet. One is written each day after the US close (20:00 UTC) from ~70 public macro and crypto headlines.<br>${
       st?briefStatus(st):'It needs an <b>OPENROUTER_API_KEY</b> or <b>ANTHROPIC_API_KEY</b> repository secret (docs/operations.md).'}</div>`;return}
@@ -1742,7 +1793,7 @@ function renderBrief(b,st){
     +`<div class="brief-h">${esc(b.headline)}</div><p class="brief-why">${esc(b.why)}</p>`
     +`<ol>${b.points.map(p=>`<li>${esc(p.text)}${(p.links||[]).length?`<span class="src">${p.links.map(link).join('<br>')}</span>`:''}</li>`).join('')}</ol>`
     +((b.watch||[]).length?`<div class="chips" style="margin-top:12px"><span class="mut" style="font-size:12px;align-self:center">Watch</span>${b.watch.map(w=>`<span class="chip">${esc(w)}</span>`).join('')}</div>`:'')
-    +`<div class="foot2">Written by ${esc(b.model)}${b.provider==='openrouter'?' via OpenRouter':''} from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: there's no free headline archive to backtest it against, so it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div>`
+    +`<div class="foot2">Written by ${esc(b.model)}${b.provider==='openrouter'?' via OpenRouter':''} from ${b.n_items} public headlines across ${(b.sources||[]).length} sources${(b.failed||[]).length?`; ${b.failed.length} unreachable`:''}. Reading material, not a signal: each tilt is scored against BTC 5 days later (below), and until that record beats chance it is never pushed and gates nothing. Check the linked sources before acting on any of it.</div>`+briefRecord(rec)
     +(st&&st.error&&st.error.t>b.t?`<div class="foot2 neg">Today's update failed ${ago(st.error.t)}: ${esc(st.error.msg)} — showing the last good brief.</div>`:'')+`</div>`;
 }
 function renderCalendar(e){
@@ -1773,7 +1824,7 @@ function renderFng(f){
     fmtX:(t,short)=>new Date(t).toLocaleDateString([], {month:'short',day:'numeric'})});
 }
 function renderMacro(d){
-  renderBrief(d.digest,d.digest_status);renderCalendar(d.events);renderFng(d.fng);
+  renderBrief(d.digest,d.digest_status,d.digest_record);renderCalendar(d.events);renderFng(d.fng);
   const t=d.tradfi&&d.tradfi.rows||[];
   // "N stale hidden" matters: HL lists xyz:DXY, xyz:VIX and friends at zero volume with a frozen
   // mark, so a silently short table would otherwise look like missing data rather than filtering.

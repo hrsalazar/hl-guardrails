@@ -4,6 +4,13 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-14
 
+- **From TradingAgents: settle, archive, check, review.** An analysis of TauricResearch/TradingAgents (README "TradingAgents"): its multi-agent LLM pipeline isn't adopted, because its evidence is a 3-month backtest with no costs or random baseline. Four of its ideas are, each in a measurable form:
+  - **The brief is scored:** each daily tilt is settled against BTC 5 days later and the record shows under the brief. It's judged at 60 directional calls against shuffled tilts (docs/research/brief-scorecard.md).
+  - **Headline archive:** each day's headlines are kept as titles only, for 400 days, in an encrypted gzipped `news.json`. A later news study can then be point-in-time.
+  - **Number check:** a brief point quoting a percentage not in the tape or the headlines is dropped.
+  - **Post-mortems:** each closed position in the weekly review is checked against the plan (signal, stop within the hour, size, no adds underwater, no loser held past 7 days), with one lesson for the first miss. It's computed from fills, with no model.
+  - **Bear-case check:** one model call per new long signal writes the case against it and a low/medium/high flag, from public data only. It's stored on the journal row, never pushed and never gating. Judged at 40 closed (docs/research/bear-check.md).
+
 - **Breakout ladder study** (`python -m hlg.ladder`, pre-registered in docs/research/breakout-ladder-study.md): does a breakout climb 1h → 4h → 1d? Not adopted. 99% of 4h breakouts already have a 1h one before them, so the test was forward. A 4h + 1h breakout below the 20-day high in a daily uptrend made a daily breakout 1.32× more likely within 10 days (bar 1.5×). As an entry it made PF 1.22, but random entries in the same uptrends made 1.14 (68th percentile). Daily breakouts with a ladder before them did no better. Nothing live changes.
 
 ## 2026-10-13

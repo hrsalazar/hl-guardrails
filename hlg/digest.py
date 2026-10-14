@@ -30,16 +30,29 @@ Two ways to reach a model, picked by `provider` (auto = whichever key is set, Op
   anthropic   ANTHROPIC_API_KEY, Anthropic's API directly, `model`.
 
 With neither key set the step is skipped silently.
+
+Settled, not trusted (docs/research/brief-scorecard.md, rules fixed 2026-10-14). Each brief's tilt is
+logged with the BTC price at the time (`brief_log`), and 5 days later the move settles it: risk-on
+is a hit if BTC rose, risk-off if it fell; neutral claims no direction and isn't scored. The brief
+stays labelled reading material until 60 directional briefs have settled, and is called better than
+chance only if its hit rate clears the 95th percentile of the same tilts shuffled across the same
+windows. Its headlines are archived the same day (titles only, `news.json`, encrypted and gzipped,
+400 days), so a later study of the news can be point-in-time. And a point quoting a percentage that
+appears neither in the tape it was given nor in any headline is dropped: the model may only repeat
+numbers, not make them up.
 """
+import base64
 import concurrent.futures as cf
 import datetime as dt
 import email.utils
+import gzip
 import html
 import json
 import re
 import time
 import xml.etree.ElementTree as ET
 
+import numpy as np
 import requests
 
 from .common import log
@@ -252,7 +265,8 @@ def call_anthropic(api_key, model, system, user, max_tokens=1500, timeout=90, po
     return text, u.get("input_tokens"), u.get("output_tokens"), js.get("model") or model
 
 
-def call_openrouter(api_key, models, system, user, max_tokens=1500, timeout=120, post=requests.post):
+def call_openrouter(api_key, models, system, user, max_tokens=1500, timeout=120, post=requests.post,
+                    schema=None, name="daily_brief"):
     """OpenAI-style chat completion through OpenRouter. `models` is tried in order: OpenRouter falls
     back to the next when a model's providers are down or reject the request."""
     r = post(OPENROUTER_URL, timeout=timeout,
@@ -262,7 +276,7 @@ def call_openrouter(api_key, models, system, user, max_tokens=1500, timeout=120,
              # strict json_schema + require_parameters per their "Structured Outputs" guide
              json={"models": list(models), "max_tokens": max_tokens,
                    "response_format": {"type": "json_schema",
-                                       "json_schema": {"name": "daily_brief", "strict": True, "schema": SCHEMA}},
+                                       "json_schema": {"name": name, "strict": True, "schema": schema or SCHEMA}},
                    "provider": {"require_parameters": True},
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
     if r.status_code != 200:
@@ -286,9 +300,12 @@ def pick(D, keys):
     return None
 
 
-def parse_reply(text, items):
+def parse_reply(text, items, known=None, dropped=None):
     """Strict: a JSON object with the expected fields, lengths capped, refs resolved to the feed's
-    own links. Anything else raises ValueError -- a malformed brief is dropped, not half-shown."""
+    own links. Anything else raises ValueError -- a malformed brief is dropped, not half-shown.
+    known: the figures the prompt supplied (known_numbers); a point quoting any other percentage is
+    dropped, and counted in `dropped`."""
+    dropped = [] if dropped is None else dropped
     a, b = text.find("{"), text.rfind("}")
     if a < 0 or b <= a:
         raise ValueError("no JSON object in reply")
@@ -305,6 +322,9 @@ def parse_reply(text, items):
     points = []
     for p in (d.get("points") or [])[:6]:
         if not isinstance(p, dict) or not isinstance(p.get("text"), str) or not p["text"].strip():
+            continue
+        if known is not None and not numbers_ok(p["text"], known):
+            dropped.append(1)
             continue
         refs = [r for r in (p.get("refs") or []) if isinstance(r, int) and r in by_id][:4]
         points.append({"text": _text(p["text"], 400),
@@ -345,10 +365,104 @@ def due(state, now_ms, D, force=False):
     return now_ms - (state.get("digest_try") or 0) >= D["retry_hours"] * H
 
 
-def run(state, now_ms, D, ctx, keys, get=requests.get, post=requests.post):
+PCT = re.compile(r"(\d+(?:\.\d+)?)\s?(?:%|percent\b|per cent\b)", re.I)
+PCT_TOL = 0.3
+
+
+def known_numbers(items, ctx):
+    """Every percentage the model was shown: the tape's moves (unsigned, as a point might say "fell
+    2.1%") and any figure written in a headline or its summary."""
+    nums = {abs(float(r["chg24h_pct"])) for r in ctx.get("tape") or [] if r.get("chg24h_pct") is not None}
+    for i in items:
+        nums |= {float(m) for m in PCT.findall(f"{i['title']} {i.get('summary') or ''}")}
+    return nums
+
+
+def numbers_ok(text, known):
+    """True when every percentage in text is one the prompt supplied, within PCT_TOL points."""
+    return all(any(abs(float(m) - k) <= PCT_TOL for k in known) for m in PCT.findall(text))
+
+
+SETTLE_DAYS, MIN_SETTLED, LOG_CAP, N_PERM = 5, 60, 730, 2000
+D_MS = 86_400_000
+
+
+def log_brief(state, brief, btc_px):
+    """Append the brief's call to brief_log, with the BTC price it will be settled against."""
+    if not btc_px:
+        return
+    lg = [e for e in (state.get("brief_log") or []) if e.get("day") != brief["day"]]
+    lg.append({"day": brief["day"], "t": brief["t"], "tilt": brief["tilt"], "conf": brief["confidence"],
+               "px0": float(btc_px)})
+    state.set("brief_log", lg[-LOG_CAP:])
+
+
+def settle(state, now_ms, btc_px):
+    """Score every logged brief whose window has passed, at the current BTC price (the first run
+    after the window: within 15 minutes of it). -> True if anything settled."""
+    lg = state.get("brief_log") or []
+    if not btc_px or not lg:
+        return False
+    changed = False
+    for e in lg:
+        if "ret" in e or now_ms < e["t"] + SETTLE_DAYS * D_MS:
+            continue
+        ret = float(btc_px) / e["px0"] - 1
+        e.update(px1=float(btc_px), ret=ret, settled=now_ms,
+                 hit=None if e["tilt"] == "neutral" else (ret > 0) == (e["tilt"] == "risk-on"))
+        changed = True
+    if changed:
+        state.set("brief_log", lg)
+    return changed
+
+
+def record(lg, n_perm=N_PERM, seed=0):
+    """The brief's live record, directional (risk-on / risk-off) settled calls only. Chance: the
+    same tilts shuffled across the same windows. Naive: always calling the direction BTC went more
+    often -- known only in hindsight, so a generous baseline. Daily briefs with 5-day windows
+    overlap, so the shuffle flatters a little; the 60-call minimum is there for that."""
+    lg = lg or []
+    s = [e for e in lg if "ret" in e and e.get("hit") is not None]
+    out = {"logged": len(lg), "settled": sum("ret" in e for e in lg), "n": len(s), "min_n": MIN_SETTLED,
+           "window_days": SETTLE_DAYS, "pending": sum("ret" not in e for e in lg)}
+    if not s:
+        return out | {"verdict": "pending"}
+    up = np.array([e["ret"] > 0 for e in s])
+    on = np.array([e["tilt"] == "risk-on" for e in s])
+    hit = float((up == on).mean())
+    rng = np.random.default_rng(seed)
+    perm = np.array([(up == rng.permutation(on)).mean() for _ in range(n_perm)])
+    pct = float((perm < hit).mean() * 100)
+    verdict = "pending" if len(s) < MIN_SETTLED else ("better than chance" if pct > 95 else "no better than chance")
+    return out | {"hit_rate": hit, "naive": float(max(up.mean(), 1 - up.mean())),
+                  "chance_median": float(np.median(perm)), "pctile": pct, "verdict": verdict}
+
+
+ARCHIVE_DAYS = 400
+
+
+def archive_add(arch, day, items):
+    """Titles only (no summaries, no links): what was public that day, for a later point-in-time study."""
+    days = dict((arch or {}).get("days") or {})
+    days[day] = [[i["src"], i["t"], i["title"]] for i in items]
+    return {"v": 1, "days": {k: days[k] for k in sorted(days)[-ARCHIVE_DAYS:]}}
+
+
+def pack(arch):
+    return {"gz": base64.b64encode(gzip.compress(json.dumps(arch, separators=(",", ":")).encode())).decode()}
+
+
+def unpack(obj):
+    if isinstance(obj, dict) and "gz" in obj:
+        return json.loads(gzip.decompress(base64.b64decode(obj["gz"])))
+    return None
+
+
+def run(state, now_ms, D, ctx, keys, get=requests.get, post=requests.post, keep=None):
     """Fetch, digest, store. `keys`: {"openrouter": ..., "anthropic": ...}. Returns the brief, or
     None (logged) if anything failed; the previous day's brief then stays on the dashboard with its
-    date showing."""
+    date showing. keep: a list the day's picked headlines are added to (for the archive). ctx may
+    carry btc_px, the price the brief's tilt is settled against."""
     chosen = pick(D, keys)
     if chosen is None:
         return None
@@ -366,12 +480,18 @@ def run(state, now_ms, D, ctx, keys, get=requests.get, post=requests.post):
         text, tin, tout, model = call_openrouter(key, D["openrouter_models"], system, user, D["max_tokens"], post=post)
     else:
         text, tin, tout, model = call_anthropic(key, D["model"], system, user, D["max_tokens"], post=post)
-    brief = parse_reply(text, picked)
+    dropped = []
+    brief = parse_reply(text, picked, known_numbers(picked, ctx), dropped)
+    if dropped:
+        log.warning("digest: dropped %d point(s) quoting a figure not in the prompt", len(dropped), extra={"safe": True})
     brief |= {"t": now_ms, "day": dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc).strftime("%Y-%m-%d"),
               "model": model, "provider": provider, "n_items": len(picked), "sources": sorted(ok),
               "failed": sorted(failed), "fng": (ctx.get("fng") or {}).get("value")}
     state.set("digest", brief)
     state.set("digest_error", None)
+    log_brief(state, brief, ctx.get("btc_px"))
+    if keep is not None:
+        keep.extend(picked)
     log.info("digest: %d headlines from %d/%d feeds via %s (%s), %s in / %s out tokens, %.1fs", len(picked), len(ok),
              len(D["feeds"]), provider, model, tin, tout, time.monotonic() - t0, extra={"safe": True})
     return brief

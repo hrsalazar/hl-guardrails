@@ -14,6 +14,11 @@ Hourly, from public fills and the order history, kept in the encrypted state onl
                     capped at 2,000 orders, doesn't reach back)
   size              your first-hour quantity vs the rule's size at the current equity base (approx.)
   off-plan          positions opened since tracking began that match no signal, and their net P&L
+  reviews           a post-mortem of each position closed since tracking began, settled the way
+                    TradingAgents settles its decisions but with no model and nothing leaving the
+                    machine: on a signal or off-plan, stop in within the hour, size within 0.5-1.5x
+                    the rule's, never added to while underwater, a loser not held past 7 days. All
+                    five = plan followed; the weekly review counts plan-followed trades
 
 Never logged beyond counts; P&L stays in the encrypted payload.
 """
@@ -49,13 +54,18 @@ def positions_from_fills(fills):
         p = cur.get(coin)
         if p is None and abs(pos0) < EPS:
             p = cur[coin] = {"coin": coin, "t0": f["time"], "side": sgn, "qty": 0.0, "cost": 0.0,
-                             "t_end": None, "net": 0.0}
+                             "t_end": None, "net": 0.0, "avg": None, "open_qty": 0.0, "adds_under": 0}
         if p is None:
             continue                                     # opened before the lookback: can't attribute
         p["net"] += fnum(f.get("closedPnl")) - fnum(f.get("fee"))
-        if abs(pos1) > abs(pos0) and f["time"] - p["t0"] <= H_MS:
-            p["qty"] += sz
-            p["cost"] += sz * px
+        if abs(pos1) > abs(pos0):
+            if p["avg"] is not None and ((px < p["avg"]) if p["side"] > 0 else (px > p["avg"])):
+                p["adds_under"] += 1                     # added below the average entry (above, short)
+            p["avg"] = px if p["avg"] is None else (p["avg"] * p["open_qty"] + px * sz) / (p["open_qty"] + sz)
+            p["open_qty"] += sz
+            if f["time"] - p["t0"] <= H_MS:
+                p["qty"] += sz
+                p["cost"] += sz * px
         if abs(pos1) < EPS:
             p["t_end"] = f["time"]
             out.append(p)
@@ -130,6 +140,12 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
                        "skipped_r": round(sum(r["r"] or 0 for r in wr if not r["taken"] and r["status"] in ("stopped", "time")), 2),
                        "offplan": len(wo), "offplan_net": round(sum(p["net"] for p in wo if p["t_end"] is not None), 2)}
     stops = [r["stop_min"] for r in taken]
+    reviews = review(pos, rows, orders, risk_usd, since)
+    for name, w in weeks.items():
+        a = w["start"]
+        b = a + 7 * D_MS
+        wr = [v for v in reviews if a <= v["t_end"] < b]
+        w["reviewed"], w["followed"] = len(wr), sum(not v["misses"] for v in wr)
     return {
         "t": now_ms, "since": since, "signals": len(rows), "taken": len(taken), "skipped": len(skipped),
         "taken_r": round(sum(r["r"] or 0 for r in taken), 2),
@@ -143,8 +159,39 @@ def evaluate(journal, fills, orders, equity, risk_pct, now_ms):
         "offplan_open": sum(p["t_end"] is None for p in off),
         # the same signals, both closed: what the rule made vs what you made (the execution cost in R)
         "same": {"n": len(both), "rule_r": round(sum(r["r"] for r in both), 2), "your_r": round(sum(r["your_r"] for r in both), 2)},
-        "rows": rows[-10:], "weeks": weeks, "slip_days": sorted({t // D_MS * D_MS for t in slips}),
+        "rows": rows[-10:], "weeks": weeks, "reviews": reviews[-10:], "slip_days": sorted({t // D_MS * D_MS for t in slips}),
     }
+
+
+SIZE_OK = (0.5, 1.5)
+HELD_LOSER_DAYS = 7
+
+
+def review(pos, rows, orders, risk_usd, since):
+    """One post-mortem per position closed since tracking began, oldest first. `misses` lists the
+    plan checks it failed, in the order the dashboard explains them; empty = plan followed."""
+    sig = {(r["coin"], r["t0"]): r for r in rows if r.get("taken")}
+    out = []
+    for p in sorted((p for p in pos if p["t_end"] is not None and p["t0"] >= since), key=lambda p: p["t_end"]):
+        r = sig.get((p["coin"], p["t0"]))
+        stop = r["stop_min"] if r else first_stop(orders, p["coin"], p["side"], p["t0"], p["t_end"])
+        size_x = r.get("size_x") if r else None
+        misses = []
+        if r is None:
+            misses.append("off_plan")
+        if stop is None or (isinstance(stop, (int, float)) and stop > 60):
+            misses.append("no_stop" if stop is None else "late_stop")
+        if size_x is not None and not SIZE_OK[0] <= size_x <= SIZE_OK[1]:
+            misses.append("size")
+        if p["adds_under"]:
+            misses.append("added_under")
+        if p["net"] < 0 and p["t_end"] - p["t0"] > HELD_LOSER_DAYS * D_MS:
+            misses.append("held_loser")
+        out.append({"coin": p["coin"], "side": "L" if p["side"] > 0 else "S", "t0": p["t0"], "t_end": p["t_end"],
+                    "signal": f"{r['tf']} {r['signal_day']}" if r else None, "stop_min": stop, "size_x": size_x,
+                    "adds_under": p["adds_under"], "days": round((p["t_end"] - p["t0"]) / D_MS, 1),
+                    "r": round(p["net"] / risk_usd, 2) if risk_usd else None, "misses": misses})
+    return out
 
 
 def fetch_orders(account, post):
