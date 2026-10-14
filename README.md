@@ -853,6 +853,22 @@ late ones, and that selection is worth a lot — so the headline 1.67 describes 
 average signal. The rest (1.33 → 1.06-1.14) is Binance vs Hyperliquid prices and this study's harsher
 exits. The comparisons above are like-for-like, so the verdicts don't depend on it.
 
+### Breakout ladder: 1h → 4h → 1d — tested, not adopted
+
+Does a breakout climb from 1h to 4h to the daily, and can the lower legs warn early, give a better
+entry, or mark the better daily breakouts? `python -m hlg.ladder`, rules fixed before running, full
+write-up in [docs/research/breakout-ladder-study.md](docs/research/breakout-ladder-study.md). Same
+data and simulator as the cascade study above.
+
+- **The shape is true by construction:** 99% of 4h breakouts had a 1h breakout in the 24h before.
+  So the test is forward: a 4h + 1h breakout while the daily trend is up and price is still below the
+  20-day high.
+- **Early warning — fail:** a daily breakout followed within 10 days 39.5% of the time vs 29.9% from
+  any 4h bar in the same context, a 1.32× lift (bar 1.5×; the cascade got 1.44×).
+- **Early entry — fail:** PF 1.22 over 392 trades vs the 1d breakout's 1.04, but random entries in
+  the same uptrends made 1.14 (68th percentile, bar 95th), and the second half was 1.03.
+- **Confirmation — fail:** 82% of daily breakouts had a ladder before them, and those did no better.
+
 ### Pyramiding: add to a winner on a fresh breakout? — tested, not adopted
 
 When a coin you already hold breaks out again, the scanner says "already held, don't add" —

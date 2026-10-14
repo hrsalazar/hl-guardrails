@@ -2,6 +2,10 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-14
+
+- **Breakout ladder study** (`python -m hlg.ladder`, pre-registered in docs/research/breakout-ladder-study.md): does a breakout climb 1h → 4h → 1d? Not adopted. 99% of 4h breakouts already have a 1h one before them, so the test was forward. A 4h + 1h breakout below the 20-day high in a daily uptrend made a daily breakout 1.32× more likely within 10 days (bar 1.5×). As an entry it made PF 1.22, but random entries in the same uptrends made 1.14 (68th percentile). Daily breakouts with a ladder before them did no better. Nothing live changes.
+
 ## 2026-10-13
 
 - **1d rally shorts, live as alerts, with their own slot.** The rally-any confirmation (pre-registered, docs/research/rally-any-confirmation.md) passed on 104 trades on coins never used: PF 1.67.
