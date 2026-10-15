@@ -2,6 +2,10 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-15
+
+- **Wallet style study** (pre-registered, docs/research/wallet-style-study.md, `scripts/wallet_style_study.py`): why are averaging-down wallets more often profitable? It's style. Profitable wallets hold longer (median 10.8h vs 3.6h) and mostly use maker orders (57% vs 22% of fills); with that accounted for, the averaging-down link disappears (β +0.45 → +0.13, CI includes 0). Within the same wallet, averaged-down positions did worse than the wallet's other added-to positions in 74% of wallets (p ≈ 8×10⁻¹¹), so the guardrail stands. Stops are only partly explained by style. A higher tail-risk for heavy averagers wasn't consistent across the two samples.
+
 ## 2026-10-14
 
 - **Wallet behavior replication: H1–H5 all pass** (pre-registered, docs/research/wallet-behavior-replication.md). 200 new wallets (seed 2026, the original 200 excluded); 138 analysed. Results: 48% liquidated in 90 days; 90% of liquidated positions unstopped; the worst 5% of positions carried a median 47% of losses; 51% unprofitable (passes, barely); averaged-down positions carried at least 2× their share of losses in 65% of the wallets that average down. The habit paradox also replicated: wallets keeping the habits were less often profitable. Public content keeps to protection claims, never profitability. The draft posts now use the replicated figures.
