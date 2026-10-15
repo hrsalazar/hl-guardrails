@@ -4,6 +4,8 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-14
 
+- **Wallet behavior replication: H1–H5 all pass** (pre-registered, docs/research/wallet-behavior-replication.md). 200 new wallets (seed 2026, the original 200 excluded); 138 analysed. Results: 48% liquidated in 90 days; 90% of liquidated positions unstopped; the worst 5% of positions carried a median 47% of losses; 51% unprofitable (passes, barely); averaged-down positions carried at least 2× their share of losses in 65% of the wallets that average down. The habit paradox also replicated: wallets keeping the habits were less often profitable. Public content keeps to protection claims, never profitability. The draft posts now use the replicated figures.
+
 - **From TradingAgents: settle, archive, check, review.** An analysis of TauricResearch/TradingAgents (README "TradingAgents"): its multi-agent LLM pipeline isn't adopted, because its evidence is a 3-month backtest with no costs or random baseline. Four of its ideas are, each in a measurable form:
   - **The brief is scored:** each daily tilt is settled against BTC 5 days later and the record shows under the brief. It's judged at 60 directional calls against shuffled tilts (docs/research/brief-scorecard.md).
   - **Headline archive:** each day's headlines are kept as titles only, for 400 days, in an encrypted gzipped `news.json`. A later news study can then be point-in-time.
@@ -12,6 +14,10 @@ Dates are UTC. For the details and reasoning, see the commit messages.
   - **Bear-case check:** one model call per new long signal writes the case against it and a low/medium/high flag, from public data only. It's stored on the journal row, never pushed and never gating. Judged at 40 closed (docs/research/bear-check.md).
 
 - **Breakout ladder study** (`python -m hlg.ladder`, pre-registered in docs/research/breakout-ladder-study.md): does a breakout climb 1h → 4h → 1d? Not adopted. 99% of 4h breakouts already have a 1h one before them, so the test was forward. A 4h + 1h breakout below the 20-day high in a daily uptrend made a daily breakout 1.32× more likely within 10 days (bar 1.5×). As an entry it made PF 1.22, but random entries in the same uptrends made 1.14 (68th percentile). Daily breakouts with a ladder before them did no better. Nothing live changes.
+
+- **Product validation plan** (docs only), in `docs/product.md` "Validation plan": four stages (groundwork, problem interviews, demand through the free wallet check and a priced waitlist, and a concierge cohort), each with pass and kill marks fixed in advance.
+  - **Added:** a problem-interview script and draft posts (`docs/marketing/`), and the pre-registration for the wallet-study replication (`docs/research/wallet-behavior-replication.md`, not yet run).
+  - **Rule for the drafts:** public figures wait on that replication.
 
 ## 2026-10-13
 

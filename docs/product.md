@@ -54,6 +54,36 @@ account, which excludes most non-technical traders.
 A sensible order is **C → A → B**. C tests whether people pay, A packages what they paid for,
 and B is only worth building once A shows demand.
 
+## Validation plan (bars fixed 2026-10-14)
+
+The same discipline as the studies: each stage has a pass mark and a kill mark, written down
+before it starts, so the result can't be argued afterwards.
+
+**What to sell first:** the guardrails, i.e. protection from the account-ending position. Not
+the scanner's signals or returns. That is what the evidence supports, and it carries the least
+regulatory risk.
+
+| Stage | When | Question | Pass | Kill |
+|---|---|---|---|---|
+| 0. Groundwork | weeks 0–2 | Can we say it, and are the numbers solid? | ⚖️ legal consult done; [replication](research/wallet-behavior-replication.md) run; a separate public repo and domain (no history) | — |
+| 1. Problem | weeks 1–3 | Is the pain real? 20 interviews ([script](marketing/interview-script.md)) | ≥ 10/20 had a rule-break loss in the last 3 months **and** tried to fix it | < 6/20 |
+| 2. Demand | weeks 3–8 | Will they act? Content → free wallet check → priced waitlist → pre-sale (option C) | ≥ 500 checks, ≥ 8% check → waitlist, ≥ 10 paid | < 150 checks, < 3%, < 3 paid |
+| 3. Value | weeks 8–16 | Does it help, and does it pay? Concierge cohort | month-2 retention ≥ 60%; rule breaks per week down vs. before; ≤ 30 min support per user per month; LTV / acquisition cost ≥ 3 | retention < 30% |
+
+- **Between the bars:** change one thing (price, claim or channel) and run the stage once more.
+- **Test price:** US$19/mo or US$149/yr, shown on the waitlist form so sign-ups are a real
+  signal.
+- **Measure counts only,** with cookie-free analytics: visits, checks run, sign-ups, payments.
+  The wallet check's results never leave the browser.
+- **Scale check:** at about 100 users × $19, roughly $1.9k a month, a hosted backend (option B)
+  starts to pay for itself. Below that, A or C.
+
+**Content:** [draft posts](marketing/first-posts.md) built from the wallet study, the lessons,
+and the rejected studies (building in public). Each post ends with the free wallet check.
+- Quote only figures that passed the replication.
+- No performance claims, no "signals" framing, and no contacting wallets found on-chain.
+- Judge posts by checks run, not likes.
+
 ### What option B would need
 
 - **Multi-tenant runner:** one job looping over users, or a queue. The core (`guardrails.run_once`,

@@ -76,5 +76,5 @@ positions opened before the window, liquidations and stop coverage.
 
 ## Follow-up (not done)
 
-- **Pre-registered replication:** fix the hypotheses and bars first, e.g. "averaged-down positions' loss share ≥ 2× their position share in most wallets". Then run on a new seed and window.
+- **Pre-registered replication:** fix the hypotheses and bars first, e.g. "averaged-down positions' loss share ≥ 2× their position share in most wallets". Then run on a new seed and window. **Pre-registered 2026-10-14, not yet run:** [wallet-behavior-replication.md](wallet-behavior-replication.md).
 - **Survivorship:** sample wallets active 90–180 days ago, including those that have since stopped trading.

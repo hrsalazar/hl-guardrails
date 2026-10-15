@@ -6,6 +6,7 @@
 | [architecture.md](architecture.md) | developers | components, the monitor run step by step, data formats, sources, design decisions |
 | [security.md](security.md) | anyone trusting it with an account | threat model, encryption, redaction, secrets, rotation |
 | [product.md](product.md) | the owner | positioning, ways to sell it, open legal questions, roadmap |
+| [marketing/](marketing/) | the owner | product validation: [problem-interview script](marketing/interview-script.md) and [draft posts](marketing/first-posts.md) (not published; figures wait on the [replication](research/wallet-behavior-replication.md)) |
 | [proposals/](proposals/) | the owner | parked or future designs, not current behaviour, e.g. [Kronos stop-hit odds](proposals/kronos-stop-odds.md) |
 | [research/universe-study.md](research/universe-study.md) | the owner | weekly auto-generated trend of the liquidity-ranked universe study (README "Universe"); read-only, never changes `config.yaml` |
 | [research/](research/) | the owner | pre-registered studies with results (market state, long-term lines, bull market support band) and the exploratory [wallet behavior study](research/wallet-behavior-study.md): do other Hyperliquid traders lose money the way the guardrails assume? |
