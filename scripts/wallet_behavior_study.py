@@ -9,6 +9,11 @@ to losses. Findings and caveats: docs/research/wallet-behavior-study.md.
 
 Run from the repo root. Raw data (other people's addresses and trades) stays in miner_cache/wallet_study/,
 which is gitignored: the repo is public, so only aggregates go into docs/.
+
+Replication (docs/research/wallet-behavior-replication.md): parameters only, the analysis is unchanged.
+
+    python scripts/wallet_behavior_study.py fetch --seed 2026 --cache miner_cache/wallet_study_rep \
+        --exclude miner_cache/wallet_study/wallets --out backtest_out/wallet_behavior_replication.md
 """
 import json
 import random
@@ -34,6 +39,7 @@ BOTLIKE_POSITIONS_PER_DAY = 20
 MIN_POSITIONS = 5
 WEIGHT_PER_MIN = 900            # HL allows 1200/min per IP
 EPS = 1e-9
+EXCLUDE = []                    # wallet dirs whose addresses are left out of the pool (replication)
 PERP_DIRS = {"Open Long", "Close Long", "Open Short", "Close Short", "Long > Short", "Short > Long"}
 
 
@@ -76,8 +82,10 @@ def fetch():
         return float(dict(r["windowPerformances"])["month"]["vlm"])
     # Near-zero accounts stay in: dropping blown-up wallets would hide the damage being measured.
     pool = [r for r in rows if float(r["accountValue"]) <= MAX_ACCOUNT and MIN_MONTH_VLM <= month_vlm(r) <= MAX_MONTH_VLM]
+    excluded = {p.stem.lower() for d in EXCLUDE for p in Path(d).glob("*.json")}
+    pool = [r for r in pool if r["ethAddress"].lower() not in excluded]
     sample = random.Random(SEED).sample(pool, N_WALLETS)
-    print(f"pool {len(pool)}, sampling {N_WALLETS}", flush=True)
+    print(f"pool {len(pool)} ({len(excluded)} excluded), sampling {N_WALLETS}, seed {SEED}", flush=True)
 
     start = int((time.time() - DAYS * 86400) * 1000)
     for i, r in enumerate(sample, 1):
@@ -252,8 +260,28 @@ def analyze():
     print(text)
 
 
+def configure(argv):
+    """--seed N, --cache DIR, --exclude DIR (repeatable), --out FILE: the replication's parameters."""
+    global SEED, CACHE, WALLETS, LEADERBOARD, OUT
+    it = iter(argv)
+    for a in it:
+        v = next(it)
+        if a == "--seed":
+            SEED = int(v)
+        elif a == "--cache":
+            CACHE = ROOT / v
+            WALLETS, LEADERBOARD = CACHE / "wallets", CACHE / "leaderboard.json"
+        elif a == "--exclude":
+            EXCLUDE.append(ROOT / v)
+        elif a == "--out":
+            OUT = ROOT / v
+        else:
+            sys.exit(f"unknown option {a}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd not in ("fetch", "analyze"):
         sys.exit(__doc__)
+    configure(sys.argv[2:])
     fetch() if cmd == "fetch" else analyze()
