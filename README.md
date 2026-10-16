@@ -563,8 +563,20 @@ trades that run to the 21-day time stop. The legacy pullback rule stays availabl
 `scanner.strategy: pullback` but tested negative. `rules.max_hold_days` was raised to 21 to match.
 
 `scanner.watch_coins` (default: HL tradfi perps xyz:CL, xyz:GOLD, xyz:XYZ100) are scanned and shown on the dashboard
-for information only - no alerts. The same breakout rule tested PF ~1.2 on them, but with only ~9 months of
-history and market-hours gaps; revisit with `hlg.backtest --coins xyz:...` once there is a year+ of data.
+for information only - no alerts.
+
+**TradFi sleeve — tested 2026-10-16, not adopted** (`python -m hlg.tradfi`, pre-registered in
+[docs/research/tradfi-study.md](docs/research/tradfi-study.md)). The same rule ran on 10 years of the underlyings'
+daily bars (Yahoo), charged the xyz perps' own funding, in three sleeves:
+- **Macro** (indices, metals, oil, natgas, copper, EUR, JPY): PF 1.39, stable in both halves and the holdout. Added
+  on its own slot, it lifted the live book's Sharpe from 1.07 to 1.18. But it **failed** the random-entry test
+  (45th percentile): long in an uptrend pays on macro, while the breakout trigger adds nothing there. The live
+  crypto rule passes the same test (86th–96th percentile).
+- **2016 mega-caps:** PF 1.23 and it lowered the book's Sharpe.
+- **Today's xyz stocks:** PF 1.72, information only, since they're listed because they went up.
+
+The live crypto book opened trades in every month but one since 2023-06, so "crypto is quiet" rarely lasts a
+month. TradFi stays watch-only. A macro *trend* sleeve, for diversification, would need its own pre-registered test.
 
 **Shorting — tested, not adopted.** The scanner is long-only. The mirror rule (`breakout_short`:
 close below the 20-day low in a downtrend) and a combined book (`breakout_both`) exist in

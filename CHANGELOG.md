@@ -2,6 +2,15 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-16
+
+- **TradFi sleeve study** (`python -m hlg.tradfi`, pre-registered in docs/research/tradfi-study.md): the live breakout rule on 10 years of Yahoo daily bars, with xyz funding charged. **No sleeve adopted; TradFi stays watch-only.**
+  - **Macro** (indices, commodities, FX): PF 1.39, stable, and it lifted the live book's Sharpe from 1.07 to 1.18 on its own slot. But it failed the random-entry test (45th percentile): long-in-uptrend pays there, the breakout trigger adds nothing. The crypto rule passes the same test (86th–96th percentile).
+  - **2016 mega-caps:** PF 1.23, lowered the book's Sharpe.
+  - **Today's xyz stocks:** PF 1.72, information only (hindsight-selected).
+  - **Crypto quiet months:** the crypto book traded in every month but one since 2023-06.
+  - **The engine** gains per-group slot limits (`group_max` / `group_of`).
+
 ## 2026-10-15
 
 - **Wallet style study** (pre-registered, docs/research/wallet-style-study.md, `scripts/wallet_style_study.py`): why are averaging-down wallets more often profitable? It's style. Profitable wallets hold longer (median 10.8h vs 3.6h) and mostly use maker orders (57% vs 22% of fills); with that accounted for, the averaging-down link disappears (β +0.45 → +0.13, CI includes 0). Within the same wallet, averaged-down positions did worse than the wallet's other added-to positions in 74% of wallets (p ≈ 8×10⁻¹¹), so the guardrail stands. Stops are only partly explained by style. A higher tail-risk for heavy averagers wasn't consistent across the two samples.

@@ -499,7 +499,11 @@ def run(V, data, fund, P):
             side_max = P.get("side_max")
             if side_max and sum(p["side"] == q["side"] for p in open_pos.values()) >= side_max.get(q["side"], P["max_positions"]):
                 continue
-            if not side_max and len(open_pos) >= P["max_positions"]:
+            # per-group limits (tradfi_study: crypto keeps its 3 slots, a TradFi sleeve gets its own)
+            group_max, group_of = P.get("group_max"), P.get("group_of") or {}
+            if group_max and sum(group_of.get(k) == group_of.get(coin) for k in open_pos) >= group_max.get(group_of.get(coin), P["max_positions"]):
+                continue
+            if not side_max and not group_max and len(open_pos) >= P["max_positions"]:
                 victims = [k for k in open_pos if preempt and tf == "1d" and tf_of(k) == "4h" and d in data[k].index]
                 if not victims:
                     continue
