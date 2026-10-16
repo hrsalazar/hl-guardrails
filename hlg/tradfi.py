@@ -45,14 +45,15 @@ def _safe(name):
     return "".join(ch if ch.isalnum() else "_" for ch in name)
 
 
-def yahoo(sym, cache, get=requests.get):
-    """Daily OHLCV for a Yahoo symbol, cached for a day. Index: the bar's exchange-local date, as UTC midnight."""
-    p = cache / f"yahoo_{_safe(sym)}.csv"
+def yahoo(sym, cache, get=requests.get, start=FETCH_FROM):
+    """Daily OHLCV for a Yahoo symbol from `start`, cached for a day. Index: the bar's exchange-local
+    date, as UTC midnight."""
+    p = cache / (f"yahoo_{_safe(sym)}.csv" if start == FETCH_FROM else f"yahoo_{_safe(sym)}_{start[:4]}.csv")
     if p.exists() and time.time() - p.stat().st_mtime < 86400:
         df = pd.read_csv(p, index_col=0, parse_dates=True)
         df.index = df.index.tz_convert("UTC") if df.index.tz is not None else df.index.tz_localize("UTC")
         return df
-    p1 = int(pd.Timestamp(FETCH_FROM, tz="UTC").timestamp())
+    p1 = int(pd.Timestamp(start, tz="UTC").timestamp())
     r = get(YAHOO.format(sym=sym), params={"period1": p1, "period2": int(time.time()), "interval": "1d"}, headers=UA, timeout=30)
     r.raise_for_status()
     res = r.json()["chart"]["result"][0]

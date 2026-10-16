@@ -44,6 +44,10 @@ VARIANTS = {
     # miner finding: long breakout of 20d high in uptrend, trailing
     "breakout_long": dict(side="long", trend="with", rsi_max=100, level="breakout", stop_atr=2.0,
                           target=None, min_rr=0, max_days=21, trail_atr=3.0),
+    # macro trend sleeve (docs/research/macro-trend-study.md): in on the EMA20/50 cross, out on the
+    # cross back or the 3 ATR trail, no time limit
+    "ema_trend": dict(side="long", trend="with", rsi_max=100, level="ema_cross", stop_atr=2.0, target=None,
+                      min_rr=0, max_days=36_500, trail_atr=3.0, trend_exit=True),
     # sensitivity of the breakout rule (not optimised: one parameter moved at a time)
     "breakout_long_hold45": dict(side="long", trend="with", rsi_max=100, level="breakout", stop_atr=2.0,
                                  target=None, min_rr=0, max_days=45, trail_atr=3.0),
@@ -169,6 +173,7 @@ def features(df, k=1):
     df["ext_max10"], df["ext_min10"] = df.ext20.shift(1).rolling(10).max(), df.ext20.shift(1).rolling(10).min()
     df["c_prev"], df["sma20_prev"], df["sma20_lag20"] = df.c.shift(1), df.sma20.shift(1), df.sma20.shift(20)
     df["lo5"], df["hi5"] = df.l.rolling(5).min(), df.h.rolling(5).max()
+    df["up_prev"] = (df.ema20 > df.ema50).shift(1, fill_value=False)    # the trend state a bar earlier (ema_cross)
     return df
 
 
@@ -349,6 +354,8 @@ def signal(k, V):
         if V["level"] == "pullback":
             at = px <= k.lo20 * 1.03 or (px <= k.ema20 and px >= k.ema20 * 0.95)
             ok = ok_trend and k.rsi <= V["rsi_max"] and at
+        elif V["level"] == "ema_cross":  # macro trend sleeve: EMA20 crossed above EMA50 on this close
+            ok = up and not k.up_prev
         else:  # breakout
             ok = ok_trend and px > k.hi20
         if ok:
@@ -554,6 +561,8 @@ def run(V, data, fund, P):
                 exit_px, why = k.c, "ma"  # closed back through the 20 SMA: the trend broke
             if exit_px is None and Vk.get("fail_exit_bars") and p["bars"] <= Vk["fail_exit_bars"] and k.c < p["level"]:
                 exit_px, why = k.c, "failed"  # closed back below the breakout level: out now, not at the 2 ATR stop
+            if exit_px is None and Vk.get("trend_exit") and k.ema20 < k.ema50:
+                exit_px, why = k.c, "trend"  # the uptrend that justified it is over
             if exit_px is None and (d - p["start"]) >= pd.Timedelta(days=Vk["max_days"]):
                 exit_px, why = k.c, "time"
             if exit_px is None and Vk["trail_atr"] and p.get("intrabar_day") != d:  # today's high may predate the fill

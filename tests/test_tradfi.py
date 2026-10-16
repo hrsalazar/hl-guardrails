@@ -53,3 +53,13 @@ def test_concordance_counts_xyz_signals_that_yahoo_also_gave_within_a_bar():
     x = y.copy()
     share, n = tf.concordance(y, x)
     assert n >= 1 and share == 1.0
+
+
+def test_ema_trend_enters_on_the_cross_and_leaves_when_the_trend_ends():
+    c = [100.0] * 60 + [100 + 1.5 * i for i in range(1, 41)] + [160 - 3 * i for i in range(1, 41)]
+    d = bt.features(frame(c, start="2020-01-01").drop(columns="atr"), 1)
+    sig = [t for t, k in d.iterrows() if bt.signal(k, bt.VARIANTS["ema_trend"])]
+    assert len(sig) == 1 and d.loc[sig[0]].ema20 > d.loc[sig[0]].ema50 and not d.loc[sig[0]].up_prev
+    T, _, _ = bt.run(bt.VARIANTS["ema_trend"], {"X": d}, {"X": pd.Series(dtype=float)},
+                     {**bt.DEF, "start": "2020-01-01", "risk_pct": 1.0, "max_positions": 1})
+    assert len(T) == 1 and T.iloc[0].why in ("stop", "trend") and T.iloc[0].days > 21   # no 21-day limit

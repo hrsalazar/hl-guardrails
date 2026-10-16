@@ -576,7 +576,21 @@ daily bars (Yahoo), charged the xyz perps' own funding, in three sleeves:
 - **Today's xyz stocks:** PF 1.72, information only, since they're listed because they went up.
 
 The live crypto book opened trades in every month but one since 2023-06, so "crypto is quiet" rarely lasts a
-month. TradFi stays watch-only. A macro *trend* sleeve, for diversification, would need its own pre-registered test.
+month. TradFi stays watch-only.
+
+**Macro trend sleeve — tested 2026-10-16, not adopted** (`python -m hlg.macrotrend`, pre-registered in
+[docs/research/macro-trend-study.md](docs/research/macro-trend-study.md)). The setup:
+- **Rule:** EMA20/50 crosses, 2 ATR stop, 3 ATR trail, out on the cross back.
+- **Instruments:** the S&P 500, Nasdaq-100, gold, silver, copper, WTI and Brent.
+- **Test years:** 2001–2015 decide, because no study here had used them. 2016 → now, which had already been seen, only confirms.
+
+The results:
+- **2001–2015:** PF 1.16 (halves 1.30 / 1.05), about 1% a year.
+- **2016 → now:** PF 1.95. The gap is the hindsight the design was there to catch.
+- **With the crypto book:** on its own slot it *lowered* the book's Sharpe (1.07 → 1.03).
+
+It does avoid crashes (−18% drawdown vs −52% for buy-and-hold through 2008), but at too little return to earn a
+slot. The TradFi line of inquiry is closed.
 
 **Shorting — tested, not adopted.** The scanner is long-only. The mirror rule (`breakout_short`:
 close below the 20-day low in a downtrend) and a combined book (`breakout_both`) exist in

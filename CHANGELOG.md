@@ -4,6 +4,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-16
 
+- **Macro trend sleeve study** (`python -m hlg.macrotrend`, pre-registered in docs/research/macro-trend-study.md): an EMA20/50 trend rule on indices, metals and oil, judged on 2001–2015, which no study had used. **Not adopted; TradFi stays watch-only and the line of inquiry closes.**
+  - **2001–2015:** PF 1.16 (halves 1.30 / 1.05), ~1%/yr, Sharpe 0.19.
+  - **2016 → now:** PF 1.95, which is the hindsight the design was built to catch.
+  - **With the crypto book:** on its own slot it lowered the book's Sharpe (1.07 → 1.03).
+  - **Engine:** gains an `ema_cross` entry and a `trend_exit` (variant `ema_trend`, research only).
+
 - **TradFi sleeve study** (`python -m hlg.tradfi`, pre-registered in docs/research/tradfi-study.md): the live breakout rule on 10 years of Yahoo daily bars, with xyz funding charged. **No sleeve adopted; TradFi stays watch-only.**
   - **Macro** (indices, commodities, FX): PF 1.39, stable, and it lifted the live book's Sharpe from 1.07 to 1.18 on its own slot. But it failed the random-entry test (45th percentile): long-in-uptrend pays there, the breakout trigger adds nothing. The crypto rule passes the same test (86th–96th percentile).
   - **2016 mega-caps:** PF 1.23, lowered the book's Sharpe.
