@@ -911,6 +911,46 @@ data and simulator as the cascade study above.
   the same uptrends made 1.14 (68th percentile, bar 95th), and the second half was 1.03.
 - **Confirmation — fail:** 82% of daily breakouts had a ladder before them, and those did no better.
 
+### Capitulation long: buy the liquidation flush — tested, not adopted
+
+A different source of profit from the breakout: after a forced-selling flush, price partly snaps back.
+`python -m hlg.capitulation`, pre-registered in
+[docs/research/capitulation-study.md](docs/research/capitulation-study.md). The setup:
+- **Signal:** a bar that dropped ≥ 1.5 ATR, had a range ≥ 2.5 ATR and ≥ 2× volume, and closed off its low.
+- **Trade:** long at the next open, stop under the low, 1.5R target, 3-day limit.
+
+| | 1d | 4h |
+|---|---|---|
+| Trades, PF on the 15 coins | 52, **1.53** (halves 1.30 / 1.79) | 126, 0.91 |
+| Random-entry test | failed: 84th percentile against buying after any red bar | failed |
+| Unseen coins | only 24 trades | — |
+| Gain to the book's Sharpe | under 0.01 | — |
+| Correlation with breakouts | 0.02 | — |
+
+**Neither timeframe passes.** One lead, information only: on the 1d capitulations, Bybit's free open-interest
+history showed that those where OI also fell ≥ 5% (the liquidation footprint) made PF 1.84 (38 trades), against
+0.31 for the 8 where it didn't. Settling it needs more events, from Binance's archive back to 2020, in a second
+pre-registered test.
+
+### Data sources beyond Hyperliquid (checked 2026-10-16)
+
+| Source | What, how far back | Cost | Used here |
+|---|---|---|---|
+| **data.binance.vision** (bulk archive) | USDT-M klines 1m–1d since 2019–20; funding; **5-minute open interest, top-trader long/short and taker buy/sell ratios since at least 2020-09** | free, no key | 1h klines (cascade, ladder) |
+| **Bybit public API** | daily **open interest since 2021**, funding since 2020, long/short account ratio | free, no key | OI (capitulation) |
+| **Binance futures API** | OI, taker and long/short ratios, but the API keeps only ~30 days | free | — |
+| **OKX rubik API** | aggregate OI and volume per coin, recent windows | free | — |
+| **Deribit API** | **DVOL** (BTC/ETH implied-volatility index) history, option books | free | — |
+| **Coinalyze API** | cross-exchange **liquidation history**, OI and funding, aggregated | free **key** (sign-up) | — |
+| **Yahoo, FRED, alternative.me, CoinGecko** | TradFi bars, macro series, Fear & Greed, global market cap | free (FRED key) | yes |
+| Hyperliquid S3 archive | per-minute asset contexts (OI, funding, marks) since 2023 | AWS requester-pays | — |
+| Binance liquidation snapshots, CoinGlass, DefiLlama derivatives | liquidations, aggregates | removed / paid | — |
+
+**The most valuable next step:** Binance's archive gives these coins about three years *before* the
+Hyperliquid history the live rules were built on. That's an untouched period for re-testing the live breakout
+and rally-short rules out of sample, not just for new ideas. Coinalyze is the only free source of liquidation
+history, which a capitulation retest would want.
+
 ### Pyramiding: add to a winner on a fresh breakout? — tested, not adopted
 
 When a coin you already hold breaks out again, the scanner says "already held, don't add" —

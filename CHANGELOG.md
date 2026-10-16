@@ -4,6 +4,18 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-16
 
+- **Capitulation long study** (`python -m hlg.capitulation`, pre-registered in docs/research/capitulation-study.md): buy after a forced-selling flush (drop ≥ 1.5 ATR, range ≥ 2.5 ATR, ≥ 2× volume, closed off the low); 1.5R target, 3-day limit. **Neither timeframe passes.**
+  - **1d:** PF 1.53 on 52 trades, stable, 0.02 correlation with breakouts. It failed the random-entry test (84th percentile) and had too few unseen-coin trades (24).
+  - **4h:** PF 0.91.
+  - **Lead (information only):** flushes where Bybit OI also fell ≥ 5% made PF 1.84 vs 0.31.
+  - **Engine:** gains the `capitulation` variant (research only).
+- **Data sources survey** (README "Data sources beyond Hyperliquid"). Free:
+  - Binance's bulk archive: bars, funding, and 5-min OI with long/short ratios back to 2020;
+  - Bybit: OI since 2021;
+  - Deribit: the DVOL volatility index.
+
+  Coinalyze has the only free liquidation history, behind a key. Binance's 2020–2023 data is an untouched period for re-testing the live rules.
+
 - **Macro trend sleeve study** (`python -m hlg.macrotrend`, pre-registered in docs/research/macro-trend-study.md): an EMA20/50 trend rule on indices, metals and oil, judged on 2001–2015, which no study had used. **Not adopted; TradFi stays watch-only and the line of inquiry closes.**
   - **2001–2015:** PF 1.16 (halves 1.30 / 1.05), ~1%/yr, Sharpe 0.19.
   - **2016 → now:** PF 1.95, which is the hindsight the design was built to catch.

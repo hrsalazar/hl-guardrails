@@ -44,6 +44,10 @@ VARIANTS = {
     # miner finding: long breakout of 20d high in uptrend, trailing
     "breakout_long": dict(side="long", trend="with", rsi_max=100, level="breakout", stop_atr=2.0,
                           target=None, min_rr=0, max_days=21, trail_atr=3.0),
+    # capitulation long (docs/research/capitulation-study.md): buy the flush, 1.5R target, 3-day time stop
+    "capitulation": dict(side="long", trend="any", rsi_max=100, level="capitulation", stop_atr=2.0, target=None,
+                         min_rr=0, max_days=3, trail_atr=None, cap_drop_atr=1.5, cap_range_atr=2.5, cap_vol_x=2.0,
+                         cap_close_loc=0.35, cap_stop_atr=0.5, cap_target_r=1.5),
     # macro trend sleeve (docs/research/macro-trend-study.md): in on the EMA20/50 cross, out on the
     # cross back or the 3 ATR trail, no time limit
     "ema_trend": dict(side="long", trend="with", rsi_max=100, level="ema_cross", stop_atr=2.0, target=None,
@@ -174,6 +178,9 @@ def features(df, k=1):
     df["c_prev"], df["sma20_prev"], df["sma20_lag20"] = df.c.shift(1), df.sma20.shift(1), df.sma20.shift(20)
     df["lo5"], df["hi5"] = df.l.rolling(5).min(), df.h.rolling(5).max()
     df["up_prev"] = (df.ema20 > df.ema50).shift(1, fill_value=False)    # the trend state a bar earlier (ema_cross)
+    # capitulation (docs/research/capitulation-study.md): ATR and volume as they stood before the bar
+    df["atr_prev"] = df.atr.shift(1)
+    df["vol_x"] = df.v / df.v.shift(1).rolling(20 * k).mean()
     return df
 
 
@@ -354,6 +361,14 @@ def signal(k, V):
         if V["level"] == "pullback":
             at = px <= k.lo20 * 1.03 or (px <= k.ema20 and px >= k.ema20 * 0.95)
             ok = ok_trend and k.rsi <= V["rsi_max"] and at
+        elif V["level"] == "capitulation":  # a forced-selling flush that closed off its low
+            a = getattr(k, "atr_prev", np.nan)
+            ok = (not np.isnan(a) and a > 0 and k.c <= k.c_prev - V["cap_drop_atr"] * a and k.h - k.l >= V["cap_range_atr"] * a
+                  and getattr(k, "vol_x", 0) >= V["cap_vol_x"] and k.close_loc >= V["cap_close_loc"])
+            if ok:
+                stop = k.l - V["cap_stop_atr"] * a
+                return "L", stop, px + V["cap_target_r"] * (px - stop)
+            return None
         elif V["level"] == "ema_cross":  # macro trend sleeve: EMA20 crossed above EMA50 on this close
             ok = up and not k.up_prev
         else:  # breakout
