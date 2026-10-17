@@ -4,6 +4,18 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-16
 
+- **Free data layer** (`hlg/sources.py`), research only:
+  - **Bars** in one format from 11 sources: Hyperliquid; perps on Binance, Bybit, OKX, Gate, Bitget and Deribit; spot on Binance, Coinbase, Bitstamp and Bitfinex.
+  - **Other series:** funding (Binance, Bybit, OKX, Gate), Bybit open interest since 2020, CoinMetrics community metrics, blockchain.com charts, DefiLlama stablecoins and TVL, Fear & Greed.
+  - **Inventory** (`python -m hlg.sources inventory`, docs/research/data-inventory.md): 1.56M bars for the 15 coins (15.6× Hyperliquid alone). The real gain is depth, with BTC daily from 2011 and ETH, XRP and ZEC from 2016.
+
+- **Out-of-sample retest of the live rules on Binance** (`python -m hlg.retest`, pre-registered in docs/research/binance-retest.md), on windows no study had used:
+  - **1d breakout: confirmed.** 2020-01 → 2021-03, PF 2.04 over 51 trades.
+  - **4h breakout: fails on its own.** 2020-01 → 2024-06, PF 1.17 over 753 trades, bootstrap p5 0.97. Most of the profit was in 2020, and the standalone drawdown was −43%.
+  - **1d rally short: inconclusive.** 18 trades, PF 0.08 in the 2020–21 bull market.
+
+  The 4h stream still raises the book's Sharpe in both periods, at a deeper drawdown, so its alerts are a decision for the owner. Nothing changed.
+
 - **Capitulation long study** (`python -m hlg.capitulation`, pre-registered in docs/research/capitulation-study.md): buy after a forced-selling flush (drop ≥ 1.5 ATR, range ≥ 2.5 ATR, ≥ 2× volume, closed off the low); 1.5R target, 3-day limit. **Neither timeframe passes.**
   - **1d:** PF 1.53 on 52 trades, stable, 0.02 correlation with breakouts. It failed the random-entry test (84th percentile) and had too few unseen-coin trades (24).
   - **4h:** PF 0.91.

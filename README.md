@@ -911,6 +911,25 @@ data and simulator as the cascade study above.
   the same uptrends made 1.14 (68th percentile, bar 95th), and the second half was 1.03.
 - **Confirmation — fail:** 82% of daily breakouts had a ladder before them, and those did no better.
 
+### Out-of-sample retest on Binance 2020–2024: 1d confirmed, 4h fails on its own
+
+The live rules were built on Hyperliquid history. Binance's archive reaches years earlier, into windows no study
+here had touched: `python -m hlg.retest`, pre-registered in
+[docs/research/binance-retest.md](docs/research/binance-retest.md).
+
+| Rule | Untouched window | Result |
+|---|---|---|
+| 1d breakout | 2020-01 → 2021-03 | **confirmed**: PF 2.04 over 51 trades, halves 2.38 / 1.78 |
+| 4h breakout | 2020-01 → 2024-06 | **fails**: PF 1.17 over 753 trades (bar 1.2), bootstrap 5th percentile 0.97 |
+| 1d rally short | 2020-01 → 2021-03 | **inconclusive**: 18 trades (bar 20), PF 0.08 in the bull market |
+
+**About the 4h result:**
+- **Where the profit came from:** almost all of it in 2020. 2021 to mid-2024 ran near breakeven, with a −43% standalone drawdown.
+- **The data source isn't the cause:** on the same recent window, Binance gives the 4h rule *better* results than Hyperliquid (PF 1.50 vs 1.37).
+- **But the book still benefits:** the 4h stream raises its Sharpe in both periods (1d alone 0.79 → 1d + 4h 1.05 on Binance; 0.88 → 1.07 on Hyperliquid). The cost is a deeper drawdown (−12% → −32%).
+
+The decision on the 4h alerts is open. Nothing has changed.
+
 ### Capitulation long: buy the liquidation flush — tested, not adopted
 
 A different source of profit from the breakout: after a forced-selling flush, price partly snaps back.
@@ -945,6 +964,17 @@ pre-registered test.
 | **Yahoo, FRED, alternative.me, CoinGecko** | TradFi bars, macro series, Fear & Greed, global market cap | free (FRED key) | yes |
 | Hyperliquid S3 archive | per-minute asset contexts (OI, funding, marks) since 2023 | AWS requester-pays | — |
 | Binance liquidation snapshots, CoinGlass, DefiLlama derivatives | liquidations, aggregates | removed / paid | — |
+
+**`hlg/sources.py`** fetches all of these through one interface:
+- **Bars, in one format from 11 sources:** Hyperliquid; perps on Binance, Bybit, OKX, Gate, Bitget and Deribit; spot on Binance, Coinbase, Bitstamp and Bitfinex.
+- **Plus:** funding, Bybit open interest, CoinMetrics on-chain metrics, blockchain.com charts, DefiLlama stablecoins and TVL, and Fear & Greed.
+
+`python -m hlg.sources inventory` probes them all live and writes
+[docs/research/data-inventory.md](docs/research/data-inventory.md).
+
+What the 2026-10-16 inventory found for the 15 coins:
+- **Volume:** 1.56M daily and 4h bars, 15.6× Hyperliquid's alone. Most of that is the same price action on another venue, which is useful as a cross-check but not new information.
+- **The real gain is depth:** BTC daily from 2011 (Bitstamp), ZEC from 2016, ETH from 2016, XRP from 2016, LINK and DOGE from 2019. That's 4–9 years of history no study here has touched.
 
 **The most valuable next step:** Binance's archive gives these coins about three years *before* the
 Hyperliquid history the live rules were built on. That's an untouched period for re-testing the live breakout
