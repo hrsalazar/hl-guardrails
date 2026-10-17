@@ -80,6 +80,11 @@ scanner:
   # automatically once 30 have closed in the journal with PF < 1.0.
   rally_shorts: true
   rally_stop_atr: 0.5
+  # 4h on probation (docs/research/binance-retest.md: PF 1.17 on untouched 2020-24 data, below the 1.2
+  # bar, but it raises the book's Sharpe). Fixed 2026-10-18, before any counted trade: 4h alerts stop
+  # for good if the 4h signals journalled since then make PF < 1.0 after 100 closed, or < 0.7 after 50.
+  probation:
+    4h: {since: "2026-10-18", n: 100, min_pf: 1.0, early_n: 50, early_pf: 0.7}
 
 # Flow section: recent liquidations from OKX (Hyperliquid publishes none - no endpoint exists).
 # These are RECENT events, not 24h totals, and they are OKX's book rather than HL's. One request

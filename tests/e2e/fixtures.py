@@ -258,6 +258,9 @@ def build_full(*, age_min=2, journal_closed=8):
                 "curve": [{"t": gen - (journal_closed - i) * 3 * D, "r": r, "coin": "SOL", "tf": "1d"}
                           for i, r in enumerate([-1, -1, 2.4, -0.6, -1, 4.1, -1, 0.8][:journal_closed])],
             },
+            # made-up 4h probation record (scanner.probation_status)
+            "probation": {"4h": {"tf": "4h", "since": "2026-10-18", "closed": 12, "pf": 1.21, "avg_r": 0.08, "n": 100, "min_pf": 1.0,
+                                 "early_n": 50, "early_pf": 0.7, "retired": False, "why": None, "passed": False}},
             # made-up bear-check record, still short of the 40 needed
             "bear": {"n": 6, "min_n": 40, "pending": 2, "flags": {"low": 3, "medium": 1, "high": 2},
                      "high": {"n": 2, "pf": 0.5, "failed_early": 0.5}, "rest": {"n": 4, "pf": 1.6, "failed_early": 0.25},

@@ -318,7 +318,8 @@ def main():
         # live record of every breakout signal under the strategy's rules (hlg.journal)
         "journal": {"summary": journal.summary(state.get("journal") or []),
                     "recent": list(reversed((state.get("journal") or [])[-30:])),
-                    "bear": bearcheck.summary(state.get("journal") or [])},
+                    "bear": bearcheck.summary(state.get("journal") or []),
+                    "probation": scanner.probation_status(state, cfg["scanner"], now_ms)},
         "universe": {"mode": universe.settings(S)["mode"], "coins": len(scanned),
                      "day": (state.get("universe") or {}).get("day")},
         "liqmap": liqmap_payload(state.get("liqmap"), {r["coin"]: r["px"] for r in market_rows if r.get("px")}),
@@ -428,7 +429,8 @@ def main():
                         f"today's news brief ({br['day']}): {br['tilt']}, {br['headline']}" if br.get("headline") else ""]
             if bearcheck.run(state, now_ms, D, keys, market_rows, backdrop, arch, picked):
                 jr = state.get("journal") or []
-                out["journal"] = {"summary": journal.summary(jr), "recent": list(reversed(jr[-30:])), "bear": bearcheck.summary(jr)}
+                out["journal"] = {**out["journal"], "summary": journal.summary(jr), "recent": list(reversed(jr[-30:])),
+                                  "bear": bearcheck.summary(jr)}
                 publish("alerts.json", out, vlt, in_ci)
                 publish("state.json", state.d, vlt, in_ci)
         except Exception as e:  # noqa: BLE001 - tracking only; never fails the run

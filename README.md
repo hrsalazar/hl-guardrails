@@ -928,7 +928,16 @@ here had touched: `python -m hlg.retest`, pre-registered in
 - **The data source isn't the cause:** on the same recent window, Binance gives the 4h rule *better* results than Hyperliquid (PF 1.50 vs 1.37).
 - **But the book still benefits:** the 4h stream raises its Sharpe in both periods (1d alone 0.79 → 1d + 4h 1.05 on Binance; 0.88 → 1.07 on Hyperliquid). The cost is a deeper drawdown (−12% → −32%).
 
-The decision on the 4h alerts is open. Nothing has changed.
+**Decision (2026-10-18): 4h stays live, on probation.** The kill rule, fixed before any counted trade
+(`scanner.probation` in `config.yaml`):
+- **Final check:** the 4h signals journalled from 2026-10-18 on are judged at 100 closed (about 6–7 months).
+- **Early exit:** if they make PF < 0.7 after 50, they're judged then.
+- **If it fires:** 4h alerts stop for good, the signals are still journalled, and only a config change restarts it.
+- **Why 100 and not 30:** with an edge this thin, 30 trades would kill a working rule a third to almost half of the
+  time by chance alone (resampled from the retest).
+
+The journal card tracks it, and every 4h alert carries a probation line. The 1d rule and the risk per trade are
+unchanged.
 
 ### 1d breakout on 2013–2019: holds on the live coins, not on the 2018 field
 

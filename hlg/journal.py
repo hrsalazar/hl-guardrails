@@ -23,6 +23,7 @@ Nothing is advised from this -- it is evidence being collected.
 
 Pure functions over plain dicts, so the journal lives in the encrypted state like everything else.
 """
+import pandas as pd
 MAX_ENTRIES = 300
 KEEP_CLOSED_MS = 120 * 86_400_000
 EARLY_BARS = 2
@@ -146,6 +147,25 @@ def side_summary(journal, side):
             "pf": pf, "win_rate": sum(r > 0 for r in rs) / len(rs) if rs else None,
             "avg_r": sum(rs) / len(rs) if rs else None, "kill_n": SHORT_KILL_N,
             "retired": len(done) >= SHORT_KILL_N and pf is not None and pf < 1.0}
+
+
+def probation(journal, tf, cfg):
+    """A timeframe on probation (docs/research/binance-retest.md): its long signals journalled since
+    cfg["since"], closed, in R. Retired when PF < min_pf after n closed, or PF < early_pf after early_n
+    (a clear failure). Fixed before the first counted trade; the caller makes retirement stick."""
+    since = int(pd.Timestamp(cfg["since"], tz="UTC").timestamp() * 1000)
+    done = [e for e in journal if e.get("tf") == tf and e.get("side", "L") == "L" and (e.get("added") or 0) >= since
+            and e["status"] in ("stopped", "time") and e.get("r") is not None]
+    rs = [e["r"] for e in done]
+    w, l = sum(r for r in rs if r > 0), -sum(r for r in rs if r < 0)
+    pf = w / l if l else (None if not rs else 99.0)
+    n = len(done)
+    early = n >= cfg["early_n"] and pf is not None and pf < cfg["early_pf"]
+    final = n >= cfg["n"] and pf is not None and pf < cfg["min_pf"]
+    return {"tf": tf, "since": cfg["since"], "closed": n, "pf": pf, "avg_r": sum(rs) / n if n else None,
+            "n": cfg["n"], "min_pf": cfg["min_pf"], "early_n": cfg["early_n"], "early_pf": cfg["early_pf"],
+            "retired": bool(early or final), "why": "early" if early else "final" if final else None,
+            "passed": n >= cfg["n"] and not final}
 
 
 def summary(journal):

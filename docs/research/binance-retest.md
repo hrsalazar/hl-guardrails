@@ -99,3 +99,15 @@ This is a confirmation of rules that are already live, so the bars ask whether t
 ## Decision (yours, per the pre-registration)
 
 The pre-registered consequence of R1 failing is a **proposal** to demote 4h signals. Nothing changes automatically. The options and trade-offs are in the README entry for this retest.
+
+**Decided 2026-10-18: probation.** 4h alerts stay live under a kill rule fixed before any counted trade.
+
+**The rule:**
+- **Which trades count:** 4h long signals journalled from 2026-10-18.
+- **Final check:** retired if PF < 1.0 after 100 closed.
+- **Early exit:** retired if PF < 0.7 after 50 closed.
+- **Sticky:** retirement holds until the config changes.
+
+**Why 100:** resampling the retest's own trades, 30 trades would show PF < 1.0 by chance 44% of the time if the rule's true PF is 1.17, and 31% if it's 1.38. At 100 trades that falls to 33% and 16%. The early exit at 50 / PF < 0.7 catches a clear failure without that coin flip.
+
+Risk per trade is unchanged at 1.0%.

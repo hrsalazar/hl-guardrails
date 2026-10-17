@@ -1110,6 +1110,14 @@ def test_post_mortems_mark_each_closed_trade_and_give_one_lesson(page, base_url)
     expect(page.locator("#reviewcard")).to_contain_text("Plan followed")
 
 
+def test_the_4h_probation_tracker_shows_progress_and_the_kill_rule(page, base_url):
+    page.goto(url(base_url, "full"))
+    t = page.locator("#jprob-4h")
+    expect(t).to_contain_text("4h on probation")
+    expect(t).to_contain_text("12 of 100 closed since 2026-10-18 · PF 1.21")
+    expect(t).to_contain_text("alerts stop if PF < 1 at 100, or < 0.7 at 50")
+
+
 def test_the_bear_check_is_tracked_in_the_journal_and_its_text_is_inert(page, base_url):
     page.goto(url(base_url, "full"))
     jb = page.locator("#jbear")

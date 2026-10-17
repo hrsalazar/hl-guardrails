@@ -196,6 +196,30 @@ def shorts_retired(state):
     return journal.side_summary((state.get("journal") if state is not None else None) or [], "S")["retired"]
 
 
+def probation_status(state, S, now_ms=None):
+    """{tf: journal.probation(...)} for every timeframe on probation (scanner.probation). Once a
+    timeframe is retired it stays retired (state "probation_retired") until the config changes: a
+    later recovery must not flip alerts back on."""
+    from . import journal
+
+    out = {}
+    jr = (state.get("journal") if state is not None else None) or []
+    stuck = dict((state.get("probation_retired") if state is not None else None) or {})
+    for tf, cfg in (S.get("probation") or {}).items():
+        s = journal.probation(jr, tf, cfg)
+        prev = stuck.get(tf)
+        if prev and prev.get("since") == cfg["since"]:
+            s.update(retired=True, why=prev.get("why"), retired_at=prev.get("t"), retired_closed=prev.get("closed"),
+                     retired_pf=prev.get("pf"))
+        elif s["retired"] and state is not None:
+            stuck[tf] = {"since": cfg["since"], "why": s["why"], "t": now_ms, "closed": s["closed"], "pf": s["pf"]}
+            state.set("probation_retired", stuck)
+            s.update(retired_at=now_ms, retired_closed=s["closed"], retired_pf=s["pf"])
+            log.info("probation: %s retired (%s)", tf, s["why"], extra={"safe": True})
+        out[tf] = s
+    return out
+
+
 def analyse_breakout(inf, coin, S, ctx, tf=None, cache=None, px=None, now_ms=None, bars_out=None):
     """cache: {"coin|tf": bar_stats} reused until the next bar closes, so a 15-minute run only pulls
     candles when there is a new bar to evaluate. px: live price (allMids) -- otherwise the live
@@ -438,6 +462,7 @@ def run_once(cfg, inf, notif, state):
     coins = resolve_coins(inf, S, U, ctx, state, open_coins, cache)
     urank = {c: i + 1 for i, c in enumerate(coins)} if U["mode"] == "auto" else {}
     rows, bars_out = [], {}
+    prob = probation_status(state, S, now_ms)
     for coin in coins + [w for w in watch if w not in coins]:
         c_ctx = ctx.get(coin, {"funding": 0})
         for tf in breakout_tfs:
@@ -498,6 +523,12 @@ def run_once(cfg, inf, notif, state):
                                     f"RALLY SHORT {coin} 1d · size {size:.4g} (~{size * a['px']:,.0f} USD) · stop {a['stop']:.5g}"),
                            valid_until=a["valid_until"], coin=coin, tf="1d", level=a["level"], side="S",
                            signal_close=a["signal_close"], atr=a["atr"])
+            elif a["setup"] and a.get("rr") is None and prob.get(a["tf"], {}).get("retired"):
+                pr = prob[a["tf"]]
+                rpf = pr.get("retired_pf")
+                a["rejected"], a["setup"] = (f"{a['tf']} alerts retired by probation (since {pr['since']}: "
+                                             f"{pr.get('retired_closed')} closed" + (f", PF {rpf:.2f}" if rpf is not None else "")
+                                             + ")"), None
             elif a["setup"] and a.get("rr") is None:  # breakout strategy
                 dist = abs(a["px"] - a["stop"])
                 size = min(risk_usd / dist, equity * R["max_leverage"] / a["px"])
@@ -515,6 +546,11 @@ def run_once(cfg, inf, notif, state):
                     f"  rules: limit entry near open (maker), stop placed BEFORE entry, no adds if red, no target - let the trail work"
                 )
                 msg += base_rate_note(a["tf"])
+                pr = prob.get(a["tf"])
+                if pr:
+                    msg += (f"\n  probation: {pr['closed']}/{pr['n']} {a['tf']} signals closed since {pr['since']}"
+                            + (f", PF {pr['pf']:.2f}" if pr["pf"] is not None else "")
+                            + f" - {a['tf']} alerts stop if PF < {pr['min_pf']:g} at {pr['n']} (or < {pr['early_pf']:g} at {pr['early_n']})")
                 if mac:
                     msg += f"\n  macro: {mac['label']} (HY {mac['hy']:.2f}, VIX {mac['vix']:.1f}) - context only, not part of the rule"
                 if a.get("liq"):

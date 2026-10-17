@@ -4,6 +4,12 @@ Dates are UTC. For the details and reasoning, see the commit messages.
 
 ## 2026-10-18
 
+- **4h breakout on probation** (after the Binance retest).
+  - **What doesn't change:** 4h alerts stay live, with the same risk.
+  - **The kill rule, fixed now:** the 4h signals journalled from today are judged at 100 closed, and retired if PF < 1.0, or earlier if PF < 0.7 after 50. Retirement is sticky; the signals keep being journalled.
+  - **Why 100:** 30 trades would kill a working rule 31–44% of the time by chance.
+  - **Where it shows:** `scanner.probation` in config.yaml, a probation line on every 4h alert, and a tracker on the journal card.
+
 - **1d breakout on 2013–2019** (`python -m hlg.deephistory`, pre-registered in docs/research/deep-history-test.md): free spot history from before any window used here, with perp-like funding charged.
   - **Live coins (BTC, ETH, XRP, ZEC, LINK), 2013–2019: confirmed.** PF 2.58 over 104 trades, bootstrap p5 1.75.
   - **The 2018 top-20 field (14 coins, many since faded), 2017–2019: fails.** PF 1.59 overall, but 0.86 in its second half.
