@@ -930,6 +930,24 @@ here had touched: `python -m hlg.retest`, pre-registered in
 
 The decision on the 4h alerts is open. Nothing has changed.
 
+### 1d breakout on 2013–2019: holds on the live coins, not on the 2018 field
+
+`python -m hlg.deephistory`, pre-registered in [docs/research/deep-history-test.md](docs/research/deep-history-test.md).
+It ran on free spot history from before any window used here (Bitstamp, Bitfinex, Binance spot and Coinbase), and
+charged a perp-like 11.5%/yr funding cost throughout.
+
+| Set | Window | Trades | PF | Halves | Verdict |
+|---|---|---:|---:|---|---|
+| **Live coins** (BTC, ETH, XRP, ZEC, LINK) | 2013 → 2019 | 104 | **2.58** | 7.12 / 1.21 | **confirmed** (bootstrap p5 1.75) |
+| **The 2018 top-20 field** (14 coins, incl. BTG, NEO, EOS, NANO, ICX) | 2017 → 2019 | 87 | 1.59 | 2.67 / **0.86** | **fails** |
+
+- **Positive in every window:** with this test, the daily rule has been positive from 2013 to now on the coins it trades. BTC alone agrees across three venues (PF 2.3–3.9).
+- **Its profit is a bull-market profit:**
+  - **Bear years:** 2014 and 2018 lost (2018: PF 0.08 on 9 trades). The uptrend filter kept the damage to −14% at worst.
+  - **The wider 2018 field:** 2017's gains were given back in 2018–19 on coins that later faded, and the rule beat random uptrend entries only at the 56th percentile there.
+- **The survivorship lesson:** today's coin list makes the rule look better than a list chosen at the time would have.
+- **Proposed (your call):** no change to the 1d rule or its risk, since the bleed was small (−9% drawdown). Expect bear years to be flat or slightly negative.
+
 ### Capitulation long: buy the liquidation flush — tested, not adopted
 
 A different source of profit from the breakout: after a forced-selling flush, price partly snaps back.

@@ -2,6 +2,14 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-18
+
+- **1d breakout on 2013–2019** (`python -m hlg.deephistory`, pre-registered in docs/research/deep-history-test.md): free spot history from before any window used here, with perp-like funding charged.
+  - **Live coins (BTC, ETH, XRP, ZEC, LINK), 2013–2019: confirmed.** PF 2.58 over 104 trades, bootstrap p5 1.75.
+  - **The 2018 top-20 field (14 coins, many since faded), 2017–2019: fails.** PF 1.59 overall, but 0.86 in its second half.
+  - **Reading:** the profit is a bull-market profit (bear years 2014 and 2018 lost, but little), and today's coin list flatters the rule.
+  - **Proposed:** no change to the 1d risk.
+
 ## 2026-10-16
 
 - **Free data layer** (`hlg/sources.py`), research only:
