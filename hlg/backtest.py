@@ -365,6 +365,9 @@ def signal(k, V):
             a = getattr(k, "atr_prev", np.nan)
             ok = (not np.isnan(a) and a > 0 and k.c <= k.c_prev - V["cap_drop_atr"] * a and k.h - k.l >= V["cap_range_atr"] * a
                   and getattr(k, "vol_x", 0) >= V["cap_vol_x"] and k.close_loc >= V["cap_close_loc"])
+            if ok and V.get("cap_oi_max") is not None:  # OI-confirmed (capitulation-oi-retest): missing OI = no signal
+                oc = getattr(k, "oi_chg", np.nan)
+                ok = not pd.isna(oc) and oc <= V["cap_oi_max"]
             if ok:
                 stop = k.l - V["cap_stop_atr"] * a
                 return "L", stop, px + V["cap_target_r"] * (px - stop)

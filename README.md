@@ -975,8 +975,15 @@ A different source of profit from the breakout: after a forced-selling flush, pr
 
 **Neither timeframe passes.** One lead, information only: on the 1d capitulations, Bybit's free open-interest
 history showed that those where OI also fell ≥ 5% (the liquidation footprint) made PF 1.84 (38 trades), against
-0.31 for the 8 where it didn't. Settling it needs more events, from Binance's archive back to 2020, in a second
-pre-registered test.
+0.31 for the 8 where it didn't.
+
+**The lead didn't hold. Retested 2026-10-18; the idea is closed.** The OI-confirmed version was fixed in advance
+(`python -m hlg.capitulation_oi`, [docs/research/capitulation-oi-retest.md](docs/research/capitulation-oi-retest.md))
+and judged on untouched 2020–2023 data:
+- **Coverage:** 30 coins, with Binance prices and Bybit OI.
+- **Result:** PF 0.31 over 28 trades, at the 0th percentile against buying any red day.
+- **The reversal:** it did worse than the capitulations the OI condition removed (PF 1.08).
+- **A likely reason:** the OI-flush days of 2021–22 (May 2021, LUNA, FTX) were the start of longer falls, not bottoms.
 
 ### Data sources beyond Hyperliquid (checked 2026-10-16)
 

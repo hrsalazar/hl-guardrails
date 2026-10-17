@@ -44,3 +44,20 @@ def test_the_simulator_takes_the_stop_before_the_target_and_times_out_after_thre
     assert cap.sim(df, 0, 95.0, 107.5, 0.0) == -1.0           # bar 1 hits both: the stop counts
     calm = df.assign(h=101.0, l=99.0)
     assert cap.sim(calm, 0, 95.0, 107.5, 0.0) == 0.0          # out at the close 3 days after entry
+
+
+def test_the_oi_confirmed_variant_needs_oi_down_5pct_and_treats_missing_oi_as_no_signal():
+    V2 = {**V, "cap_oi_max": -0.05}
+    k = flush()
+    assert bt.signal(k, V2) is None                                  # no oi_chg column: missing -> no signal
+    assert bt.signal(pd.Series({**k, "oi_chg": -0.08}), V2)[0] == "L"      # OI fell 8%: confirmed
+    assert bt.signal(pd.Series({**k, "oi_chg": -0.02}), V2) is None          # only 2%: not a flush
+
+
+def test_oi_change_is_the_close_snapshot_over_the_open_snapshot():
+    from hlg import capitulation_oi as coi
+    idx = pd.date_range("2024-01-01", periods=3, freq="1D", tz="UTC")
+    df = pd.DataFrame({"c": [1.0, 1.0, 1.0]}, index=idx)
+    oi = pd.Series([100.0, 90.0, 99.0], index=idx)
+    ch = coi.oi_change(df, oi)
+    assert abs(ch.iloc[0] - (-0.10)) < 1e-12 and abs(ch.iloc[1] - 0.10) < 1e-12 and np.isnan(ch.iloc[2])
