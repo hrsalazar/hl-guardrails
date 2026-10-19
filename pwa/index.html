@@ -276,6 +276,10 @@ button:active{transform:scale(.97)}
 .dots i{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--blue)}
 .dots i.no{background:transparent;box-shadow:inset 0 0 0 2px var(--red)}
 .dots i.l{background:var(--axis)}
+.reframe{margin:-2px 0 12px;color:var(--text-2);font-size:13.5px;line-height:1.45}
+.unote{display:flex;flex-direction:column;gap:4px;margin:10px 0 2px;font-size:13px}
+.unote input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text)}
+.mine textarea{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);resize:vertical}
 .why{margin:4px 0 0;font-size:14px;font-style:italic;color:var(--text-2)}
 .msnote{margin:10px 0 0;padding:8px 12px;border-radius:12px;font-size:13.5px;background:color-mix(in srgb,var(--teal) 12%,var(--surface-2));border:1px solid color-mix(in srgb,var(--teal) 35%,var(--line))}
 @media (prefers-reduced-motion: no-preference){.msnote{animation:msin .6s ease-out}}
@@ -742,9 +746,9 @@ function lineChart(el,pts,{h=150,fmtY=v=>fmt(v),fmtX=t=>new Date(t).toLocaleStri
 // rewards (Oulasvirta et al. 2012), so "nothing new since your last look" is said out loud.
 // own tiny store: this block runs at load, before the alert list's `store` const is initialised
 const kv=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
-let prevLook=null;
+let prevLook=null,VISIT=0;
 const localDay=(t=Date.now())=>{const x=new Date(t);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`};
-function markLook(){prevLook=kv('hlgLastLook')||prevLook;kv('hlgLastLook',Date.now());
+function markLook(){VISIT++;prevLook=kv('hlgLastLook')||prevLook;kv('hlgLastLook',Date.now());
   const L=kv('hlgLooks')||{},k=localDay();L[k]=(L[k]||0)+1;
   const keep=Object.keys(L).sort().slice(-60);kv('hlgLooks',Object.fromEntries(keep.map(x=>[x,L[x]])))}
 markLook();
@@ -799,8 +803,102 @@ function newsLine(d){const n=newsSoon(d);
 // done. Counts are cumulative and forgiving -- a slip day never resets anything (Lally et al. 2010:
 // one missed day didn't hurt habit formation; all-or-nothing streaks invite the abstinence-violation
 // "what the hell" spiral). A slip is met with self-compassion (Breines & Chen 2012), not a red X.
+// Rotation (README "Discipline aids"): the same sentence read for the tenth time stops registering
+// (habituation; advertising's "wear-out"). So every message here comes from a pool, picked by how
+// relevant it is to your data right now; what you saw recently steps back (a day, three, a week),
+// the last one shown never repeats, and a pick holds for the visit so it doesn't flicker. Still no
+// model and nothing leaves the device: fixed text, your numbers, your own words.
+const seenLog=()=>kv('hlgSeen')||{};
+const rotMemo={};
+function rotate(ns,pool,d,n=1,hold=true){
+  const key=ns+'|'+VISIT+'|'+pool.map(it=>it.id).join('');   // a changed pool (an edited reason) re-picks
+  if(hold&&rotMemo[key])return rotMemo[key];
+  const seen=seenLog(),s=seen[ns]||{},last=s._last,now=Date.now();
+  const picks=pool.map(it=>{const w=typeof it.w==='function'?it.w(d):(it.w==null?1:it.w);if(!(w>0))return null;
+      const txt=it.text(d);if(!txt)return null;
+      const age=s[it.id]?(now-s[it.id])/864e5:99;
+      return {id:it.id,txt,sc:w-(age<1?3:age<3?1.5:age<7?.5:0)+Math.random()*.6-(it.id===last&&pool.length>1?100:0)}})
+    .filter(Boolean).sort((a,b)=>b.sc-a.sc).slice(0,n);
+  picks.forEach(x=>s[x.id]=now);if(picks[0])s._last=picks[0].id;
+  seen[ns]=Object.fromEntries(Object.entries(s).sort((a,b)=>(b[1]>a[1]?1:-1)).slice(0,120));kv('hlgSeen',seen);
+  rotMemo[key]=picks;return picks}
+const hmLocal=t=>new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+const lateNight=()=>{const h=new Date().getHours();return h>=23||h<6};
+const weekendNow=()=>{const g=new Date().getDay();return g===0||g===6};
+// your own notes from urges you waited out ("what helped?"), newest first
+const urgeNotes=()=>urgeLog().filter(x=>x.note).reverse();
+// reframes under your why: one at a time, from your own record
+const REFRAMES=[
+  {id:'plandays',w:d=>{const P=planDays(d);return P&&P.n>=3?1+(P.kept/P.n>=.7?.5:0):0},
+   text:d=>{const P=planDays(d);return `${P.kept} of your last ${P.n} days were on plan. Side income is built out of boring days, kept.`}},
+  {id:'series',w:d=>(((d.journal||{}).summary||{}).curve||[]).length>=5?1:0,
+   text:d=>{const cv=(((d.journal||{}).summary||{}).curve||[]).slice(-20),w=cv.filter(x=>x.r>0).length,net=cv.reduce((s,x)=>s+x.r,0);
+     return `The strategy's last ${cv.length} trades: ${w} won, ${cv.length-w} lost, net ${net>=0?'+':'−'}${fmt(Math.abs(net),1)}R. It doesn't need to be right often, and neither do you.`}},
+  {id:'waited',w:()=>waitedAll()>=3?1:0,text:()=>`You've waited out ${waitedAll()} urges so far. Not one of them was a trade the plan needed.`},
+  {id:'neveradd',w:d=>(d.behavior||{}).never_n?1+(losingPos(d).length?1:0):0,
+   text:d=>{const B=d.behavior;return `The trades you never added to while losing netted ${money(B.never_net,true)}. Not adding is part of the income.`}},
+  {id:'oner',w:d=>d.equity?.8:0,text:d=>`Today 1R is $${fmt(d.equity*((d.rules||{}).risk_per_trade_pct||1)/100)}. A loss that size, taken as planned, is a cost of the business, not a verdict on you.`},
+  {id:'gap',w:d=>{const S=sigStats(d);return S.last&&S.gap?(nowMode(d).k==='wait'?1.5:.5):0},
+   text:d=>{const S=sigStats(d),g=(Date.now()-S.last)/864e5;return `${fmt(g,1)} days since the last signal; the usual gap is about ${fmt(S.gap,1)}. Quiet stretches are part of the plan, not a flaw in it.`}},
+  {id:'nextclose',w:d=>nowMode(d).k==='wait'?1:0,text:d=>`Nothing can signal before ${untilNext(d)}. That's the only appointment today.`},
+  {id:'late',w:()=>lateNight()?3:0,text:()=>`It's ${hmLocal(Date.now())}. Tired decisions are the expensive ones, and the next close will still be there in the morning.`},
+  {id:'weekend',w:()=>weekendNow()?1.2:0,text:()=>`It's the weekend: thinner books, sharper wicks. The plan doesn't need you here.`},
+  {id:'looks',w:()=>{const L=kv('hlgLooks')||{},k=localDay(),p=Object.keys(L).filter(x=>x!==k).map(x=>L[x]).sort((a,b)=>a-b);
+     return p.length>=7&&(L[k]||0)>p[p.length>>1]+1?2.5:0},
+   text:()=>{const L=kv('hlgLooks')||{},k=localDay(),p=Object.keys(L).filter(x=>x!==k).map(x=>L[x]).sort((a,b)=>a-b);
+     return `Look number ${L[k]} today, against your usual ${p[p.length>>1]}. What are you hoping to see?`}},
+  {id:'note',w:()=>urgeNotes().length?1.5:0,text:()=>{const n=urgeNotes()[0];return `You, after waiting one out on ${new Date(n.t).toLocaleDateString([], {month:'short',day:'numeric'})}: “${n.note}”`}},
+  // from the replicated wallet studies (docs/research): other traders, same habits
+  {id:'w_tail',w:.5,text:()=>'Across 138 Hyperliquid wallets, the worst 5% of each trader\'s positions caused about half of their losses. The job is keeping that 5% small.'},
+  {id:'w_stop',w:.5,text:()=>'In the wallet study, 90% of liquidated positions had no stop. A stop doesn\'t make you profitable; it keeps one trade from ending the account.'},
+  {id:'w_add',w:.5,text:()=>'In 2 of 3 wallets, the trader\'s averaged-down positions won less often than their other adds. Same trader, same habit; the difference was adding below the entry.'},
+];
+// prompts while the pause ring runs: matched to the urge you named, then general ones
+const PAUSE=[
+  ...[['g1','Notice where you feel it. You don\'t have to act on it.'],['g2','Urges rise, peak and pass, like a wave. Just watch this one.'],
+    ['g3','The market will still be there in a minute. So will the next setup.'],['g4','Breathe out slowly. Nothing needs doing in the next few seconds.'],
+    ['g5','Name it to yourself: this is an urge, not information.'],['g6','Unclench your jaw, drop your shoulders. Then keep reading.'],
+    ['g7','An urge is about the next minute. Your plan is about the next twenty trades.'],['g8','If this were a friend\'s account, what would you tell them right now?'],
+    ['g9','Nothing you do in the next minute makes the setup arrive sooner.'],['g10','Count three slow breaths. The urge usually peaks before the third.']]
+    .map(([id,t])=>({id,r:null,t})),
+  ...[['m1','moving','Missing a move costs nothing. Chasing one costs 1R or more.'],['m2','moving','The move you\'re watching has already happened. The plan only pays for the next one.'],
+    ['m3','moving','Price runs without you every week. The edge is in the setups, not in the runs.'],
+    ['b1','bored','Boredom isn\'t a signal. It\'s what waiting feels like.'],['b2','bored','Quiet markets are when the account is safest. Let it be safe.'],
+    ['b3','bored','The chart is built to be checked. The plan doesn\'t need checking.'],
+    ['w1','winback','The last trade is closed. This one doesn\'t know about it.'],['w2','winback','Trying to get it back is how one loss becomes two.'],
+    ['w3','winback','The loss is already paid. Don\'t pay it twice.'],
+    ['a1','add','Adding makes the position bigger, not better.'],['a2','add','If it\'s below your entry, the only order it needs is the stop.'],
+    ['a3','add','Would you open this trade fresh, at this size, right now? That\'s the real question.'],
+    ['s1','signal','A real setup comes with an entry, a stop and a size. Check those, not the chart.'],['s2','signal','If it\'s a valid signal, it will still be valid in ninety seconds.'],
+    ['c1','chart','Projecting the next candle is a guess dressed up as analysis.'],['c2','chart','Your charting window is later. Not never: later.']]
+    .map(([id,r,t])=>({id,r,t}))];
+function pausePrompts(d,reason){
+  const pool=PAUSE.map(p=>({id:p.id,w:p.r===reason?2.5:p.r?0:1,text:()=>p.t}));
+  if(losingPos(d).length)pool.push({id:'x_red',w:2,text:()=>'Something you hold is in the red. That\'s exactly when this pause matters most.'});
+  if(lateNight())pool.push({id:'x_late',w:2,text:()=>'It\'s late. Decisions made tired are the expensive ones.'});
+  urgeNotes().slice(0,8).forEach(n=>pool.push({id:'n'+n.t,w:2.2,text:()=>`You, another time: “${n.note}”`}));
+  return rotate('pause',pool,d,4,false).map(x=>x.txt)}
+// the second sentence after "The plan says wait."
+const VERDICT=[['v1','Closing the app is the trade today.'],['v2','Not trading is a position too, and it\'s the one the plan holds.'],
+  ['v3','Today the job is to do nothing, well.'],['v4','Protecting the account is the win on offer right now.'],
+  ['v5','The setup comes to you; you don\'t have to go looking.'],['v6','Walk away while it\'s easy.'],
+  ['v7','A trade you don\'t need is a cost with no edge behind it.']].map(([id,t])=>({id,text:()=>t}));
+// your pattern for the urge you named: how often, how it went, and whether a setup followed
+const RLAB=Object.fromEntries([['moving','Price is moving without me'],['bored','Bored — nothing is happening'],['winback','Win back a loss'],
+  ['add','Add to a position I hold'],['signal','A setup signalled'],['chart','Look at charts, project the price']]);
+function urgePattern(d,reason){
+  const u=urgeLog().filter(x=>x.reason===reason&&x.t>=Date.now()-30*864e5);if(u.length<2)return '';
+  const w=u.filter(x=>x.outcome==='waited').length;
+  let tail='';
+  if(['moving','bored','chart'].includes(reason)){
+    const sig=((d.journal||{}).recent||[]).map(e=>e.sig_t).filter(Boolean);
+    const old=u.filter(x=>x.t<Date.now()-864e5);
+    if(old.length>=2){const k=old.filter(x=>sig.some(t=>t>x.t&&t<=x.t+864e5)).length;
+      tail=` After ${k} of the ${old.length} older ones, a setup signalled within a day${k?'':': the moments that pulled you weren\'t setups'}.`}}
+  return `“${RLAB[reason]}” — ${u.length} times in 30 days, waited out ${w}.${tail}`}
 const WHY0='I trade for side income, not to be right.';
 const mine=()=>({why:WHY0,swap:'',win:null,...(kv('hlgMine')||{})});
+const whys=()=>{const r=String(mine().why||'').split('\n').map(x=>x.trim()).filter(Boolean);return r.length?r:[WHY0]};
 const waitedAll=()=>Math.max(kv('hlgWaitedN')||0,urgeLog().filter(x=>x.outcome==='waited').length);
 // the charting window: by default the 15 minutes after the daily close, in your local time
 function chartWin(now=Date.now()){
@@ -855,7 +953,7 @@ function looksLine(){const L=kv('hlgLooks')||{},k=localDay(),past=Object.keys(L)
 function mineForm(){const M=mine(),W=chartWin(),hh=new Date(W.a);
   const tv=M.win||`${String(hh.getHours()).padStart(2,'0')}:${String(hh.getMinutes()).padStart(2,'0')}`;
   return `<div class="mine"><h4>Your why and your plans <span class="mut">— on this device</span></h4>`
-    +`<label>Why I trade<input id="mywhy" maxlength="140" value="${esc(M.why)}"></label>`
+    +`<label>Why I trade <span class="mut">— one reason per line; they take turns</span><textarea id="mywhy" rows="3" maxlength="600">${esc(M.why)}</textarea></label>`
     +`<label>When I want to open a chart, I will…<input id="myswap" maxlength="140" placeholder="e.g. take a 10-minute walk" value="${esc(M.swap)}"></label>`
     +`<label>My charting window (15 min)<input id="mywin" type="time" value="${tv}"></label></div>`}
 function bindMine(d){['mywhy','myswap','mywin'].forEach(id=>{const el=$('#'+id);if(!el)return;
@@ -891,9 +989,10 @@ function renderNow(d){
       +`${w} won, ${cv.length-w} lost, net ${net>=0?'+':'−'}${fmt(Math.abs(net),1)}R — the losses are how the edge gets paid.</div>`}
   const X=mkt(d);
   const I=dis.intentions||[];
-  const intent=I.length?I[Math.floor(Date.now()/36e5)%I.length]:null;  // a different plan each hour
+  const intent=I.length?rotate('intent',I.map((t,i)=>({id:'i'+i,text:()=>t})),d)[0].txt:null;
   const TL=todayLesson(d), open=kv('hlgNowMore')===true;
-  const P=planDays(d), MS=milestones(P), why=mine().why;
+  const P=planDays(d), MS=milestones(P), W=whys(), why=rotate('why',W.map(t=>({id:t,text:()=>t})),d)[0].txt;
+  const rf=rotate('reframe',REFRAMES,d)[0];
   const lapse=P&&P.lastSlip!=null?`<div class="since lapse">A slip on ${new Date(P.lastSlip).toISOString().slice(5,10)}. One slip is information, not a verdict: it doesn't undo the days before it. What set it off? The next signal is a fresh trade.</div>`:'';
   const msHtml=(MS.earned.length||MS.next.length)?`<div class="ms">${MS.earned.map(e=>`<span class="chip mschip">✦ ${e.w}</span>`).join('')}`
     +MS.next.slice(0,2).map(n=>`<div class="msnext"><span>Next: ${n.at} ${n.w}</span><b class="num">${n.v}/${n.at}</b><div class="meter" style="height:5px"><span style="width:${Math.min(100,n.v/n.at*100)}%;background:var(--teal)"></span></div></div>`).join('')+`</div>`:'';
@@ -901,7 +1000,7 @@ function renderNow(d){
   $('#now').innerHTML=`<div class="nowtop"><div class="mode"><i aria-hidden="true">${M.ic}</i>${M.word}</div>${since?`<div class="since">${since}</div>`:''}`
     +(reviewDue()?`<button class="duebtn" id="reviewcue">Weekly review due</button>`:'')+`</div>`
     +`<h2>${M.h}</h2>`
-    +(why?`<p class="why">“${esc(why)}”</p>`:'')
+    +(why?`<p class="why">“${esc(why)}”</p>`:'')+(rf?`<p class="reframe" id="reframe">${esc(rf.txt)}</p>`:'')
     +(MS.fresh?`<div class="msnote" role="status">✦ ${esc(MS.fresh.w)}. That's the habit forming, one quiet decision at a time.</div>`:'')
     +`<div class="glance"><div class="gt" id="decide"></div>${mktTile(d)}${sigTile}</div>`
     +newsLine(d)+planStrip(P)
@@ -938,8 +1037,7 @@ function urgeStart(d){
 }
 function urgePause(d,reason){
   const secs=Math.max(1,+((d.discipline||{}).pause_seconds)||90),R0=44,C=2*Math.PI*R0;
-  const prompts=['Notice where you feel it. You don\'t have to act on it.','Urges rise, peak and pass — like a wave. Just watch this one.',
-    'The market will still be there in a minute. So will the next setup.','Breathe out slowly. Nothing needs doing in the next few seconds.'];
+  const prompts=pausePrompts(d,reason);
   $('#urgebody').innerHTML=`<div class="step">2 of 3 · let it pass</div><h3 id="urgetitle">Ride the urge for ${secs} second${secs===1?'':'s'}</h3>`
     +`<svg class="ring" width="120" height="120" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="${R0}" fill="none" stroke="var(--surface-3)" stroke-width="8"/>`
     +`<circle id="ringarc" cx="60" cy="60" r="${R0}" fill="none" stroke="var(--blue)" stroke-width="8" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="${C}" stroke-dashoffset="0"/>`
@@ -968,12 +1066,15 @@ function urgeCheck(d,reason){
     ...(reason==='chart'?[`<li><span class="ic">i</span><span>${chartWinLine()}</span></li>`]:[]),
     item(reason!=='winback',reason==='winback'?'Winning back a loss isn\'t a setup. The last trade is over; this one has its own odds.':'Not trying to win back a loss.'),
     ...(mkt(d)?[`<li><span class="ic">i</span><span>Market: ${mkt(d).word}. ${esc(mkt(d).pull)} The strategy's odds are the same in every state.</span></li>`]:[]),
+    ...(urgePattern(d,reason)?[`<li><span class="ic">i</span><span id="upattern">${esc(urgePattern(d,reason))}</span></li>`]:[]),
     `<li><span class="ic">?</span><span>Is the stop decided <b>before</b> entry, and can you lose 1R ($${fmt(risk)}) on it without adding? Accept that loss now, or don't take the trade.</span></li>`];
   const go=live.length&&!locked&&!(reason==='add'&&losing.length);
   $('#urgebody').innerHTML=`<div class="step">3 of 3 · check it against the plan</div><h3 id="urgetitle">Does this trade pass?</h3><ul>${items.join('')}</ul>`
-    +`<div class="verdict">${go?'The plan allows this one — entry, stop and size as the alert says.':'The plan says wait. Closing the app is the trade today.'}</div>`
+    +`<div class="verdict">${go?'The plan allows this one — entry, stop and size as the alert says.':`The plan says wait. ${esc(rotate('verdict',VERDICT,d,1,false)[0].txt)}`}</div>`
+    +(!go&&urgeNotes().length?`<div class="since" id="unoteback">${esc(rotate('noteback',urgeNotes().slice(0,12).map(n=>({id:'n'+n.t,text:()=>`You, on ${new Date(n.t).toLocaleDateString([], {month:'short',day:'numeric'})}: “${n.note}”`})),d,1,false)[0].txt)}</div>`:'')
     +(!go&&mine().swap?`<div class="intent"><b>Your swap</b>${esc(mine().swap)}</div>`:'')
     +(go?'':`<button class="linkish" data-act="why">Why wait? A 1-minute lesson →</button>`)
+    +(go?'':`<label class="unote">A line for next time <span class="mut">(optional, stays on this device)</span><input id="unote" maxlength="140" placeholder="What helped? e.g. the walk worked"></label>`)
     +`<div class="row"><button data-act="${go?'proceed':'override'}">${go?'Proceed with the plan':'Trade anyway'}</button><button class="primary" data-act="waited">I'll wait</button></div>`;
   $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;
     if(b.dataset.act==='why'){lessonShow(d,LESSONS.find(L=>L.id===URGE_LESSON[reason])||todayLesson(d),reason);return}
@@ -981,7 +1082,8 @@ function urgeCheck(d,reason){
 }
 function urgeEnd(outcome,reason){
   clearInterval(urgeTimer);
-  if(outcome!=='closed'){const log=urgeLog();log.push({t:Date.now(),reason:reason||null,outcome});kv('hlgUrges',log.slice(-300))}
+  const note=(($('#unote')||{}).value||'').trim().slice(0,140);
+  if(outcome!=='closed'){const log=urgeLog();log.push({t:Date.now(),reason:reason||null,outcome,...(note&&outcome==='waited'?{note}:{})});kv('hlgUrges',log.slice(-300))}
   if(outcome==='waited')kv('hlgWaitedN',waitedAll()+1);
   const dlg=$('#urge');if(dlg.open)dlg.close();
   if(D)renderNow(D);

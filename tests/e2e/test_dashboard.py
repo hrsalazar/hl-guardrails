@@ -1244,3 +1244,47 @@ def test_a_rally_short_shows_as_a_short_signal_and_the_journal_tracks_its_kill_r
     sh = page.locator("#jshorts")
     expect(sh).to_contain_text("4 closed · 1 open · PF 1.40")
     expect(sh).to_contain_text("kill rule at 30")
+
+
+# ---------------------------------------------------------------------- rotation: fewer repeats, more relevance
+def test_the_reframe_under_your_why_changes_from_one_visit_to_the_next(page, base_url):
+    page.goto(url(base_url, "full"))
+    first = page.locator("#reframe").inner_text()
+    assert first.strip()
+    page.reload()
+    expect(page.locator("#reframe")).not_to_have_text(first)            # the last one shown never repeats
+
+
+def test_several_reasons_take_turns(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator("#now .nowmore summary").click()
+    page.locator("#mywhy").fill("Side income, not to be right.\nFor the house deposit.")
+    page.locator("#mywhy").blur()
+    seen = {page.locator("#now .why").inner_text()}
+    page.reload()
+    seen.add(page.locator("#now .why").inner_text())
+    assert seen == {"“Side income, not to be right.”", "“For the house deposit.”"}
+
+
+def _urge_wait(page, reason, note=None):
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name=reason).click()
+    expect(dlg).to_contain_text("Does this trade pass?", timeout=5000)
+    if note:
+        dlg.locator("#unote").fill(note)
+    dlg.get_by_role("button", name="I'll wait").click()
+    expect(dlg).to_be_hidden()
+
+
+def test_a_note_you_leave_comes_back_and_your_pattern_is_counted(page, base_url):
+    page.goto(url(base_url, "empty"))
+    _urge_wait(page, "Bored — nothing is happening", note="the walk worked")
+    _urge_wait(page, "Bored — nothing is happening")
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name="Bored — nothing is happening").click()
+    expect(dlg).to_contain_text("Does this trade pass?", timeout=5000)
+    expect(dlg.locator("#upattern")).to_contain_text("“Bored — nothing is happening” — 2 times in 30 days, waited out 2.")
+    expect(dlg.locator("#unoteback")).to_contain_text("“the walk worked”")
+    expect(dlg.locator(".verdict")).to_contain_text("The plan says wait.")

@@ -2,6 +2,19 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-19
+
+- **Discipline messages rotate instead of repeating** (README "Discipline aids", docs/research/behaviour-change.md §9: habituation, advertising wear-out, self-persuasion). Each message comes from a pool picked by relevance to your data; what you saw recently steps back, the last one never repeats, and a pick holds for the visit.
+  - **Your why:** several reasons, one per line, that take turns.
+  - **A reframe line under it**, from your own record: plan days, the series, urges waited out, never-added trades, 1R, signal gap, late night, weekend, looks today, and three wallet-study findings.
+  - **The pause:** ~30 prompts matched to the urge.
+  - **The check:** "your pattern" for that urge, including whether a setup followed within a day.
+  - **The verdict:** a rotating second sentence after "The plan says wait."
+  - **Your plans:** they rotate per visit instead of per hour.
+  - **Notes to your future self:** an optional one line after waiting an urge out, which comes back in later urges.
+
+  Still no model and nothing leaves the device. Service worker cache hlg-v41.
+
 ## 2026-10-18
 
 - **Capitulation retest with open interest** (`python -m hlg.capitulation_oi`, pre-registered in docs/research/capitulation-oi-retest.md): the 1d capitulation signal plus Bybit OI down ≥ 5% on the day, judged on 2020-01 → 2023-05, which this rule had never used. 30 coins.

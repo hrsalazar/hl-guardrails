@@ -102,6 +102,24 @@ urge nowhere to go, and a single breach becomes the abstinence-violation spiral.
 **charting window** turns "no" into "not now, at 11". The strategy only acts on bar closes, so a
 window after the daily close loses nothing.
 
+### 9. The same message, read often enough, stops working
+
+**Habituation:** a repeated stimulus draws less and less response. Two properties matter here:
+- **Spontaneous recovery:** the response comes back after a gap.
+- **Stimulus specificity:** a changed stimulus restores it.
+
+Rankin et al.'s 2009 restatement of the field covers both. Advertising research calls the same thing
+**wear-out**: after enough repetitions, a message stops persuading and can start to irritate (Pechmann &
+Stewart 1988). Two design rules follow:
+- **Vary the wording and space the repeats.** Nothing should be seen again the next day if something else
+  relevant is available.
+- **Make it specific to the moment.** A line about your own red position, or the hour, is a different
+  stimulus from a general maxim.
+
+**Self-persuasion** adds a third rule: reasons a person generates themselves change behaviour more
+durably than reasons they're given (Aronson 1999). So the most effective pool is your own words: several
+reasons for trading, and the notes you leave yourself after waiting an urge out.
+
 ## What shipped (Now card)
 
 | Feature | Evidence | Notes |
@@ -113,6 +131,7 @@ window after the daily close loses nothing.
 | **New urge reason**, "Look at charts, project the price" | §1, §6 | the check shows your charting window and your swap plan; its lesson is the slot-machine one |
 | **Charting window**, 15 minutes, by default at the daily close in your time | §8 | editable |
 | **Looks today vs your usual**, after a week of data | §1, §7 | "calmer than usual", or a pointer to the urge button; never shaming |
+| **Rotation, added 2026-10-19:** your why, a reframe line, the pause prompts, the verdict and your plans each draw from a pool, picked by relevance to your data | §9, §5, §7 | what you saw in the last day, three days or week steps back, the last one shown never repeats, and the pick holds for the visit. Several reasons of your own take turns; the pause has ~30 prompts matched to the urge you named; the check adds your pattern for that urge from the urge log; after waiting one out you can leave a one-line note that comes back in later urges. Fixed text plus your numbers and your words, nothing generated, nothing leaves the device |
 
 ## Deliberately not built
 

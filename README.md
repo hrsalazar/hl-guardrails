@@ -487,6 +487,24 @@ but your own open risk outranks it: an under-water position always brings the av
 The text is fixed and written here, not generated: the numbers are filled in by the browser from the
 decrypted data, so no figure of yours goes to a model or leaves the device. Which lessons you've read
 stays in browser storage, like the urge log.
+
+**Rotation, so the words don't wear out** (added 2026-10-19,
+[docs/research/behaviour-change.md](docs/research/behaviour-change.md) §9). A sentence read for the tenth time
+stops registering. So each message now comes from a pool, picked by relevance to your data at that moment.
+Anything seen in the last day, three days or week steps back, the last one shown never repeats, and the pick
+holds for the visit. The pools:
+- **Your reasons:** "Why I trade" takes several reasons, one per line, and they take turns.
+- **A reframe line under your why**, drawn from your own record:
+  - plan days, the strategy's last 20 trades, urges waited out, your never-added trades;
+  - 1R today, and the gap since the last signal;
+  - a late-night or weekend note, and looks today against your usual;
+  - three findings from the replicated wallet studies.
+- **The pause:** about 30 prompts, matched to the urge you named.
+- **The check:** your pattern for that urge from the urge log. For "price is moving", "bored" and "charts",
+  it also says how often a setup actually followed within a day.
+- **The verdict:** still opens "The plan says wait.", then a rotating second sentence.
+- **Notes to your future self:** after waiting an urge out, you can leave a one-line note ("the walk worked").
+  It comes back in later urges. Self-generated reasons persuade more than given ones.
 | **Your execution** (Signal journal) | your real fills matched to the journal's signals, hourly (`hlg/execution.py`):<br>• signals taken vs skipped, and what the skipped ones made;<br>• entry vs plan in ATR;<br>• when the stop went in: before the entry, minutes after, or never;<br>• size vs the rule's;<br>• off-plan positions that matched no signal, with their net | the backtest assumes perfect execution; this measures the gap, which is where this account's losses came from |
 | **Your read vs the rule** (prediction log) | on each live entry alert, one tap before it resolves: does it reach +1R before the stop? (yes/no, lean/sure). It's scored automatically from the journal against the rule's own rate (~50% on 4h, 56% on 1d), with a Brier score. Judged at 50; stored on this device | about half of entries reach +1R and no setup feature predicted which (signal-grade study). This tests whether your read of the chart adds anything, with your own numbers |
 | **Bear-case check** (Signal journal) | after each new long signal is pushed, one model call (`hlg/bearcheck.py`, the brief's key) writes the strongest case against it from the coin's archived headlines, funding, OI and the backdrop, and rates it low / medium / high. The rating is a column in the journal and the case is its tooltip. It is **never pushed and gates nothing**. Judged at 40 closed ([docs/research/bear-check.md](docs/research/bear-check.md)): it becomes one alert line only if *high* trades make PF < 1 and less than the rest in both halves | TradingAgents' bull/bear debate in its cheapest testable form. Price features couldn't grade signals (signal-grade study), and the headlines are what that study didn't see |
