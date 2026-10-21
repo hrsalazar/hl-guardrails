@@ -63,3 +63,20 @@ def test_ema_trend_enters_on_the_cross_and_leaves_when_the_trend_ends():
     T, _, _ = bt.run(bt.VARIANTS["ema_trend"], {"X": d}, {"X": pd.Series(dtype=float)},
                      {**bt.DEF, "start": "2020-01-01", "risk_pct": 1.0, "max_positions": 1})
     assert len(T) == 1 and T.iloc[0].why in ("stop", "trend") and T.iloc[0].days > 21   # no 21-day limit
+
+
+def test_a_signal_bar_s_risk_x_scales_the_position_size():
+    c = [100.0] * 60 + [100 + 2 * i for i in range(1, 30)]
+    d = bt.features(frame(c, start="2020-01-01").drop(columns="atr"), 1)
+    P = {**bt.DEF, "start": "2020-01-01", "risk_pct": 1.0, "max_positions": 1}
+    T1, _, _ = bt.run(bt.VARIANTS["breakout_long"], {"X": d}, {"X": pd.Series(dtype=float)}, P)
+    T2, _, _ = bt.run(bt.VARIANTS["breakout_long"], {"X": d.assign(risk_x=0.5)}, {"X": pd.Series(dtype=float)}, P)
+    assert abs(T2.notional.iloc[0] / T1.notional.iloc[0] - 0.5) < 0.01
+
+
+def test_btc_down_is_the_close_below_its_200_day_ema():
+    from hlg import regimesize as rs
+    idx = pd.date_range("2020-01-01", periods=400, freq="1D", tz="UTC")
+    s = pd.Series(np.r_[np.linspace(100, 200, 300), np.linspace(200, 100, 100)], index=idx)
+    d = rs.btc_down(s)
+    assert d.iloc[250] == False and d.iloc[-1] == True                      # noqa: E712

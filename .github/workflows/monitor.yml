@@ -19,6 +19,10 @@ on:
         description: "Regenerate the daily brief now (one paid model call)"
         type: boolean
         default: false
+      restore_from_run:
+        description: "Restore the state from the backup of this run id (docs/operations.md); leave empty normally"
+        type: string
+        default: ""
   push:
     branches: [main]
 
@@ -28,6 +32,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read   # only to download a state backup when restoring (restore_from_run)
 
 # One run at a time (two would race on the published state). A new run REPLACES the one in progress:
 # runs take under a minute and start 15 minutes apart, so this almost never cuts off a working run,
@@ -54,6 +59,13 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - if: inputs.restore_from_run != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: state-backup-${{ inputs.restore_from_run }}
+          run-id: ${{ inputs.restore_from_run }}
+          github-token: ${{ github.token }}
+          path: prev
       # The macro backdrop reads FRED's official API (FRED_API_KEY below): the keyless download,
       # fred.stlouisfed.org/graph/fredgraph.csv, read-times-out from Actions runners (10/10 at 30s).
       - name: Run guardrails + scanner
@@ -71,6 +83,8 @@ jobs:
           PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
           HLG_TEST_PUSH: ${{ inputs.test_push }}
           HLG_FORCE_DIGEST: ${{ inputs.force_digest }}
+          # set only on a restore run: read the previous state from the downloaded backup, not the site
+          HLG_PREV_DIR: ${{ inputs.restore_from_run != '' && 'prev' || '' }}
           # Daily macro brief (hlg.digest). Optional: either key works (OpenRouter preferred when both
           # are set); with neither, that step is skipped. Only public headlines and market data are
           # sent, never account data.
@@ -103,3 +117,27 @@ jobs:
       - id: deploy_retry
         if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v5
+      # Rolling backup of what was just published -- state, history, alerts and the headline archive,
+      # all ciphertext (hlg/vault.py) -- kept 30 days as a run artifact, from the runs in the 00:00 UTC
+      # hour. Restore: docs/operations.md "Restoring the state from a backup".
+      - id: when
+        run: echo "hour=$(date -u +%H)" >> "$GITHUB_OUTPUT"
+      - if: steps.when.outputs.hour == '00'
+        uses: actions/upload-artifact@v7
+        with:
+          name: state-backup-${{ github.run_id }}
+          path: |
+            site/state.json
+            site/history.json
+            site/alerts.json
+            site/news.json
+          if-no-files-found: ignore
+          retention-days: 30
+      # Dead-man's switch (optional): ping a free healthchecks.io check after a deployed run; when the
+      # pings stop, it emails you. Set the check's ping URL as the HEALTHCHECK_URL secret.
+      - name: Health ping
+        if: steps.deploy.outcome == 'success' || steps.deploy_retry.outcome == 'success'
+        env:
+          HC: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          if [ -n "$HC" ]; then curl -fsS -m 10 --retry 3 "$HC" > /dev/null || echo "health ping failed"; fi

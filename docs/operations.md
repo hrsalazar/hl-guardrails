@@ -107,6 +107,24 @@ For each phone or computer:
 | logs are quiet | open any run's *Run guardrails + scanner* step | ~3 lines: market, liquidations, `run ok: published encrypted` |
 | push works | manual run with the test box ticked | notification received; `push: N/N` |
 | daily brief works | the first run after 20:00 UTC | a `digest: N headlines from M/11 feeds via openrouter (model), … tokens` line; the Macro tab says "today" |
+| runs haven't silently stopped (optional) | a free [healthchecks.io](https://healthchecks.io) check: create one with period 30 min and grace 60 min, copy its ping URL, then `gh secret set HEALTHCHECK_URL --body <ping url>`. Every deployed run pings it | the check stays green; if runs stop, it emails you |
+| backups exist | Actions → a run from the 00:00 UTC hour → *Artifacts* | a `state-backup-<run id>` artifact (ciphertext only), kept 30 days |
+
+### Restoring the state from a backup
+
+The published state is the only copy of the journal, the brief's record and the headline archive. If it
+is ever lost or corrupted (not a passphrase change: that needs no restore):
+
+1. Find the newest good backup: Actions → *monitor* → a run from the 00:00 UTC hour with a
+   `state-backup-<run id>` artifact. Note its run id (the number in the run's URL).
+2. Run the monitor workflow by hand with **restore_from_run** set to that id, or from a terminal:
+   `gh workflow run monitor.yml -f restore_from_run=<run id>`.
+   That run reads the previous state from the backup instead of the site, then publishes as normal.
+3. Check the dashboard: the journal and the brief's record are back. Later runs carry on from it.
+
+A run that can't *read* the previous state (network error, 5xx, a truncated file) now stops without
+publishing (`previous … unreachable after retries`), so a transient fault can no longer overwrite the
+state with an empty one. You get the usual failure email, and the next run carries on.
 
 ## Troubleshooting
 
@@ -125,6 +143,7 @@ For each phone or computer:
 | Log shows `push: 1/1 device(s)` but nothing arrives | the home-screen app was removed and added again (a new subscription; the saved one is stale, and some push services keep accepting it), or a Focus / battery-saver mode | *Push* on that device, replace the secret, run the test push |
 | Updates only every few hours | the external scheduler stopped or its token expired | check the scheduler's history; renew the token |
 | Day/week PnL restarted | the passphrase changed, so previous state was unreadable | expected once; it recovers the next day or week |
+| Failure email, log says `previous state.json unreachable after retries` | the site didn't answer while the run read the last state; it stopped rather than overwrite it | nothing: the published state is intact and the next run continues. If it repeats for hours, check GitHub Pages status |
 | `gh` "not recognised as a cmdlet" | PATH not refreshed in that terminal | open a new terminal, or use the full path |
 | Stale UI after an update | service-worker cache | reload once; `sw.js` bumps its cache version on UI changes |
 | Macro tab: "No brief yet" | no `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`, or before 20:00 UTC | set a secret; the next run after 20:00 UTC writes one |

@@ -32,6 +32,8 @@ from . import (account, bearcheck, behavior, cascade_watch, digest, events, exec
 # urge check. Overridable in config.yaml -> discipline; written as the trader's own rules.
 DISCIPLINE = {
     "pause_seconds": 90,
+    "cooldown_hours": 4,     # tilt guard: the Now card's cool-down after a closed loss
+    "cooldown_day_r": 2,     # ... or after a red day of this many R
     "intentions": [
         "If a position is losing, then I check its stop is on the book - and do nothing else to it.",
         "If I feel the urge to trade and nothing has signalled, then I close the app until the next 4h close.",
@@ -57,14 +59,39 @@ NEWS = "news.json"   # the brief's headline archive (hlg.digest): research only,
 LOCKED_STUB = {"locked": "encryption not configured: set the DASHBOARD_PASSPHRASE secret"}
 
 
-def fetch_prev(site_url, name):
+class PrevUnavailable(RuntimeError):
+    """The previously published file exists but couldn't be read. Carrying on would publish an empty
+    journal, history and archive over the real ones, so the run stops instead (nothing is published,
+    the old site stays up, and the workflow's failure email says so)."""
+
+
+def fetch_prev(site_url, name, get=requests.get, tries=3, pause=3.0):
+    """The previously published file. None only when it was never published (404) or there is no site
+    yet; a network error, a 5xx or a truncated body is retried, then raises PrevUnavailable. On a
+    restore run (HLG_PREV_DIR), the file comes from the downloaded backup instead of the site."""
+    prev_dir = os.environ.get("HLG_PREV_DIR")
+    if prev_dir:
+        p = Path(prev_dir) / name
+        if not p.exists():
+            return None
+        try:
+            return json.loads(p.read_text())
+        except ValueError:
+            raise PrevUnavailable(name) from None
     if not site_url:
         return None
-    try:
-        r = requests.get(f"{site_url.rstrip('/')}/{name}", timeout=15)
-        return r.json() if r.ok else None
-    except (requests.RequestException, ValueError):
-        return None
+    for i in range(tries):
+        try:
+            r = get(f"{site_url.rstrip('/')}/{name}", timeout=15)
+            if r.status_code == 404:
+                return None
+            if r.ok:
+                return r.json()
+        except (requests.RequestException, ValueError):
+            pass
+        if i < tries - 1:
+            time.sleep(pause * (i + 1))
+    raise PrevUnavailable(name)
 
 
 def load_prev(raw, name, vlt):
@@ -204,8 +231,13 @@ def main():
     in_ci = os.environ.get("GITHUB_ACTIONS") == "true"
     OUT.mkdir(exist_ok=True)
 
-    raw = {n: fetch_prev(site_url, n) for n in FILES}
-    news_raw = fetch_prev(site_url, NEWS)
+    try:
+        raw = {n: fetch_prev(site_url, n) for n in FILES}
+        news_raw = fetch_prev(site_url, NEWS)
+    except PrevUnavailable as e:
+        log.error("previous %s unreachable after retries: stopping without publishing, so the published state "
+                  "is kept rather than overwritten with an empty one", e)
+        return 2
     pw = os.environ.get("DASHBOARD_PASSPHRASE")
     # reuse the published salt so the key is stable across runs (a device that unlocked stays so)
     salt = next((vault.salt_of(r) for r in raw.values() if vault.is_envelope(r)), None)

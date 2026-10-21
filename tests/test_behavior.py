@@ -121,3 +121,10 @@ def test_slip_days_are_the_utc_days_of_adds_to_a_loser():
              fill("BTC", "B", 55, 1, 1, 5 * D)]                                             # added while winning: fine
     closed, open_ = behavior.round_trips(fills)
     assert behavior.summarize(closed, open_, 6 * D)["slip_days"] == [2 * D]
+
+
+def test_summary_lists_every_closed_trade_for_the_danger_zones():
+    trades = [dict(coin="A", open=10, close=20, net=-5.0, adds_under=0, last_add_under=None, qty=2.0, avg=50.0),
+              dict(coin="B", open=30, close=40, net=7.0, adds_under=0, last_add_under=None, qty=1.0, avg=10.0)]
+    s = behavior.summarize(trades, [], 100)
+    assert s["trades"] == [{"o": 10, "c": 20, "net": -5.0, "size": 100.0}, {"o": 30, "c": 40, "net": 7.0, "size": 10.0}]

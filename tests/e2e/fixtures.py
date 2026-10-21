@@ -24,6 +24,22 @@ H = 3_600_000
 D = 24 * H
 
 
+
+def _zone_trades(gen):
+    H, D = 3_600_000, 86_400_000
+    out, t = [], gen - 170 * D
+    for i in range(40):
+        o = t + ((i * 7) % 24) * H
+        out.append({"o": o, "c": o + 20 * H, "net": 25.0 if i % 5 else -40.0, "size": 1000.0})
+        if i % 5 == 0:                                   # a revenge trade 30 minutes after that loss
+            o2 = o + 20 * H + 30 * 60_000
+            out.append({"o": o2, "c": o2 + 6 * H, "net": -110.0, "size": 1000.0})
+        if i % 7 == 3:                                   # an oversized one
+            o3 = o + 2 * D
+            out.append({"o": o3, "c": o3 + 10 * H, "net": -70.0, "size": 3000.0})
+        t += 4 * D
+    return sorted(out, key=lambda x: x["c"])
+
 def now_ms():
     return int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
 
@@ -316,7 +332,10 @@ def build_full(*, age_min=2, journal_closed=8):
                                 for i, (c, n, ok) in enumerate([("SOL", 120, True), ("ETH", -80, True), ("SUI", -900, False),
                                                                 ("BTC", 300, True), ("ZEC", -60, True), ("NEAR", -400, False),
                                                                 ("DOGE", 90, True), ("HYPE", -95, True), ("LINK", -1200, False),
-                                                                ("SOL", 210, True)])]},
+                                                                ("SOL", 210, True)])],
+                     # made-up round trips for the danger zones: steady small wins, except trades opened within an
+                     # hour of a closed loss and oversized ones, which lose; hours spread so no time-of-day effect
+                     "trades": _zone_trades(gen)},
         "discipline": {"pause_seconds": 1, "intentions": ["If a position is losing, then I check its stop is on the book."]},
         "cascades": {"resolved": 7, "hits": 3, "hit_rate": 3 / 7, "median_lead_days": 3.0, "median_better_atr": 1.5,
                      "watching": [{"coin": "SOL", "t": gen - 5 * H}, {"coin": "BTC", "t": gen - 9 * H}],

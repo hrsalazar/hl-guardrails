@@ -541,7 +541,7 @@ def run(V, data, fund, P):
             dist = abs(px - stop)
             if dist <= 0:
                 continue
-            sz = eq * P["risk_pct"] / 100 / dist
+            sz = eq * P["risk_pct"] * q.get("risk_x", 1.0) / 100 / dist   # risk_x: regime_sizing_study
             sz = min(sz, eq * P["max_lev"] / px)
             fee = sz * px * P["maker_fee"]
             eq -= fee
@@ -625,7 +625,9 @@ def run(V, data, fund, P):
             s = signal(k, Vk)
             if s:
                 side, stop, tgt = s
+                rx = getattr(k, "risk_x", 1.0)
                 pending[coin] = dict(side=side, stop=stop, tgt=tgt, sd=d, level=k.hi20, atr=k.atr, leg_lo=k.lo20,
+                                     risk_x=1.0 if pd.isna(rx) else float(rx),
                                      leg_hi=k.h, bars=0, mode={"open": "open", "confirm": "await", "fib": "fib", "stop": "stop"}[entry],
                                      trig=k.h if side == "L" else k.l)
     T = pd.DataFrame(trades)

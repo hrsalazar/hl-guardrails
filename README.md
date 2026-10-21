@@ -505,6 +505,27 @@ holds for the visit. The pools:
 - **The verdict:** still opens "The plan says wait.", then a rotating second sentence.
 - **Notes to your future self:** after waiting an urge out, you can leave a one-line note ("the walk worked").
   It comes back in later urges. Self-generated reasons persuade more than given ones.
+
+**Danger zones** (added 2026-10-21). Your own losing patterns, from your fills, in your local time:
+- **The patterns:** trades opened late at night (23:00–06:00), on a weekend, within 2 hours of closing a loss,
+  within a day of a big win, or at over 1.5× your usual size.
+- **When one shows:** only with at least 5 trades in it, and only if it costs you (negative on average, and
+  worse than your other trades).
+- **Where it shows:** the costliest ones are listed in the Now card's fold. When you're in one right now, the
+  reframe line and the urge check say so, with your own numbers.
+
+**Tilt guard.** After a closed loss (for `discipline.cooldown_hours`, 4 by default) or a red day of
+`cooldown_day_r` (2R), the Now card switches to **cool-down**: "the next trade comes from a signal, not from the
+loss". The urge check opens with it. **"Trade anyway"** still works, but asks for a one-line reason first, and
+the weekly review lists your overrides with their reasons. Nothing is blocked; the point is that overriding the
+plan is never silent.
+
+**State safety.** The published state is the only copy of the journal and the records.
+- **No empty overwrites:** a run that can't read it (network error, 5xx, a truncated file) now stops without
+  publishing, rather than overwrite it with an empty one.
+- **Backups:** encrypted backups from the 00:00 UTC runs are kept for 30 days, and restoring is one run
+  (docs/operations.md).
+- **Dead-man's switch (optional):** the `HEALTHCHECK_URL` secret emails you if runs stop.
 | **Your execution** (Signal journal) | your real fills matched to the journal's signals, hourly (`hlg/execution.py`):<br>• signals taken vs skipped, and what the skipped ones made;<br>• entry vs plan in ATR;<br>• when the stop went in: before the entry, minutes after, or never;<br>• size vs the rule's;<br>• off-plan positions that matched no signal, with their net | the backtest assumes perfect execution; this measures the gap, which is where this account's losses came from |
 | **Your read vs the rule** (prediction log) | on each live entry alert, one tap before it resolves: does it reach +1R before the stop? (yes/no, lean/sure). It's scored automatically from the journal against the rule's own rate (~50% on 4h, 56% on 1d), with a Brier score. Judged at 50; stored on this device | about half of entries reach +1R and no setup feature predicted which (signal-grade study). This tests whether your read of the chart adds anything, with your own numbers |
 | **Bear-case check** (Signal journal) | after each new long signal is pushed, one model call (`hlg/bearcheck.py`, the brief's key) writes the strongest case against it from the coin's archived headlines, funding, OI and the backdrop, and rates it low / medium / high. The rating is a column in the journal and the case is its tooltip. It is **never pushed and gates nothing**. Judged at 40 closed ([docs/research/bear-check.md](docs/research/bear-check.md)): it becomes one alert line only if *high* trades make PF < 1 and less than the rest in both halves | TradingAgents' bull/bear debate in its cheapest testable form. Price features couldn't grade signals (signal-grade study), and the headlines are what that study didn't see |
@@ -974,6 +995,20 @@ charged a perp-like 11.5%/yr funding cost throughout.
   - **The wider 2018 field:** 2017's gains were given back in 2018–19 on coins that later faded, and the rule beat random uptrend entries only at the 56th percentile there.
 - **The survivorship lesson:** today's coin list makes the rule look better than a list chosen at the time would have.
 - **Proposed (your call):** no change to the 1d rule or its risk, since the bleed was small (−9% drawdown). Expect bear years to be flat or slightly negative.
+
+### Half risk in BTC downtrends — tested, not adopted
+
+`python -m hlg.regimesize`, pre-registered in [docs/research/regime-sizing-study.md](docs/research/regime-sizing-study.md).
+The 1d breakout at 0.5% risk when BTC is below its 200-day EMA, against a flat 1.0%, in three windows on three
+sources (2013–19 spot, 2020–23 Binance, 2023+ Hyperliquid).
+
+**It failed in every window.**
+- **Little to cut:** only 12–18% of trades happen in BTC downtrends.
+- **No drawdown gain:** the drawdown barely moved (0–5% smaller), about the same as halving trades at random.
+- **It cost return where it mattered:** in two windows those trades did as well or better (PF 1.80, 3.14), so W3
+  lost a quarter of its return.
+
+This agrees with the market-state study: same odds in every state. Sizing stays flat.
 
 ### Capitulation long: buy the liquidation flush — tested, not adopted
 

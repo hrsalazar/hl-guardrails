@@ -249,7 +249,7 @@ button:active{transform:scale(.97)}
 /* ---- discipline aids: the Now card and the urge check (README "Discipline aids") --------------- */
 .now{position:relative;overflow:hidden;padding-left:20px}
 .now::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--blue)}
-.now.manage::before{background:var(--warn)}.now.locked::before{background:var(--crit)}.now.act::before{background:var(--good)}
+.now.manage::before{background:var(--warn)}.now.cool::before{background:var(--teal)}.now.locked::before{background:var(--crit)}.now.act::before{background:var(--good)}
 .now .mode{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.07em;color:var(--text-2)}
 .now .mode i{font-style:normal;font-size:14px}
 .now h2{font-size:clamp(20px,5vw,24px);font-weight:650;letter-spacing:-.01em;line-height:1.25;margin:6px 0 4px}
@@ -276,6 +276,7 @@ button:active{transform:scale(.97)}
 .dots i{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--blue)}
 .dots i.no{background:transparent;box-shadow:inset 0 0 0 2px var(--red)}
 .dots i.l{background:var(--axis)}
+.zones h4{margin:12px 0 4px;font-size:13px}.zones ul{margin:0;padding-left:18px;font-size:13px;color:var(--text-2)}
 .reframe{margin:-2px 0 12px;color:var(--text-2);font-size:13.5px;line-height:1.45}
 .unote{display:flex;flex-direction:column;gap:4px;margin:10px 0 2px;font-size:13px}
 .unote input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text)}
@@ -756,6 +757,46 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 const urgeLog=()=>kv('hlgUrges')||[];
 const money=(v,plus)=>(v<0?'−':plus?'+':'')+'$'+fmt(Math.abs(v));
 const weekUrges=()=>{const w=Date.now()-7*864e5,u=urgeLog().filter(x=>x.t>=w);return {n:u.length,waited:u.filter(x=>x.outcome==='waited').length}};
+// Your danger zones (README "Discipline aids"): when your own trades lose, from your fills, bucketed
+// in this device's time zone. A zone shows only with >= 5 trades in it and >= 5 outside it, and only
+// when it costs you (average per trade negative and worse than the rest): evidence, not a horoscope.
+function dangerZones(d){
+  const T=((d.behavior||{}).trades||[]).filter(t=>t.o&&t.c);if(T.length<15)return [];
+  const sz=T.map(t=>t.size).filter(x=>x>0).sort((a,b)=>a-b),medSize=sz[sz.length>>1]||0;
+  const wins=T.filter(t=>t.net>0).map(t=>t.net).sort((a,b)=>a-b),bigWin=wins.length?wins[Math.floor(wins.length*.75)]:Infinity;
+  const byClose=[...T].sort((a,b)=>a.c-b.c);
+  const prev=t=>{let p=null;for(const x of byClose){if(x.c>t.o)break;if(x!==t)p=x}return p};
+  const hr=t=>new Date(t).getHours(),wd=t=>new Date(t).getDay();
+  const defs=[
+    {k:'night',w:'opened late at night (23:00–06:00)',f:t=>{const h=hr(t.o);return h>=23||h<6}},
+    {k:'weekend',w:'opened on a weekend',f:t=>[0,6].includes(wd(t.o))},
+    {k:'revenge',w:'opened within 2 hours of closing a loss',f:t=>{const p=prev(t);return !!p&&p.net<0&&t.o-p.c<=2*36e5}},
+    {k:'afterwin',w:'opened within a day of a big win',f:t=>{const p=prev(t);return !!p&&p.net>=bigWin&&t.o-p.c<=864e5}},
+    {k:'oversize',w:'sized over 1.5× your usual',f:t=>medSize>0&&t.size>1.5*medSize}];
+  const avg=a=>a.reduce((s,t)=>s+t.net,0)/a.length;
+  return defs.map(z=>{const inz=T.filter(z.f),out=T.filter(t=>!z.f(t));
+      if(inz.length<5||out.length<5)return null;
+      const ai=avg(inz),ao=avg(out);if(!(ai<0&&ai<ao))return null;
+      return {...z,n:inz.length,net:inz.reduce((s,t)=>s+t.net,0),avg:ai,avgOut:ao}})
+    .filter(Boolean).sort((a,b)=>a.net-b.net)}
+// which of your danger zones you're in right now
+function zoneNow(d){
+  const Z=dangerZones(d),T=[...((d.behavior||{}).trades||[])].sort((a,b)=>a.c-b.c),last=T[T.length-1],h=new Date().getHours();
+  const wins=T.filter(t=>t.net>0).map(t=>t.net).sort((a,b)=>a-b),bigWin=wins.length?wins[Math.floor(wins.length*.75)]:Infinity;
+  const on={night:h>=23||h<6,weekend:[0,6].includes(new Date().getDay()),
+    revenge:!!last&&last.net<0&&Date.now()-last.c<=2*36e5,afterwin:!!last&&last.net>=bigWin&&Date.now()-last.c<=864e5};
+  return Z.find(z=>on[z.k])||null}
+const zoneLine=z=>`Your trades ${z.w} netted ${money(z.net)} over ${z.n}, ${money(z.avg)} a trade against ${money(z.avgOut,true)} for the rest.`;
+// Tilt guard: after a closed loss (within cooldown_hours) or a red day of cooldown_day_r x 1R, the
+// Now card says cool-down. Loss-chasing is the classic account-killer (Thaler & Johnson's break-even
+// effect); this blocks nothing, it names the state and points the urge check at your own record.
+function coolDown(d){
+  const dis=d.discipline||{},hrs=+dis.cooldown_hours||4,dayR=+dis.cooldown_day_r||2;
+  const T=[...((d.behavior||{}).trades||[])].sort((a,b)=>a.c-b.c),last=T[T.length-1];
+  const oneR=d.equity?d.equity*((d.rules||{}).risk_per_trade_pct||1)/100:null;
+  if(last&&last.net<0&&Date.now()-last.c<hrs*36e5)return {why:'loss',t:last.c,until:last.c+hrs*36e5,net:last.net};
+  if(oneR&&d.day_pnl!=null&&d.day_pnl<=-dayR*oneR)return {why:'day',until:null,net:d.day_pnl,r:d.day_pnl/oneR};
+  return null}
 function nowMode(d){
   const live=(d.alerts||[]).filter(a=>a.status==='live');
   if(d.locked_until&&d.locked_until>Date.now())return {k:'locked',ic:'■',word:'Locked',h:'Loss limit hit. The plan says be flat until the lock ends.'};
@@ -764,6 +805,10 @@ function nowMode(d){
   const ent=live.filter(a=>a.cat==='entry');
   if(ent.length){const m=ent.map(a=>esc((a.meta&&a.meta.coin)||a.summary.split(' ')[2]||'')).filter(Boolean);
     return {k:'act',ic:'▶',word:'Setup live',h:`A setup is live${m.length?': '+[...new Set(m)].join(', '):''}. Follow the plan: limit entry, stop before entry, no adds.`}}
+  const cd=coolDown(d);
+  if(cd)return {k:'cool',ic:'◐',word:'Cool-down',h:cd.why==='loss'
+    ?`You closed a loss ${ago(cd.t)}. Cool-down until ${new Date(cd.until).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}: the next trade comes from a signal, not from the loss.`
+    :`Today is down ${fmt(Math.abs(cd.r),1)}R. Cool-down for the rest of the day: the next trade comes from a signal, not from the loss.`};
   return {k:'wait',ic:'●',word:'Wait',h:'Nothing to do. Waiting is the plan.'};
 }
 // Decision points: the strategy only acts on CLOSED bars, so between closes no entry can signal and
@@ -847,6 +892,8 @@ const REFRAMES=[
      return p.length>=7&&(L[k]||0)>p[p.length>>1]+1?2.5:0},
    text:()=>{const L=kv('hlgLooks')||{},k=localDay(),p=Object.keys(L).filter(x=>x!==k).map(x=>L[x]).sort((a,b)=>a-b);
      return `Look number ${L[k]} today, against your usual ${p[p.length>>1]}. What are you hoping to see?`}},
+  {id:'zone_now',w:d=>zoneNow(d)?3.5:0,text:d=>{const z=zoneNow(d);return `Right now is one of your danger zones. ${zoneLine(z)}`}},
+  {id:'zone_top',w:d=>dangerZones(d).length?1.2:0,text:d=>`Your costliest pattern: ${zoneLine(dangerZones(d)[0]).replace(/^Your trades /,'trades ')}`},
   {id:'note',w:()=>urgeNotes().length?1.5:0,text:()=>{const n=urgeNotes()[0];return `You, after waiting one out on ${new Date(n.t).toLocaleDateString([], {month:'short',day:'numeric'})}: “${n.note}”`}},
   // from the replicated wallet studies (docs/research): other traders, same habits
   {id:'w_tail',w:.5,text:()=>'Across 138 Hyperliquid wallets, the worst 5% of each trader\'s positions caused about half of their losses. The job is keeping that 5% small.'},
@@ -946,6 +993,10 @@ function milestones(P){
   const fresh=seen?allKeys.filter(k=>!seen.includes(k)):[];       // the first run seeds silently
   kv('hlgMilestones',[...new Set([...(seen||[]),...allKeys])]);
   return {earned,next,fresh:fresh.length?earned.find(e=>e.all.includes(fresh[fresh.length-1])):null}}
+function zonesHtml(d){const Z=dangerZones(d).slice(0,3);if(!Z.length)return '';
+  return `<div class="zones" id="zones"><h4>Your danger zones <span class="mut">— from your fills, your time zone</span></h4><ul>`
+    +Z.map(z=>`<li><b>${esc(z.w[0].toUpperCase()+z.w.slice(1))}</b>: ${z.n} trades, net <span class="neg">${money(z.net)}</span> (${money(z.avg)} a trade vs ${money(z.avgOut,true)} for the rest)</li>`).join('')
+    +`</ul></div>`}
 function looksLine(){const L=kv('hlgLooks')||{},k=localDay(),past=Object.keys(L).filter(x=>x!==k).map(x=>L[x]).sort((a,b)=>a-b);
   if(past.length<7)return '';
   const med=past[past.length>>1],n=L[k]||0;
@@ -1004,12 +1055,12 @@ function renderNow(d){
     +(MS.fresh?`<div class="msnote" role="status">✦ ${esc(MS.fresh.w)}. That's the habit forming, one quiet decision at a time.</div>`:'')
     +`<div class="glance"><div class="gt" id="decide"></div>${mktTile(d)}${sigTile}</div>`
     +newsLine(d)+planStrip(P)
-    +`<div class="actions"><button id="urgebtn" class="${M.k==='wait'?'primary':''}">I feel like trading</button>`
+    +`<div class="actions"><button id="urgebtn" class="${M.k==='wait'||M.k==='cool'?'primary':''}">I feel like trading</button>`
     +`<button class="lessonbtn" id="lessonbtn"><b>Today's lesson${lessonRead(TL.id)?' · read ✓':' · 1 min'}</b>${esc(TL.t)}</button></div>`
     +`<details class="nowmore"${open?' open':''}><summary>Your record, the series and your plan</summary>`
     +(pills.length?`<div class="stats">${pills.join('')}</div>`:'')+series
     +(X?`<div class="since"><b>Market (${X.word}):</b> ${esc(X.pull)} ${esc(X.fact)}</div>`:'')
-    +lapse+msHtml+looksLine()
+    +lapse+msHtml+looksLine()+zonesHtml(d)
     +(intent?`<div class="intent"><b>Your plan</b>${esc(intent)}</div>`:'')+mineForm()+`</details>`;
   $('#urgebtn').onclick=()=>urgeStart(d);
   $('#lessonbtn').onclick=()=>lessonShow(d,TL);
@@ -1057,7 +1108,10 @@ function urgeCheck(d,reason){
   const B=d.behavior||{}, risk=d.equity*(d.rules.risk_per_trade_pct||1)/100;
   const locked=d.locked_until&&d.locked_until>Date.now();
   const item=(ok,t)=>`<li><span class="ic ${ok?'pos':'neg'}">${ok?'✓':'✕'}</span><span>${t}</span></li>`;
+  const cd=coolDown(d),zn=zoneNow(d);
   const items=[
+    ...(cd?[`<li><span class="ic neg">!</span><span id="ucool">${cd.why==='loss'?`You closed a loss ${ago(cd.t)}.`:`Today is down ${fmt(Math.abs(cd.r),1)}R.`} A trade now has to come from a signal, not from wanting it back.</span></li>`]:[]),
+    ...(zn?[`<li><span class="ic neg">!</span><span id="uzone">${esc(zoneLine(zn))}</span></li>`]:[]),
     item(live.length>0,live.length?`A setup is live: ${[...new Set(live.map(a=>esc((a.meta&&a.meta.coin)||'')))].join(', ')}.`:'Nothing has signalled. No setup means no trade.'),
     item(!locked,locked?'The loss lock is on: the plan says be flat.':'No loss lock.'),
     item(!(reason==='add'&&losing.length),reason==='add'&&losing.length
@@ -1078,15 +1132,26 @@ function urgeCheck(d,reason){
     +`<div class="row"><button data-act="${go?'proceed':'override'}">${go?'Proceed with the plan':'Trade anyway'}</button><button class="primary" data-act="waited">I'll wait</button></div>`;
   $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b)return;
     if(b.dataset.act==='why'){lessonShow(d,LESSONS.find(L=>L.id===URGE_LESSON[reason])||todayLesson(d),reason);return}
+    if(b.dataset.act==='override'){overrideAsk(reason);return}
     urgeEnd(b.dataset.act,reason)};
 }
-function urgeEnd(outcome,reason){
+// Overriding the plan is allowed, but not silently: one line of why, kept and shown in the weekly review.
+function overrideAsk(reason){
+  const row=$('#urgebody .row');
+  row.outerHTML=`<label class="unote">Why are you overriding the plan? <span class="mut">(required, one line, shown in your weekly review)</span>`
+    +`<input id="uwhy" maxlength="140" placeholder="e.g. I'm sure it's going higher"></label>`
+    +`<div class="row"><button data-act="override2" disabled id="uwhybtn">Log it and trade anyway</button><button class="primary" data-act="waited">I'll wait</button></div>`;
+  const inp=$('#uwhy'),btn=$('#uwhybtn');inp.focus();
+  inp.addEventListener('input',()=>{btn.disabled=inp.value.trim().length<4});
+  $('#urgebody').onclick=e=>{const b=e.target.closest('button');if(!b||b.disabled)return;
+    urgeEnd(b.dataset.act==='override2'?'override':'waited',reason,b.dataset.act==='override2'?inp.value.trim().slice(0,140):null)}}
+function urgeEnd(outcome,reason,why){
   clearInterval(urgeTimer);
   const note=(($('#unote')||{}).value||'').trim().slice(0,140);
-  if(outcome!=='closed'){const log=urgeLog();log.push({t:Date.now(),reason:reason||null,outcome,...(note&&outcome==='waited'?{note}:{})});kv('hlgUrges',log.slice(-300))}
+  if(outcome!=='closed'){const log=urgeLog();log.push({t:Date.now(),reason:reason||null,outcome,...(note&&outcome==='waited'?{note}:{}),...(why?{why}:{})});kv('hlgUrges',log.slice(-300))}
   if(outcome==='waited')kv('hlgWaitedN',waitedAll()+1);
   const dlg=$('#urge');if(dlg.open)dlg.close();
-  if(D)renderNow(D);
+  if(D){renderNow(D);renderReview(D)}
 }
 $('#urge').addEventListener('close',()=>clearInterval(urgeTimer));
 
@@ -1459,6 +1524,8 @@ function renderReview(d){
   const U=urgeLog().filter(x=>inW(x.t)), Uw=U.filter(x=>x.outcome==='waited').length;
   const P=Object.values(kv('hlgPreds')||{}).filter(p=>inW(p.t)), Pn=P.filter(p=>p.out!=null), Phit=Pn.filter(p=>p.out===p.yes).length;
   const slips=[];
+  const OV=U.filter(x=>x.outcome==='override');
+  if(OV.length)slips.push(`${OV.length} override${OV.length>1?'s':''} of the plan: ${OV.map(x=>x.why?`“${esc(x.why)}”`:'no reason logged').join('; ')}`);
   if(dirty.length)slips.push(`${dirty.length} trade${dirty.length>1?'s':''} broke a rule (${dirty.map(t=>esc(t.coin)+(t.adds_under?' averaged down':' loser held > 7d')).join(', ')})`);
   if(X&&X.offplan)slips.push(`${X.offplan} off-plan position${X.offplan>1?'s':''} (net ${money(X.offplan_net)})`);
   if(X&&X.no_stop)slips.push(`${X.no_stop} signal${X.no_stop>1?'s':''} taken without a stop`);

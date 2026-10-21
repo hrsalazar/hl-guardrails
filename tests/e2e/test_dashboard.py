@@ -1288,3 +1288,51 @@ def test_a_note_you_leave_comes_back_and_your_pattern_is_counted(page, base_url)
     expect(dlg.locator("#upattern")).to_contain_text("“Bored — nothing is happening” — 2 times in 30 days, waited out 2.")
     expect(dlg.locator("#unoteback")).to_contain_text("“the walk worked”")
     expect(dlg.locator(".verdict")).to_contain_text("The plan says wait.")
+
+
+# ---------------------------------------------------------------------- danger zones, tilt guard, override reasons
+def test_danger_zones_show_only_the_patterns_that_cost_you(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator("#now .nowmore summary").click()
+    z = page.locator("#zones")
+    expect(z).to_contain_text("Opened within 2 hours of closing a loss: 8 trades, net −$880")
+    keys = page.evaluate("dangerZones(D).map(z=>z.k)")
+    assert keys[0] == "revenge" and "oversize" in keys and "afterwin" not in keys
+
+
+def _recent_loss_trades(page):
+    import time
+    now = int(time.time() * 1000)
+    trades = page.evaluate("D.behavior.trades")
+    return trades + [{"o": now - 5 * 3_600_000, "c": now - 3_600_000, "net": -50.0, "size": 1000.0}]
+
+
+def test_a_recent_loss_puts_the_now_card_in_cool_down_and_the_urge_check_says_why(page, base_url):
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#now h2")).not_to_be_empty()                  # data decrypted and rendered
+    trades = _recent_loss_trades(page)
+    _with_market(page, alerts=[], behavior={"trades": trades})
+    page.reload()
+    now = page.locator("#now")
+    expect(now.locator(".mode")).to_contain_text("Cool-down")
+    expect(now.locator("h2")).to_contain_text("You closed a loss")
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name="Win back a loss").click()
+    expect(dlg.locator("#ucool")).to_contain_text("A trade now has to come from a signal", timeout=5000)
+    expect(dlg.locator("#uzone")).to_contain_text("Your trades opened within 2 hours of closing a loss netted −$880 over 8")
+
+
+def test_trading_anyway_needs_a_written_reason_that_the_weekly_review_shows(page, base_url):
+    page.goto(url(base_url, "full"))
+    page.locator("#urgebtn").click()
+    dlg = page.locator("#urge")
+    dlg.get_by_role("button", name="Add to a position I hold").click()
+    dlg.get_by_role("button", name="Trade anyway").click(timeout=5000)
+    btn = dlg.get_by_role("button", name="Log it and trade anyway")
+    expect(btn).to_be_disabled()
+    dlg.locator("#uwhy").fill("sure it bounces")
+    expect(btn).to_be_enabled()
+    btn.click()
+    expect(dlg).to_be_hidden()
+    expect(page.locator("#reviewcard .slips")).to_contain_text("1 override of the plan: “sure it bounces”")

@@ -2,6 +2,26 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-21
+
+- **Danger zones** (README "Discipline aids"):
+  - **What it is:** your own losing patterns, from your fills, bucketed in your local time: opened late at night, on a weekend, within 2 hours of closing a loss, within a day of a big win, or oversized.
+  - **When it shows:** only with ≥ 5 trades in a zone, and only when the zone costs you.
+  - **Where it shows:** a list in the Now card's fold, a reframe when you're in a zone right now, and a line in the urge check. `behavior` now keeps every closed round trip (open, close, net, peak size) in the encrypted state.
+- **Tilt guard:**
+  - **Cool-down:** after a closed loss (4h) or a red day of 2R, the Now card shows a cool-down mode (`discipline.cooldown_hours`, `cooldown_day_r`).
+  - **The urge check:** says why it's in cool-down.
+  - **"Trade anyway":** now needs a one-line reason, which the weekly review shows back.
+  - Nothing is blocked.
+- **State safety:**
+  - **No more empty overwrites:** a run that can't read the previous published state (network error, 5xx, a truncated file) stops without publishing, instead of overwriting it with an empty one.
+  - **Backups:** encrypted backups from the 00:00 UTC runs are kept 30 days as artifacts, and restoring is one run (`restore_from_run`).
+  - **Dead-man's switch (optional):** a ping to `HEALTHCHECK_URL` (healthchecks.io).
+- **Regime sizing study** (`python -m hlg.regimesize`, pre-registered in docs/research/regime-sizing-study.md): 0.5% risk in BTC downtrends vs a flat 1.0%.
+  - **Result:** fails in all three windows (2013–19 spot, 2020–23 Binance, 2023+ Hyperliquid).
+  - **Why:** downtrend trades are 12–18% of trades and did as well or better in two windows, so drawdown barely moved and return fell.
+  - **Outcome:** sizing stays flat. The engine gains a per-signal `risk_x` multiplier (research only).
+
 ## 2026-10-19
 
 - **Discipline messages rotate instead of repeating** (README "Discipline aids", docs/research/behaviour-change.md §9: habituation, advertising wear-out, self-persuasion). Each message comes from a pool picked by relevance to your data; what you saw recently steps back, the last one never repeats, and a pick holds for the visit.

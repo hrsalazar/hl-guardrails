@@ -138,6 +138,8 @@ digest:
 # the urge-check pause. Written as your own rules; edit them to match yours.
 discipline:
   pause_seconds: 90
+  cooldown_hours: 4        # tilt guard: cool-down on the Now card for this long after a closed loss
+  cooldown_day_r: 2        # ... or for the rest of a day that's down this many R (1R = risk_per_trade_pct)
   intentions:
     - "If a position is losing, then I check its stop is on the book - and do nothing else to it."
     - "If I feel the urge to trade and nothing has signalled, then I close the app until the next 4h close."
