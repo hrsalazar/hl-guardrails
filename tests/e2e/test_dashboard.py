@@ -1336,3 +1336,30 @@ def test_trading_anyway_needs_a_written_reason_that_the_weekly_review_shows(page
     btn.click()
     expect(dlg).to_be_hidden()
     expect(page.locator("#reviewcard .slips")).to_contain_text("1 override of the plan: “sure it bounces”")
+
+
+def test_phone_tab_bar_stays_at_the_bottom_after_tab_switches_and_folds(page, base_url):
+    """Reported 2026-10-23: the bar still drifted after a few interactions. A sticky bottom bar only holds
+    while the content below it reaches past the screen; a short pane (or folded cards) left it mid-screen."""
+    page.set_viewport_size(PHONE)
+    page.goto(url(base_url, "full"))
+    tabs = page.locator(".tabs")
+
+    def pinned(where):
+        b = tabs.bounding_box()
+        assert PHONE["height"] - 60 <= b["y"] + b["height"] <= PHONE["height"], (where, b)
+
+    for tab in ("flow", "macro", "tech", "flow"):
+        page.locator(f'.tab[data-tab="{tab}"]').click()
+        page.wait_for_timeout(700)                                # the smooth scroll to the pane
+        for y in (0, 99999):                                      # the top, and scrolled all the way down
+            page.evaluate(f"scrollTo(0,{y})")
+            page.wait_for_timeout(80)
+            pinned((tab, y))
+    page.locator('.tab[data-tab="tech"]').click()
+    for g in page.locator(".tfgroup .tfhead").all():              # fold every scanner group: the pane shrinks
+        if g.get_attribute("aria-expanded") == "true":
+            g.click()
+    page.evaluate("scrollTo(0,99999)")
+    page.wait_for_timeout(80)
+    pinned("folded")

@@ -416,7 +416,11 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
   .hbtns{gap:4px}
   .hbtns button{width:38px;height:38px;padding:0;justify-content:center}
   .hbtns .bl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  main{padding:10px 12px calc(24px + env(safe-area-inset-bottom))}
+  /* bottom padding = the tab bar's sticky offset, so at the very end of the page the bar rests exactly
+     where it floats -- no hop -- and the visible pane is never shorter than the screen (folding every
+     card used to leave the bar resting mid-screen under the last card) */
+  main{padding:10px 12px max(12px,env(safe-area-inset-bottom))}
+  .pane:not([hidden]){min-height:70dvh}
   .card{padding:14px;margin:10px 0}
   .glance{grid-template-columns:1fr 1fr}.glance #decide{grid-column:1/-1}
   .now .actions .lessonbtn{min-width:0}
@@ -547,8 +551,10 @@ button{transition:background-color .15s,border-color .15s,color .15s,transform .
     <section class="card"><h3 data-ic="bars">Volume &amp; open interest</h3><div id="market"></div></section>
     <section class="card"><h3 data-ic="zap">Recent liquidations <span class="badge" id="liqsrc"></span></h3><div id="liq"></div></section>
   </div>
-  </div>
+  <!-- inside #app, before the phone tab bar: a sticky element can't leave its container, so anything
+       after #app would stop the bar short of the screen's bottom at the end of every tab -->
   <p class="foot">Refreshed whenever the monitor runs — the dot in the header turns amber, then red, as data ages. Advisory only — nothing here places orders.</p>
+  </div>
 </main>
 <dialog id="urge" aria-labelledby="urgetitle"><div class="body" id="urgebody"></div></dialog>
 <div id="tip" role="tooltip"></div>

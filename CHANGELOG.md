@@ -2,6 +2,13 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-10-23
+
+- **Fix: the phone tab bar drifted up at the end of every tab.**
+  - **The cause:** the footer line sat after `#app`, outside it, and a sticky element can't leave its container. So at the bottom of the page the bar stopped above the footer and rode up with the content. Folding cards on a short pane left it mid-screen the same way.
+  - **The fix:** the footer moved inside `#app`, before the bar. The page's bottom padding now equals the bar's offset, so there's no hop at the end, and the visible pane is never shorter than the screen (`min-height: 70dvh`).
+  - **The test:** a new browser test switches every tab and folds the scanner, then checks the bar at the top and at the very bottom of the page. Service worker cache hlg-v43.
+
 ## 2026-10-21
 
 - **Danger zones** (README "Discipline aids"):
