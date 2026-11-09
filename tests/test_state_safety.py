@@ -65,3 +65,28 @@ def test_a_restore_run_reads_the_previous_state_from_the_backup_folder(tmp_path,
     (tmp_path / "alerts.json").write_text("{broken")
     with pytest.raises(report.PrevUnavailable):
         report.fetch_prev("https://x", "alerts.json")
+
+
+NOW = 1_800_000_000_000
+
+
+def _published(minutes_ago):
+    import datetime as dt
+    t = dt.datetime.fromtimestamp(NOW / 1000 - minutes_ago * 60, dt.timezone.utc)
+    return {"generated": t.isoformat(timespec="seconds")}
+
+
+def test_a_site_over_an_hour_old_is_flagged_to_the_workflow(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    assert report.flag_stale_site(_published(161), NOW) is True
+    assert "site_stale=true" in out.read_text()
+
+
+def test_a_normal_gap_or_a_first_run_is_not_flagged(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    assert report.flag_stale_site(_published(25), NOW) is False         # a 15-minute run plus the CDN's 10
+    assert report.flag_stale_site({}, NOW) is False                     # first run: nothing published yet
+    assert report.flag_stale_site({"generated": "garbled"}, NOW) is False
+    assert not out.exists()

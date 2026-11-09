@@ -767,7 +767,7 @@ const weekUrges=()=>{const w=Date.now()-7*864e5,u=urgeLog().filter(x=>x.t>=w);re
 // in this device's time zone. A zone shows only with >= 5 trades in it and >= 5 outside it, and only
 // when it costs you (average per trade negative and worse than the rest): evidence, not a horoscope.
 function dangerZones(d){
-  const T=((d.behavior||{}).trades||[]).filter(t=>t.o&&t.c);if(T.length<15)return [];
+  const T=((d.behavior||{}).trips||[]).filter(t=>t.o&&t.c);if(T.length<15)return [];
   const sz=T.map(t=>t.size).filter(x=>x>0).sort((a,b)=>a-b),medSize=sz[sz.length>>1]||0;
   const wins=T.filter(t=>t.net>0).map(t=>t.net).sort((a,b)=>a-b),bigWin=wins.length?wins[Math.floor(wins.length*.75)]:Infinity;
   const byClose=[...T].sort((a,b)=>a.c-b.c);
@@ -787,7 +787,7 @@ function dangerZones(d){
     .filter(Boolean).sort((a,b)=>a.net-b.net)}
 // which of your danger zones you're in right now
 function zoneNow(d){
-  const Z=dangerZones(d),T=[...((d.behavior||{}).trades||[])].sort((a,b)=>a.c-b.c),last=T[T.length-1],h=new Date().getHours();
+  const Z=dangerZones(d),T=[...((d.behavior||{}).trips||[])].sort((a,b)=>a.c-b.c),last=T[T.length-1],h=new Date().getHours();
   const wins=T.filter(t=>t.net>0).map(t=>t.net).sort((a,b)=>a-b),bigWin=wins.length?wins[Math.floor(wins.length*.75)]:Infinity;
   const on={night:h>=23||h<6,weekend:[0,6].includes(new Date().getDay()),
     revenge:!!last&&last.net<0&&Date.now()-last.c<=2*36e5,afterwin:!!last&&last.net>=bigWin&&Date.now()-last.c<=864e5};
@@ -798,7 +798,7 @@ const zoneLine=z=>`Your trades ${z.w} netted ${money(z.net)} over ${z.n}, ${mone
 // effect); this blocks nothing, it names the state and points the urge check at your own record.
 function coolDown(d){
   const dis=d.discipline||{},hrs=+dis.cooldown_hours||4,dayR=+dis.cooldown_day_r||2;
-  const T=[...((d.behavior||{}).trades||[])].sort((a,b)=>a.c-b.c),last=T[T.length-1];
+  const T=[...((d.behavior||{}).trips||[])].sort((a,b)=>a.c-b.c),last=T[T.length-1];
   const oneR=d.equity?d.equity*((d.rules||{}).risk_per_trade_pct||1)/100:null;
   if(last&&last.net<0&&Date.now()-last.c<hrs*36e5)return {why:'loss',t:last.c,until:last.c+hrs*36e5,net:last.net};
   if(oneR&&d.day_pnl!=null&&d.day_pnl<=-dayR*oneR)return {why:'day',until:null,net:d.day_pnl,r:d.day_pnl/oneR};

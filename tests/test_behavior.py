@@ -127,4 +127,5 @@ def test_summary_lists_every_closed_trade_for_the_danger_zones():
     trades = [dict(coin="A", open=10, close=20, net=-5.0, adds_under=0, last_add_under=None, qty=2.0, avg=50.0),
               dict(coin="B", open=30, close=40, net=7.0, adds_under=0, last_add_under=None, qty=1.0, avg=10.0)]
     s = behavior.summarize(trades, [], 100)
-    assert s["trades"] == [{"o": 10, "c": 20, "net": -5.0, "size": 100.0}, {"o": 30, "c": 40, "net": 7.0, "size": 10.0}]
+    assert s["trips"] == [{"o": 10, "c": 20, "net": -5.0, "size": 100.0}, {"o": 30, "c": 40, "net": 7.0, "size": 10.0}]
+    assert s["trades"] == 2                                             # the count stays a count (the log line and a lesson read it)

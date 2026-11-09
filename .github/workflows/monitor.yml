@@ -69,6 +69,7 @@ jobs:
       # The macro backdrop reads FRED's official API (FRED_API_KEY below): the keyless download,
       # fred.stlouisfed.org/graph/fredgraph.csv, read-times-out from Actions runners (10/10 at 30s).
       - name: Run guardrails + scanner
+        id: run
         env:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           # Everything published is encrypted with this (hlg/vault.py). Without it the job
@@ -136,8 +137,15 @@ jobs:
       # Dead-man's switch (optional): ping a free healthchecks.io check after a deployed run; when the
       # pings stop, it emails you. Set the check's ping URL as the HEALTHCHECK_URL secret.
       - name: Health ping
-        if: steps.deploy.outcome == 'success' || steps.deploy_retry.outcome == 'success'
+        if: (steps.deploy.outcome == 'success' || steps.deploy_retry.outcome == 'success') && steps.run.outputs.site_stale != 'true'
         env:
           HC: ${{ secrets.HEALTHCHECK_URL }}
         run: |
           if [ -n "$HC" ]; then curl -fsS -m 10 --retry 3 "$HC" > /dev/null || echo "health ping failed"; fi
+      # A successful deploy doesn't prove the site changed: the run read the published data back and found
+      # it over an hour old. Failing here sends the failure email. See docs/operations.md.
+      - name: Site is stale
+        if: steps.run.outputs.site_stale == 'true'
+        run: |
+          echo "::error::The published site is over an hour old although runs are succeeding. See docs/operations.md."
+          exit 1

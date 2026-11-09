@@ -59,6 +59,33 @@ NEWS = "news.json"   # the brief's headline archive (hlg.digest): research only,
 LOCKED_STUB = {"locked": "encryption not configured: set the DASHBOARD_PASSPHRASE secret"}
 
 
+STALE_SITE_MIN = 60     # runs come every 15 min and the CDN holds a file up to 10: well past both
+
+
+def site_age_min(prev, now_ms):
+    """How old the published data this run just read back is, in minutes; None on a first run. A "success"
+    from the deploy step doesn't prove the site changed (2026-11-09: Pages kept serving one build for
+    almost three hours while every deployment reported success), but this does."""
+    try:
+        return (now_ms - dt.datetime.fromisoformat(prev["generated"]).timestamp() * 1000) / 60_000
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def flag_stale_site(prev, now_ms):
+    """Log a stale site and tell the workflow, which then withholds the health ping and fails the run
+    (the failure email). The run still publishes: that's what clears it if the fault has passed."""
+    age = site_age_min(prev, now_ms)
+    if age is None or age <= STALE_SITE_MIN:
+        return False
+    log.error("the published site is %d min old: runs aren't reaching it (docs/operations.md)", age)
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write("site_stale=true\n")
+    return True
+
+
 class PrevUnavailable(RuntimeError):
     """The previously published file exists but couldn't be read. Carrying on would publish an empty
     journal, history and archive over the real ones, so the run stops instead (nothing is published,
@@ -259,6 +286,7 @@ def main():
 
     inf = info()
     now_ms = int(time.time() * 1000)
+    flag_stale_site(prev, now_ms)
     # Scheduled releases first: the scanner reads them to flag entries opened into one. Cached in
     # state and refreshed every few hours, so most runs make no request here.
     E = events.settings(cfg)

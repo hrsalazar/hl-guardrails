@@ -16,7 +16,7 @@ coin) once an hour and keeps, in the encrypted state only:
                 short) -- the streak "days without adding to a loser" counts from it
   recent        the last 10 closed trades, each marked clean or not (clean = never added while
                 underwater, and not a loser held past 7 days)
-  trades        every closed round trip (open, close, net, peak size): the dashboard buckets them
+  trips         every closed round trip (open, close, net, peak size): the dashboard buckets them
                 by your local hour and day, after a loss or a big win, and by size -- your "danger
                 zones" -- in the browser, so the time zone is the device's
 
@@ -116,7 +116,7 @@ def summarize(closed, open_, now_ms):
         "slip_days": sorted({ts // D_MS * D_MS for t in closed + open_ for ts in t.get("add_times", ())}),
         "recent": [{"coin": t["coin"], "t": t["close"], "net": round(t["net"], 2), "clean": clean(t),
                     "adds_under": t["adds_under"]} for t in sorted(closed, key=lambda t: t["close"])[-10:]],
-        "trades": [{"o": t["open"], "c": t["close"], "net": round(t["net"], 2), "size": round(t.get("qty", 0) * t.get("avg", 0), 2)}
+        "trips": [{"o": t["open"], "c": t["close"], "net": round(t["net"], 2), "size": round(t.get("qty", 0) * t.get("avg", 0), 2)}
                    for t in sorted(closed, key=lambda t: t["close"])[-300:]],
     }
 

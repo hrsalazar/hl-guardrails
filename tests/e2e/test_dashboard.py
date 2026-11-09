@@ -1291,6 +1291,16 @@ def test_a_note_you_leave_comes_back_and_your_pattern_is_counted(page, base_url)
 
 
 # ---------------------------------------------------------------------- danger zones, tilt guard, override reasons
+def test_the_waiting_lesson_reads_the_trade_count_not_the_trade_list(page, base_url):
+    """behavior once had "trades" twice: the round-trip list replaced the count (2026-10-21 to 11-09)."""
+    page.goto(url(base_url, "full"))
+    expect(page.locator("#now h2")).not_to_be_empty()
+    page.evaluate("lessonShow(D,LESSONS.find(L=>L.id==='waiting'))")
+    dlg = page.locator("#urge")
+    expect(dlg).to_contain_text("You closed 108 trades in 180 days")
+    expect(dlg).to_contain_text("about 18 a month")
+
+
 def test_danger_zones_show_only_the_patterns_that_cost_you(page, base_url):
     page.goto(url(base_url, "full"))
     page.locator("#now .nowmore summary").click()
@@ -1303,7 +1313,7 @@ def test_danger_zones_show_only_the_patterns_that_cost_you(page, base_url):
 def _recent_loss_trades(page):
     import time
     now = int(time.time() * 1000)
-    trades = page.evaluate("D.behavior.trades")
+    trades = page.evaluate("D.behavior.trips")
     return trades + [{"o": now - 5 * 3_600_000, "c": now - 3_600_000, "net": -50.0, "size": 1000.0}]
 
 
@@ -1311,7 +1321,7 @@ def test_a_recent_loss_puts_the_now_card_in_cool_down_and_the_urge_check_says_wh
     page.goto(url(base_url, "full"))
     expect(page.locator("#now h2")).not_to_be_empty()                  # data decrypted and rendered
     trades = _recent_loss_trades(page)
-    _with_market(page, alerts=[], behavior={"trades": trades})
+    _with_market(page, alerts=[], behavior={"trips": trades})
     page.reload()
     now = page.locator("#now")
     expect(now.locator(".mode")).to_contain_text("Cool-down")

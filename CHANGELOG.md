@@ -2,6 +2,12 @@
 
 Dates are UTC. For the details and reasoning, see the commit messages.
 
+## 2026-11-09
+
+- **Stale site incident, and a detector for it.** From 02:45 UTC GitHub Pages kept serving the 02:31 build for almost three hours, while every run and deployment reported success and GitHub listed no incident. A deployment of a new commit cleared it.
+  - **The detector:** each run now checks the age of the published data it reads back. Over 60 minutes, the run logs it, withholds the health ping (which used to fire on "deploy succeeded") and fails at *Site is stale*, which sends the failure email. docs/operations.md has the fix.
+- **Fix: `behavior` had two `trades` keys.** Added with the danger zones on 2026-10-21: the round-trip list replaced the count, which caused a logging traceback in most runs and garbage in the "waiting" lesson. The list is now `trips`. The fixture and a test had the same mistake, so nothing caught it.
+
 ## 2026-10-23
 
 - **Fix: the phone tab bar drifted up at the end of every tab.**

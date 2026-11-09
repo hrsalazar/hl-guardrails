@@ -335,7 +335,7 @@ def build_full(*, age_min=2, journal_closed=8):
                                                                 ("SOL", 210, True)])],
                      # made-up round trips for the danger zones: steady small wins, except trades opened within an
                      # hour of a closed loss and oversized ones, which lose; hours spread so no time-of-day effect
-                     "trades": _zone_trades(gen)},
+                     "trips": _zone_trades(gen)},
         "discipline": {"pause_seconds": 1, "intentions": ["If a position is losing, then I check its stop is on the book."]},
         "cascades": {"resolved": 7, "hits": 3, "hit_rate": 3 / 7, "median_lead_days": 3.0, "median_better_atr": 1.5,
                      "watching": [{"coin": "SOL", "t": gen - 5 * H}, {"coin": "BTC", "t": gen - 9 * H}],
